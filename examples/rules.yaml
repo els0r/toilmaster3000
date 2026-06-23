@@ -1,0 +1,60 @@
+# Example rule set for toilmaster3000 — edit this for your team.
+#
+# Each rule matches PRs by author, conventional-commit type/scope, description,
+# and diff size. Class "approve" auto-approves a match; class "review" forces a
+# match into the human-review queue (and wins over any approve match). An empty
+# Class reads as "approve". '@me' expands to the authenticated gh user.
+#
+# This file ships as .config/rules.yaml inside the install bundle. The three
+# rules below are illustrative — replace the placeholder author tokens
+# (teammate_a, …) and scopes with your own.
+Rules:
+    # approve-by-type: auto-approve teammates' trivial chores, never your own,
+    # and skip renovate bumps.
+    - ID: 1111111111111111aaaaaaaaaaaaaaaa
+      Name: trivial chores
+      Class: approve
+      Enabled: true
+      AuthorsInclude: []
+      AuthorsExclude:
+        - '@me'
+      TypeInclude: ^chore$
+      TypeExclude: ""
+      ScopeInclude: ""
+      ScopeExclude: renovate
+      DescriptionInclude: ""
+      DescriptionExclude: ""
+      DiffMin: 0
+      DiffMax: 0
+    # approve-by-author+scope: auto-approve a trusted teammate's docs-site work.
+    - ID: 2222222222222222bbbbbbbbbbbbbbbb
+      Name: docs site
+      Class: approve
+      Enabled: true
+      AuthorsInclude:
+        - teammate_a
+      AuthorsExclude: []
+      TypeInclude: ""
+      TypeExclude: ""
+      ScopeInclude: docs
+      ScopeExclude: ""
+      DescriptionInclude: ""
+      DescriptionExclude: ""
+      DiffMin: 0
+      DiffMax: 0
+    # review-by-diff-size: anything 100+ changed lines always gets human eyes.
+    - ID: 3333333333333333cccccccccccccccc
+      Name: large diffs need eyes
+      Class: review
+      Enabled: true
+      AuthorsInclude: []
+      AuthorsExclude:
+        - '@me'
+      TypeInclude: ""
+      TypeExclude: ""
+      ScopeInclude: ""
+      ScopeExclude: ""
+      DescriptionInclude: ""
+      DescriptionExclude: ""
+      DiffMin: 100
+      DiffMax: 0

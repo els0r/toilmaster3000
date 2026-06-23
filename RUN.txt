@@ -1,0 +1,18 @@
+toilmaster3000 — how to run
+
+The binary reads .config/rules.yaml relative to its working directory, so run
+it from inside this directory. It also needs two settings — the repo whose PRs
+it considers, and the search that selects candidate PRs — passed as flags or
+TM3K_* env vars (both required; the binary fails fast if either is missing):
+
+    cd /tmp/tm3k
+    TM3K_REPO=owner/name \
+    TM3K_SEARCH='is:open team-review-requested:owner/team' \
+    ./toilmaster3000        # requires: gh installed + `gh auth login`
+
+(equivalently: ./toilmaster3000 --repo owner/name --search '...')
+
+Then open http://localhost:8666
+
+Edit .config/rules.yaml to tune which PRs are auto-approved vs. sent to the
+human-review queue. The approval log is written to .state/ on first run.

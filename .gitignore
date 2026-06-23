@@ -1,0 +1,20 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+# Build output
+/toilmaster3000
+/tm3k
+/dist/
+/toilmaster3000.tar.bz2
+
+# Local agent config
+.claude/
+
+# Local CLI state (e.g. gh device id)
+.local/
+
+# Runtime state (seeded at first run)
+.state/*.jsonl
+.config/rules.yaml
