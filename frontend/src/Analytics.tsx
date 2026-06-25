@@ -111,18 +111,22 @@ export function AnalyticsPanel() {
 
 // ByTypeCohort renders the range's approvals broken down by conventional-commit
 // type (slice 5). The server emits the fixed Conventional Commits axis plus a
-// trailing "other", every row present and in spec order, so this is a pure
-// renderer: it lays out each row's count, its share of the range total as a
-// percent, and the auto/human split — the actionable signal being which types
-// still pull a human in. A zero-count row is shown dimmed rather than hidden,
-// honoring "the set is bounded — show every row." There is no per-type delta
-// (jumpy at low counts).
+// trailing "other", every row present, which this view sorts by count descending
+// (alphabetical tie-break) so the heaviest types lead and the zero-count rows
+// group at the bottom. Each row lays out its count, its share of the range total
+// as a percent, and the auto/human split — the actionable signal being which
+// types still pull a human in. A zero-count row is shown dimmed rather than
+// hidden, honoring "the set is bounded — show every row." There is no per-type
+// delta (jumpy at low counts).
 function ByTypeCohort({ rows }: { rows: TypeCohortRow[] }) {
+  const sorted = [...rows].sort(
+    (a, b) => b.count - a.count || a.type.localeCompare(b.type),
+  );
   return (
     <div className="by-type-cohort" data-testid="by-type-cohort">
       <h3 className="cohort-title">By type</h3>
       <div className="cohort-rows">
-        {rows.map((r) => (
+        {sorted.map((r) => (
           <div
             key={r.type}
             className={`cohort-row${r.count === 0 ? " is-zero" : ""}`}

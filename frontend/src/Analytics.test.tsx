@@ -245,16 +245,17 @@ describe("AnalyticsPanel sparklines", () => {
 });
 
 describe("AnalyticsPanel by-type cohort", () => {
-  // A10 (slice 5): the cohort renders every standard conventional-commit type in
-  // fixed order plus a trailing "other", each row carrying its count, its share of
-  // the range total as a percent, and the auto/human split — the signal of which
-  // types still pull a human in.
-  it("renders every standard type in fixed order with count, share, and the auto/human split", async () => {
+  // A10 (slice 5): the cohort renders every standard conventional-commit type plus
+  // a trailing "other", sorted by count descending (alphabetical tie-break) so the
+  // heaviest types lead and zero-count rows group at the bottom, each row carrying
+  // its count, its share of the range total as a percent, and the auto/human split
+  // — the signal of which types still pull a human in.
+  it("renders every standard type sorted by count with count, share, and the auto/human split", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
         by_type: cohort({
-          feat: { count: 4, share: 0.5, auto: 3, human: 1 },
-          fix: { count: 4, share: 0.5, auto: 4, human: 0 },
+          fix: { count: 7, share: 0.7, auto: 5, human: 2 },
+          feat: { count: 3, share: 0.3, auto: 2, human: 1 },
         }),
       }),
     );
@@ -262,19 +263,20 @@ describe("AnalyticsPanel by-type cohort", () => {
     render(<AnalyticsPanel />);
     await flush();
 
-    // All twelve rows (11 standard + other) render, in spec order.
+    // All twelve rows (11 standard + other) render: the two non-zero types lead by
+    // count, then the ten zero-count rows in alphabetical order.
     const rows = screen.getAllByTestId(/^cohort-row-/);
     expect(rows.map((r) => r.getAttribute("data-testid"))).toEqual([
-      "cohort-row-feat", "cohort-row-fix", "cohort-row-chore", "cohort-row-docs",
-      "cohort-row-style", "cohort-row-refactor", "cohort-row-perf", "cohort-row-test",
-      "cohort-row-build", "cohort-row-ci", "cohort-row-revert", "cohort-row-other",
+      "cohort-row-fix", "cohort-row-feat", "cohort-row-build", "cohort-row-chore",
+      "cohort-row-ci", "cohort-row-docs", "cohort-row-other", "cohort-row-perf",
+      "cohort-row-refactor", "cohort-row-revert", "cohort-row-style", "cohort-row-test",
     ]);
 
-    const feat = screen.getByTestId("cohort-row-feat");
-    expect(feat).toHaveTextContent("feat");
-    expect(feat).toHaveTextContent("4");
-    expect(feat).toHaveTextContent("50%");
-    expect(feat).toHaveTextContent("3 auto / 1 human");
+    const fix = screen.getByTestId("cohort-row-fix");
+    expect(fix).toHaveTextContent("fix");
+    expect(fix).toHaveTextContent("7");
+    expect(fix).toHaveTextContent("70%");
+    expect(fix).toHaveTextContent("5 auto / 2 human");
   });
 
   // A11 (slice 5): a type with no approvals in the range is still shown, dimmed,
