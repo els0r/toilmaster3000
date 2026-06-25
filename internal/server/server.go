@@ -239,10 +239,13 @@ type queueDiffOutput struct {
 // analyticsInput carries the time-picker selection. `range` is the selectable
 // window (huma enforces the enum, defaulting to today so a bare request still
 // works); `days` is the custom rolling-window length, structurally bounded to >= 1
-// and semantically required only for range=days (guarded in the handler).
+// and semantically required only for range=days (guarded in the handler). `scope`
+// is the slice-6 multi-select filter — repeatable/CSV, OR semantics, case-folded in
+// the handler; absent means All scopes (no filter), the default view.
 type analyticsInput struct {
-	Range string `query:"range" enum:"today,week,month,days" default:"today" doc:"Look-back window: today | week (ISO Monday) | month (calendar 1st) | days (rolling)"`
-	Days  int    `query:"days" minimum:"1" doc:"Rolling-window length in days; required for range=days"`
+	Range string   `query:"range" enum:"today,week,month,days" default:"today" doc:"Look-back window: today | week (ISO Monday) | month (calendar 1st) | days (rolling)"`
+	Days  int      `query:"days" minimum:"1" doc:"Rolling-window length in days; required for range=days"`
+	Scope []string `query:"scope" doc:"Scopes to filter by (repeatable/CSV); OR semantics, case-folded; absent = All scopes"`
 }
 
 type analyticsOutput struct {
@@ -552,6 +555,13 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		// prevWindow; this handler only filters and composes.
 		now := time.Now()
 		feed := eng.Approvals()
+		// Slice 6: enumerate every scope ever seen across the FULL log first, so the
+		// multi-select's option set is stable regardless of range or the scopes applied,
+		// then OR-filter the feed by the selected scopes BEFORE windowing — so the whole
+		// aggregation below (stats, switches-saved, deltas, cohort) recomputes for the
+		// selection. Absent scope = All scopes, the feed passes through untouched.
+		scopes := allScopes(feed)
+		feed = filterByScope(feed, in.Scope)
 		start := rangeStart(in.Range, in.Days, now)
 		windowed := inWindow(feed, start, now)
 		cur := aggregateAnalytics(windowed)
@@ -577,6 +587,9 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		// Slice 5: bucket the SAME windowed feed by conventional-commit type, so the
 		// By-Type cohort decomposes exactly the range the headline counts came from.
 		body.ByType = cohortByType(windowed)
+		// The all-time scope menu rides on the response so one fetch paints the
+		// dashboard and populates the multi-select; the selection above scoped the rest.
+		body.Scopes = scopes
 		return &analyticsOutput{Body: body}, nil
 	})
 

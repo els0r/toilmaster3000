@@ -176,6 +176,7 @@ export interface components {
             by_type: components["schemas"]["TypeCohortRow"][] | null;
             delta_label: string;
             human_review: components["schemas"]["Stat"];
+            scopes: string[] | null;
             /** Format: int64 */
             switches_saved: number;
             switches_saved_delta: components["schemas"]["Delta"];
@@ -409,6 +410,8 @@ export interface operations {
                 range?: "today" | "week" | "month" | "days";
                 /** @description Rolling-window length in days; required for range=days */
                 days?: number;
+                /** @description Scopes to filter by (repeatable/CSV); OR semantics, case-folded; absent = All scopes */
+                scope?: string[] | null;
             };
             header?: never;
             path?: never;

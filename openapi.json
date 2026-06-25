@@ -34,6 +34,15 @@
           "human_review": {
             "$ref": "#/components/schemas/Stat"
           },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "switches_saved": {
             "format": "int64",
             "type": "integer"
@@ -70,7 +79,8 @@
           "switches_saved_delta",
           "delta_label",
           "assumptions",
-          "by_type"
+          "by_type",
+          "scopes"
         ],
         "type": "object"
       },
@@ -664,6 +674,22 @@
               "format": "int64",
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "description": "Scopes to filter by (repeatable/CSV); OR semantics, case-folded; absent = All scopes",
+            "explode": false,
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "description": "Scopes to filter by (repeatable/CSV); OR semantics, case-folded; absent = All scopes",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
             }
           }
         ],

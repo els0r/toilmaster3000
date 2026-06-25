@@ -85,6 +85,7 @@ beforeEach(() => {
     delta_label: "vs yesterday",
     assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
     by_type: [],
+    scopes: [],
   });
   // Each test starts from a clean hash so the default (Review) tab applies.
   window.location.hash = "";

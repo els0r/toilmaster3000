@@ -2,6 +2,7 @@ package server
 
 import (
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -219,6 +220,13 @@ type Analytics struct {
 	// Each row carries the auto/human split — the actionable signal being which types
 	// still pull a human in. No per-type delta (jumpy at low counts).
 	ByType []TypeCohortRow `json:"by_type"`
+	// Scopes is the all-time, case-folded, sorted union of every scope ever seen in
+	// the log (slice 6), enumerated over the FULL feed before any range or scope
+	// filter — so the multi-select offers a stable option set regardless of the
+	// selected window or the scopes currently applied. The selected `scope` filter
+	// (an OR over these) scopes the entire aggregation above; this list is just the
+	// menu the UI draws from. Empty (non-nil) when the log holds no scoped titles.
+	Scopes []string `json:"scopes"`
 }
 
 // TypeCohortRow is one row of the By-Type cohort: a conventional-commit type, its
@@ -446,6 +454,75 @@ func withDeltas(cur, prev Analytics, label string) Analytics {
 	cur.SwitchesSavedDelta = computeDelta(cur.SwitchesSaved, prev.SwitchesSaved)
 	cur.DeltaLabel = label
 	return cur
+}
+
+// approvalScopes returns one approval's case-folded scope set: its title parsed
+// as a conventional commit and the verbatim scope comma/slash-split via splitScopes
+// (the same split the Approval Feed wire uses), then lower-cased so API and api
+// collapse to one scope. A non-conventional or scopeless title yields no scopes.
+// It is the shared scope extractor behind both allScopes and filterByScope (slice
+// 6), so enumeration and filtering case-fold identically.
+func approvalScopes(a engine.Approval) []string {
+	c, ok := conventionalcommit.Parse(a.Title)
+	if !ok {
+		return nil
+	}
+	parts := splitScopes(c.Scope)
+	for i, p := range parts {
+		parts[i] = strings.ToLower(p)
+	}
+	return parts
+}
+
+// allScopes returns the case-folded, deduplicated, sorted union of every scope
+// ever seen across the full approval log (slice 6 / CONTEXT "Scope filter"). It is
+// computed over the whole feed BEFORE any range or scope filter, so the
+// multi-select offers a stable set regardless of the selected window. Case-folding
+// (via approvalScopes) collapses API/api into one option; the sort makes the wire
+// list deterministic for the UI. An empty log yields an empty (non-nil) slice.
+func allScopes(approvals []engine.Approval) []string {
+	seen := make(map[string]struct{})
+	for _, a := range approvals {
+		for _, s := range approvalScopes(a) {
+			seen[s] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// filterByScope keeps the approvals whose scope set intersects the selected scopes
+// (OR semantics, slice 6): a PR matches when ANY of its comma/slash-split scopes is
+// selected, so a multi-scope title can satisfy several filters at once. Matching is
+// case-folded on both sides — the selected scopes come straight off the query, the
+// approval's via approvalScopes. An empty selection (or one that is all blanks) is
+// "All scopes": the unfiltered feed passes through untouched, the default view. It
+// applies to the whole feed BEFORE the range window, so every downstream aggregate
+// — stats, switches-saved, deltas, cohort — recomputes for the selected scopes.
+func filterByScope(approvals []engine.Approval, selected []string) []engine.Approval {
+	want := make(map[string]struct{}, len(selected))
+	for _, s := range selected {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			want[s] = struct{}{}
+		}
+	}
+	if len(want) == 0 {
+		return approvals
+	}
+	out := make([]engine.Approval, 0, len(approvals))
+	for _, a := range approvals {
+		for _, s := range approvalScopes(a) {
+			if _, ok := want[s]; ok {
+				out = append(out, a)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // share returns n's fraction of total as a 0..1 value, guarding the empty range

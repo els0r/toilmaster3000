@@ -419,3 +419,107 @@ func TestAggregateAnalytics(t *testing.T) {
 		})
 	}
 }
+
+// scoped builds an auto-approved record carrying the given title, so its
+// comma/slash-split scope set drives the slice-6 scope enumeration and filter.
+func scoped(number int, title string) engine.Approval {
+	return engine.Approval{Number: number, Title: title, MatchedRule: "team chores", ApprovedAt: time.Now()}
+}
+
+// TestAllScopes covers the slice-6 all-time scope enumeration: the union of every
+// scope ever seen across the full log, comma/slash-split (the same split the
+// Approval Feed wire uses), case-folded so API/api collapse to one option, and
+// sorted so the multi-select offers a deterministic set. A non-conventional or
+// scopeless title contributes nothing.
+func TestAllScopes(t *testing.T) {
+	tests := []struct {
+		name      string
+		approvals []engine.Approval
+		want      []string
+	}{
+		{
+			name:      "empty log yields no scopes",
+			approvals: nil,
+			want:      []string{},
+		},
+		{
+			name:      "case-folds and dedups so API and api collapse",
+			approvals: []engine.Approval{scoped(1, "feat(API): a"), scoped(2, "fix(api): b")},
+			want:      []string{"api"},
+		},
+		{
+			name:      "comma/slash-split title contributes each scope, sorted",
+			approvals: []engine.Approval{scoped(1, "feat(web,api): a"), scoped(2, "chore(team/ci): b")},
+			want:      []string{"api", "ci", "team", "web"},
+		},
+		{
+			name:      "non-conventional and scopeless titles contribute nothing",
+			approvals: []engine.Approval{scoped(1, "just prose"), scoped(2, "feat: no scope"), scoped(3, "fix(db): c")},
+			want:      []string{"db"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, allScopes(tc.approvals))
+		})
+	}
+}
+
+// TestFilterByScope covers the slice-6 OR scope filter: an approval is kept when
+// ANY of its comma/slash-split scopes is selected (so a multi-scope title matches
+// several filters), matching is case-folded, and an empty selection is "All
+// scopes" — the unfiltered feed passes through. A selection nothing matches yields
+// the empty feed (the graceful-zeros case the deltas render as "—"). The expected
+// rows are identified by PR number for a terse assertion.
+func TestFilterByScope(t *testing.T) {
+	feed := []engine.Approval{
+		scoped(1, "feat(api): a"),
+		scoped(2, "fix(web): b"),
+		scoped(3, "chore(api,web): c"), // multi-scope: matches either filter
+		scoped(4, "docs: d"),           // scopeless: matches nothing
+		scoped(5, "feat(API): e"),      // case-variant of api
+	}
+	numbers := func(approvals []engine.Approval) []int {
+		out := make([]int, len(approvals))
+		for i, a := range approvals {
+			out[i] = a.Number
+		}
+		return out
+	}
+	tests := []struct {
+		name     string
+		selected []string
+		want     []int
+	}{
+		{
+			name:     "empty selection is All scopes — feed passes through untouched",
+			selected: nil,
+			want:     []int{1, 2, 3, 4, 5},
+		},
+		{
+			name:     "single scope keeps its members incl. multi-scope and case-variant titles",
+			selected: []string{"api"},
+			want:     []int{1, 3, 5},
+		},
+		{
+			name:     "OR across scopes is a union, not an intersection",
+			selected: []string{"api", "web"},
+			want:     []int{1, 2, 3, 5},
+		},
+		{
+			name:     "selected scope is case-folded to match the title",
+			selected: []string{"API"},
+			want:     []int{1, 3, 5},
+		},
+		{
+			name:     "a scope with no members yields the empty feed (graceful zeros)",
+			selected: []string{"ci"},
+			want:     []int{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, numbers(filterByScope(feed, tc.selected)))
+		})
+	}
+}

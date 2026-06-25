@@ -56,18 +56,24 @@ export type TypeCohortRow = components["schemas"]["TypeCohortRow"];
 // server-side; the client only names the window (and, for `days`, its length).
 export type AnalyticsRange = "today" | "week" | "month" | "days";
 
-// fetchAnalytics pulls the Analytics tab's aggregates for the selected range.
-// Unlike the feed/queue/status endpoints, this is fetched on tab-open and control
-// changes (debounced), not on the 10s poll, so the dashboard's lean-back cadence
-// stays off the live timer. `days` rides the wire only for the `days` range (the
-// other three derive their bounds entirely server-side).
+// fetchAnalytics pulls the Analytics tab's aggregates for the selected range and
+// scope selection. Unlike the feed/queue/status endpoints, this is fetched on
+// tab-open and control changes (debounced), not on the 10s poll, so the
+// dashboard's lean-back cadence stays off the live timer. `days` rides the wire
+// only for the `days` range (the other three derive their bounds entirely
+// server-side); `scopes` rides as a repeated `scope` param (OR semantics, slice 6)
+// and is omitted entirely when empty — the All-scopes default.
 export async function fetchAnalytics(
   range: AnalyticsRange = "today",
   days = 7,
+  scopes: string[] = [],
 ): Promise<Analytics> {
   const params = new URLSearchParams({ range });
   if (range === "days") {
     params.set("days", String(days));
+  }
+  for (const scope of scopes) {
+    params.append("scope", scope);
   }
   const resp = await fetch(`${API_BASE}/analytics?${params}`);
   if (!resp.ok) {

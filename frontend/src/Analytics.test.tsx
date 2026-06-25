@@ -22,6 +22,7 @@ const analytics = (over: Partial<Analytics> = {}): Analytics => ({
   delta_label: "vs yesterday",
   assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
   by_type: cohort(),
+  scopes: [],
   ...over,
 });
 
@@ -170,7 +171,7 @@ describe("AnalyticsPanel time picker", () => {
     render(<AnalyticsPanel />);
     await flush();
     expect(mockAnalytics).toHaveBeenCalledTimes(1);
-    expect(mockAnalytics).toHaveBeenLastCalledWith("today", expect.anything());
+    expect(mockAnalytics).toHaveBeenLastCalledWith("today", expect.anything(), []);
     // The toggle names the active range; the menu is closed until opened.
     const toggle = screen.getByTestId("range-toggle");
     expect(toggle).toHaveTextContent(/today/i);
@@ -189,7 +190,7 @@ describe("AnalyticsPanel time picker", () => {
     });
     await flush();
     expect(mockAnalytics).toHaveBeenCalledTimes(2);
-    expect(mockAnalytics).toHaveBeenLastCalledWith("week", expect.anything());
+    expect(mockAnalytics).toHaveBeenLastCalledWith("week", expect.anything(), []);
   });
 
   // A4: choosing the custom "last X days" range from the menu reveals a day-count
@@ -211,7 +212,64 @@ describe("AnalyticsPanel time picker", () => {
       vi.advanceTimersByTime(500);
     });
     await flush();
-    expect(mockAnalytics).toHaveBeenLastCalledWith("days", 14);
+    expect(mockAnalytics).toHaveBeenLastCalledWith("days", 14, []);
+  });
+});
+
+describe("AnalyticsPanel scope filter", () => {
+  // A11 (slice 6): the scope filter is a searchable multi-select populated from the
+  // all-time scope list on the response. The default is All scopes (no scope on the
+  // fetch); picking a scope re-fetches the WHOLE view filtered to it (debounced),
+  // and the toggle reflects the active selection.
+  it("filters the whole view by a scope picked from the all-time list, debounced", async () => {
+    mockAnalytics.mockResolvedValue(analytics({ scopes: ["api", "ci", "web"] }));
+
+    render(<AnalyticsPanel />);
+    await flush();
+    expect(mockAnalytics).toHaveBeenCalledTimes(1);
+    // Default is All scopes — no scope rides the fetch.
+    expect(mockAnalytics).toHaveBeenLastCalledWith("today", expect.anything(), []);
+    const toggle = screen.getByTestId("scope-toggle");
+    expect(toggle).toHaveTextContent(/all scopes/i);
+
+    fireEvent.click(toggle);
+    // The menu lists every all-time scope as a checkable option.
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /api/i }));
+    // Debounce window not yet elapsed -> still just the mount fetch.
+    expect(mockAnalytics).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    await flush();
+    expect(mockAnalytics).toHaveBeenCalledTimes(2);
+    expect(mockAnalytics).toHaveBeenLastCalledWith("today", expect.anything(), ["api"]);
+    // The toggle names the active selection rather than "All scopes".
+    expect(toggle).toHaveTextContent(/api/i);
+  });
+
+  // A11 cont.: the control is searchable (the real log holds 45+ scopes) and OR —
+  // a second pick adds to the selection, and the search box narrows the options.
+  it("searches the list and ORs multiple scopes into the fetch", async () => {
+    mockAnalytics.mockResolvedValue(analytics({ scopes: ["api", "ci", "web"] }));
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    fireEvent.click(screen.getByTestId("scope-toggle"));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /api/i }));
+    // The search box narrows the option list: "w" leaves only "web".
+    fireEvent.change(screen.getByPlaceholderText(/search scopes/i), {
+      target: { value: "w" },
+    });
+    expect(screen.queryByRole("menuitemcheckbox", { name: /^ci$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /web/i }));
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    await flush();
+    expect(mockAnalytics).toHaveBeenLastCalledWith("today", expect.anything(), ["api", "web"]);
   });
 });
 

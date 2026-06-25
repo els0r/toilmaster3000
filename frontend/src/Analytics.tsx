@@ -24,17 +24,18 @@ export function AnalyticsPanel() {
   const [data, setData] = useState<Analytics | null>(null);
   const [range, setRange] = useState<AnalyticsRange>(() => readControls().range);
   const [days, setDays] = useState<number>(() => readControls().days);
+  const [scopes, setScopes] = useState<string[]>(() => readControls().scopes);
   const firstRef = useRef(true);
 
   useEffect(() => {
-    writeControls(range, days);
+    writeControls(range, days, scopes);
     const run = () =>
-      fetchAnalytics(range, days)
+      fetchAnalytics(range, days, scopes)
         .then(setData)
         .catch(() => setData(null));
     // The first run (tab-open) fetches immediately so the dashboard paints without
-    // a delay; later runs (range / day-count edits) debounce so a burst collapses
-    // to one request.
+    // a delay; later runs (range / day-count / scope edits) debounce so a burst
+    // collapses to one request.
     if (firstRef.current) {
       firstRef.current = false;
       run();
@@ -42,7 +43,7 @@ export function AnalyticsPanel() {
     }
     const id = setTimeout(run, DEBOUNCE_MS);
     return () => clearTimeout(id);
-  }, [range, days]);
+  }, [range, days, scopes]);
 
   return (
     <section className="card analytics-card">
@@ -53,12 +54,19 @@ export function AnalyticsPanel() {
         </div>
         <div className="spacer" />
         <div className="picker-area">
-          <TimePicker
-            range={range}
-            days={days}
-            onRange={setRange}
-            onDays={setDays}
-          />
+          <div className="picker-controls">
+            <ScopeFilter
+              options={data?.scopes ?? []}
+              selected={scopes}
+              onChange={setScopes}
+            />
+            <TimePicker
+              range={range}
+              days={days}
+              onRange={setRange}
+              onDays={setDays}
+            />
+          </div>
           {/* The aligned-comparison label rides under the picker (Variant 2's
               compare slot): every headline delta measures against the same
               elapsed-aligned previous window, so it is named once (ADR 0011). */}
@@ -248,6 +256,139 @@ function TimePicker({
   );
 }
 
+// ScopeFilter is the slice-6 scope control: a searchable multi-select dropdown
+// whose options are the all-time scope list off the analytics response (stable
+// regardless of range or the scopes applied, so the menu never shifts under the
+// user). Selecting scopes ORs them into the fetch, scoping the WHOLE view; the
+// default is All scopes (no filter). Like TimePicker it is a pure controlled
+// component — the selection lives in AnalyticsPanel and the URL — and the server
+// owns the enumeration and the OR semantics; this only collects the picks.
+function ScopeFilter({
+  options,
+  selected,
+  onChange,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (scopes: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss on an outside click or Escape, mirroring the time picker, so the menu
+  // behaves like a real dropdown rather than a panel that lingers.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // toggle flips a scope in/out of the selection, preserving the option order so the
+  // wire (and the URL) stay deterministic rather than reflecting click order.
+  const toggle = (scope: string) => {
+    const next = selected.includes(scope)
+      ? selected.filter((s) => s !== scope)
+      : [...selected, scope];
+    onChange(options.filter((o) => next.includes(o)));
+  };
+
+  // The search box narrows the option list (the real log holds 45+ scopes); a
+  // case-folded substring match, so typing "w" surfaces "web".
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
+
+  // The toggle reads "All scopes" by default, the lone scope when one is picked, or
+  // "N scopes" once several are — a compact summary of the active filter.
+  const label =
+    selected.length === 0
+      ? "All scopes"
+      : selected.length === 1
+        ? selected[0]
+        : `${selected.length} scopes`;
+
+  return (
+    <div className="scope-filter" ref={rootRef}>
+      <button
+        type="button"
+        className={`scope-toggle${selected.length > 0 ? " is-active" : ""}`}
+        data-testid="scope-toggle"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <TagIcon />
+        <span className="scope-toggle-label">{label}</span>
+        <CaretIcon open={open} />
+      </button>
+
+      {open && (
+        <div className="scope-menu" role="menu" aria-label="Scope filter">
+          <input
+            type="text"
+            className="scope-search"
+            placeholder="Search scopes…"
+            aria-label="Search scopes"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {selected.length > 0 && (
+            <button
+              type="button"
+              className="scope-clear"
+              onClick={() => onChange([])}
+            >
+              Clear ({selected.length})
+            </button>
+          )}
+          <div className="scope-options">
+            {shown.length === 0 ? (
+              <p className="scope-empty">No scopes</p>
+            ) : (
+              shown.map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={selected.includes(scope)}
+                  className={`scope-option${selected.includes(scope) ? " is-checked" : ""}`}
+                  onClick={() => toggle(scope)}
+                >
+                  <span className="scope-option-check" aria-hidden="true">
+                    {selected.includes(scope) ? "✓" : ""}
+                  </span>
+                  <span className="scope-option-label">{scope}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// TagIcon dresses the scope toggle: a label/tag glyph that reads as "filter by
+// scope", paralleling the calendar glyph on the range toggle. Presentational.
+function TagIcon() {
+  return (
+    <svg className="scope-toggle-tag" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 12V4.5A1.5 1.5 0 014.5 3H12l8.5 8.5a1.5 1.5 0 010 2.1l-6.9 6.9a1.5 1.5 0 01-2.1 0L3 12z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
 // CalendarIcon and CaretIcon dress the range toggle (Variant 2): a calendar glyph
 // leads, a caret that flips when the menu is open trails. Both are presentational.
 function CalendarIcon() {
@@ -305,26 +446,37 @@ function clampDays(raw: string): number {
 const RANGES: AnalyticsRange[] = ["today", "week", "month", "days"];
 
 // readControls seeds the picker from the URL search params so a reload or a
-// pasted link restores the selected range and day count; an absent or invalid
-// value falls back to the defaults (today, 7 days).
-function readControls(): { range: AnalyticsRange; days: number } {
+// pasted link restores the selected range, day count, and scope selection; an
+// absent or invalid value falls back to the defaults (today, 7 days, All scopes).
+// Scopes ride as a CSV `scope` param, case-folded so the URL matches the wire.
+function readControls(): { range: AnalyticsRange; days: number; scopes: string[] } {
   const p = new URLSearchParams(window.location.search);
   const r = p.get("range") ?? "";
   const range = (RANGES as string[]).includes(r) ? (r as AnalyticsRange) : "today";
   const days = clampDays(p.get("days") ?? "");
-  return { range, days: p.get("days") ? days : DEFAULT_DAYS };
+  const scopes = (p.get("scope") ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return { range, days: p.get("days") ? days : DEFAULT_DAYS, scopes };
 }
 
 // writeControls reflects the current selection into the URL (replaceState, no
 // history entry), preserving the tab hash so the picker state and the hash-tab
-// routing stay orthogonal. `days` rides the URL only for the days range.
-function writeControls(range: AnalyticsRange, days: number) {
+// routing stay orthogonal. `days` rides the URL only for the days range; `scope`
+// rides as a CSV only when scopes are selected (All scopes drops the param).
+function writeControls(range: AnalyticsRange, days: number, scopes: string[]) {
   const p = new URLSearchParams(window.location.search);
   p.set("range", range);
   if (range === "days") {
     p.set("days", String(days));
   } else {
     p.delete("days");
+  }
+  if (scopes.length > 0) {
+    p.set("scope", scopes.join(","));
+  } else {
+    p.delete("scope");
   }
   const search = p.toString();
   const url = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
