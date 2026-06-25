@@ -254,9 +254,9 @@ type analyticsOutput struct {
 // snake_case wire shape is owned here (ADR 0002 / 0010).
 func settingsToBody(s settings.Settings) Assumptions {
 	return Assumptions{
-		MinutesPerSwitch: s.MinutesPerSwitch,
-		HourlyRate:       s.HourlyRate,
-		Currency:         s.Currency,
+		CostLow:  s.CostLow,
+		CostHigh: s.CostHigh,
+		Currency: s.Currency,
 	}
 }
 
@@ -264,9 +264,9 @@ func settingsToBody(s settings.Settings) Assumptions {
 // settings.Settings for a full replace (the PUT /settings path).
 func (a Assumptions) toSettings() settings.Settings {
 	return settings.Settings{
-		MinutesPerSwitch: a.MinutesPerSwitch,
-		HourlyRate:       a.HourlyRate,
-		Currency:         a.Currency,
+		CostLow:  a.CostLow,
+		CostHigh: a.CostHigh,
+		Currency: a.Currency,
 	}
 }
 
@@ -568,11 +568,11 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		prevStart, prevEnd := prevWindow(in.Range, in.Days, now)
 		prev := aggregateAnalytics(inWindow(feed, prevStart, prevEnd))
 		body := withDeltas(cur, prev, deltaLabel(in.Range, in.Days, now))
-		// Slice 4: translate the switches-saved count into time + money using the
-		// persisted assumption constants (ADR 0010), and name them on the response so
-		// the tab paints the figures and the editable chip in one fetch.
+		// Translate the switches-saved count into the money range using the persisted
+		// per-switch cost band (ADR 0012), and name the band on the response so the tab
+		// paints the figures and the pill's basis in one fetch.
 		assume := settingsToBody(set.Get())
-		body.SwitchesSavedHours, body.SwitchesSavedMoney = switchesSavedFigures(body.SwitchesSaved, assume)
+		body.SwitchesSavedMoneyLow, body.SwitchesSavedMoneyHigh = switchesSavedFigures(body.SwitchesSaved, assume)
 		body.Assumptions = assume
 		return &analyticsOutput{Body: body}, nil
 	})
@@ -592,6 +592,12 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		Path:        APIPrefix + "/settings",
 		Summary:     "Full-replace the analytics assumption constants",
 	}, func(_ context.Context, in *settingsInput) (*settingsOutput, error) {
+		// The per-field minimums (huma) keep each bound positive; the band's ordering
+		// is a cross-field invariant huma can't express, so guard it here — an inverted
+		// band would print a backwards range (ADR 0012).
+		if in.Body.CostHigh < in.Body.CostLow {
+			return nil, huma.Error422UnprocessableEntity("cost_high must be >= cost_low")
+		}
 		if err := set.Replace(in.Body.toSettings()); err != nil {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}

@@ -58,41 +58,47 @@ export function SettingsPanel() {
         <div className="card-loading">Loading settings…</div>
       ) : (
         <div className="settings-form">
-          <p className="settings-intro">
-            How the Analytics tab turns auto-approvals into the time and money the
-            robot saved. Each context switch is assumed to cost a fixed refocus
-            time, valued at your hourly rate.
+          <p className="settings-intro" data-testid="settings-intro">
+            Every PR the robot auto-approves is one code review you didn't
+            context-switch into. Zurich developer research values a meaningful
+            flow-breaking switch at a wide band, not a single number, so the
+            Analytics money figure is shown as a <strong>range</strong>: your
+            saved-switch count times the per-switch band below. The low end is a
+            brief <strong>~10-min refocus at gross salary</strong> (≈ CHF 10); the
+            high end is a full <strong>23-min flow break at loaded employer
+            cost</strong> (≈ CHF 26). See the README's “What a saved switch is
+            worth” for the full derivation — tune the band to your own numbers.
           </p>
 
           <div className="field-grid">
             <label className="field">
-              <span className="field-label">Minutes per switch</span>
+              <span className="field-label">Low estimate / switch</span>
               <input
                 type="number"
                 min={1}
                 className="tnum"
-                aria-label="minutes per switch"
-                value={draft.minutes_per_switch}
+                aria-label="low estimate per switch"
+                value={draft.cost_low}
                 onChange={(e) =>
-                  patch({ minutes_per_switch: clampInt(e.target.value, 1) })
+                  patch({ cost_low: clampInt(e.target.value, 1) })
                 }
               />
-              <span className="field-sub">refocus cost of one interruption (default 23)</span>
+              <span className="field-sub">conservative: ~10-min refocus at gross salary (default 10)</span>
             </label>
 
             <label className="field">
-              <span className="field-label">Hourly rate</span>
+              <span className="field-label">High estimate / switch</span>
               <input
                 type="number"
-                min={0}
+                min={1}
                 className="tnum"
-                aria-label="hourly rate"
-                value={draft.hourly_rate}
+                aria-label="high estimate per switch"
+                value={draft.cost_high}
                 onChange={(e) =>
-                  patch({ hourly_rate: clampInt(e.target.value, 0) })
+                  patch({ cost_high: clampInt(e.target.value, 1) })
                 }
               />
-              <span className="field-sub">your time's value, applied to the hours saved</span>
+              <span className="field-sub">a full 23-min flow break at loaded cost (default 26)</span>
             </label>
 
             <label className="field">
@@ -118,7 +124,11 @@ export function SettingsPanel() {
             <button
               type="button"
               className="btn-save"
-              disabled={saving || draft.currency.trim() === ""}
+              disabled={
+                saving ||
+                draft.currency.trim() === "" ||
+                draft.cost_high < draft.cost_low
+              }
               onClick={save}
             >
               {saving ? "Saving…" : "Save"}

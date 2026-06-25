@@ -179,9 +179,9 @@ export interface components {
             switches_saved: number;
             switches_saved_delta: components["schemas"]["Delta"];
             /** Format: double */
-            switches_saved_hours: number;
+            switches_saved_money_high: number;
             /** Format: double */
-            switches_saved_money: number;
+            switches_saved_money_low: number;
             switches_saved_series: number[] | null;
         };
         Approval: {
@@ -205,18 +205,18 @@ export interface components {
              * @example https://example.com/schemas/Assumptions.json
              */
             readonly $schema?: string;
-            /** @description Symbol prefixed onto the money figure (seeded "$") */
+            /**
+             * Format: int64
+             * @description High CHF estimate of one saved context switch (seeded 26: 23-min flow break at loaded cost)
+             */
+            cost_high: number;
+            /**
+             * Format: int64
+             * @description Low CHF estimate of one saved context switch (seeded 10: ~10-min refocus at gross salary)
+             */
+            cost_low: number;
+            /** @description Symbol prefixed onto the money figure (seeded "CHF") */
             currency: string;
-            /**
-             * Format: int64
-             * @description The user's hourly rate, applied to the time saved (seeded 100)
-             */
-            hourly_rate: number;
-            /**
-             * Format: int64
-             * @description Minutes a single context switch costs (seeded 23)
-             */
-            minutes_per_switch: number;
         };
         CycleStatus: {
             /**

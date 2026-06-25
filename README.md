@@ -49,6 +49,28 @@ The UI is two tabs under a "heartbeat" status strip:
 There is no database, no service account, and no network surface beyond the `gh`
 calls: it shells out to the `gh` CLI and reuses your existing auth.
 
+## What a saved switch is worth
+
+The Analytics tab counts the reviews the robot spared you — each auto-approval is
+one PR you didn't have to context-switch into — and prices that count in money.
+Because the cost of a single interruption is a *wide distribution*, not a point,
+the figure is shown as a **range**: your saved-switch count times a per-switch
+cost band.
+
+The band is seeded from [Zurich developer cost-switch
+research](docs/research/2026-06-25-context-switch-cost-zurich-developer.md):
+
+| Bound | Default | Basis |
+|---|---|---|
+| Low | **CHF 10** | a brief ~10-min refocus valued at gross salary (≈ CHF 1.00/min) |
+| High | **CHF 26** | a full 23-min flow break valued at loaded employer cost (≈ CHF 1.15/min) |
+
+So 57 saved switches reads **CHF 570 – CHF 1486**. The band (and the currency) are
+editable in the **Settings** tab — tune them to your own salary and how deep a PR
+review actually pulls you out of flow. The Settings copy summarises this table;
+the bounds persist to `.config/settings.yaml` (a file written under the old
+point-estimate schema is migrated to these defaults on first load).
+
 ## How to run
 
 You need the [`gh` CLI](https://cli.github.com) installed and authenticated

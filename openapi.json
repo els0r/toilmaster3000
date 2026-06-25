@@ -32,11 +32,11 @@
           "switches_saved_delta": {
             "$ref": "#/components/schemas/Delta"
           },
-          "switches_saved_hours": {
+          "switches_saved_money_high": {
             "format": "double",
             "type": "number"
           },
-          "switches_saved_money": {
+          "switches_saved_money_low": {
             "format": "double",
             "type": "number"
           },
@@ -56,8 +56,8 @@
           "human_review",
           "switches_saved",
           "switches_saved_series",
-          "switches_saved_hours",
-          "switches_saved_money",
+          "switches_saved_money_low",
+          "switches_saved_money_high",
           "switches_saved_delta",
           "delta_label",
           "assumptions"
@@ -128,27 +128,27 @@
             "readOnly": true,
             "type": "string"
           },
-          "currency": {
-            "description": "Symbol prefixed onto the money figure (seeded \"$\")",
-            "minLength": 1,
-            "type": "string"
-          },
-          "hourly_rate": {
-            "description": "The user's hourly rate, applied to the time saved (seeded 100)",
-            "format": "int64",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "minutes_per_switch": {
-            "description": "Minutes a single context switch costs (seeded 23)",
+          "cost_high": {
+            "description": "High CHF estimate of one saved context switch (seeded 26: 23-min flow break at loaded cost)",
             "format": "int64",
             "minimum": 1,
             "type": "integer"
+          },
+          "cost_low": {
+            "description": "Low CHF estimate of one saved context switch (seeded 10: ~10-min refocus at gross salary)",
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "currency": {
+            "description": "Symbol prefixed onto the money figure (seeded \"CHF\")",
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
-          "minutes_per_switch",
-          "hourly_rate",
+          "cost_low",
+          "cost_high",
           "currency"
         ],
         "type": "object"

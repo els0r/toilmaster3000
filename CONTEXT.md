@@ -367,11 +367,16 @@ Three headline stats for the selected range (+ scope filter), each with a delta:
 - **Context switches saved** — *the headline value*. **`count = the Auto-approved
   count`** (each auto-approval is one interruption the human did not take; a Human
   Review approval is a switch the human *did* take, so it is **not** saved). Shown
-  three ways from the settings constants: the raw count, **time** =
-  `count × MinutesPerSwitch / 60` hours, and **money** = `hours × HourlyRate`
-  (prefixed with `Currency`). The two constants are shown inline as the
-  **assumption chip** (`× 23 min · $100/hr`), which is **clickable** → a popover
-  edits them (see Settings).
+  two ways: the raw count, and **money as a range** = `count × [CostLow, CostHigh]`
+  (prefixed with `Currency`) — a low/high band, never a single point, because the
+  per-switch cost is a wide distribution, not a number (see the Zurich research).
+  The band is rendered as the **money pill**: the count-scaled `CHF570 – CHF1486`
+  on top with the per-switch basis `CHF10–26 / switch` beneath; an empty range
+  collapses to a single `CHF0`. The per-switch constants are **not** edited here —
+  the pill is read-only; they live in the Settings tab. *There is no time/hours
+  figure:* dropping the single hourly-rate (for a direct per-switch franc band)
+  detached money from an `hours × rate` chain, so the "X.Xh saved" line is gone and
+  money stands alone.
 
 ### By-Type cohort
 A breakdown of the range's approvals **by conventional-commit type**. The type axis
@@ -523,7 +528,7 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 | `GET` | `/api/toilmaster3000/v1/queue` | Needs-Human-Review items (derived live) |
 | `POST` | `/api/toilmaster3000/v1/queue/{number}/approve` | manual override approve |
 | `GET` | `/api/toilmaster3000/v1/analytics` | approval-history aggregates for a range (+ scope filter): totals, shares, switches-saved, by-type cohort, elapsed-aligned deltas, all-time scope list. Query: `range=today\|week\|month\|days`, `days=N` (for `days`), `scope=a,b` (repeatable/CSV) |
-| `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `minutes_per_switch`, `hourly_rate`, `currency` |
+| `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `cost_low`, `cost_high` (CHF per saved switch), `currency` |
 | `PUT` | `/api/toilmaster3000/v1/settings` | update the constants (full replace) |
 | `GET` | `/api/toilmaster3000/v1/rules` | list rules |
 | `POST` | `/api/toilmaster3000/v1/rules` | create a rule |
@@ -555,10 +560,14 @@ Repo is self-contained (will be relocated later). Layout:
   `{ number, title, author, url, matched_rule, approved_at }`.
 - **`.config/settings.yaml`** — the analytics assumption constants, the **first
   non-rule persisted state** in tm3k. PascalCase YAML (matching `rules.yaml`):
-  `MinutesPerSwitch: 23`, `HourlyRate: 100`, `Currency: "$"`. Loaded at startup,
-  rewritten on `PUT /settings`. Seeded with those defaults on first run (no file).
-  Drives the Context-switches-saved time/money figures and the editable assumption
-  chip (see Analytics).
+  `CostLow: 10`, `CostHigh: 26`, `Currency: "CHF"` — the low/high CHF cost of one
+  saved context switch (Zurich research: `10 min × CHF1.00/min gross` …
+  `23 min × CHF1.15/min loaded`). Loaded at startup, rewritten on `PUT /settings`,
+  seeded with those defaults on first run. **Self-healing migration:** a file
+  missing the cost keys (the pre-range `MinutesPerSwitch`/`HourlyRate` schema, or a
+  zeroed file) is reseeded to the full defaults on load, so the headline can never
+  come back `CHF0 – CHF0`. Drives the Context-switches-saved **money range** (see
+  Analytics); the constants are edited only in the Settings tab.
 - **Seeding (rules):** on first run (no `.config/rules.yaml`), write two starter
   default rules (both enabled) as editable examples, so the tool does something
   sensible out of the box:

@@ -175,15 +175,15 @@ type Analytics struct {
 	// but rides as a flat sibling so the renderer needn't re-derive "switches == auto"
 	// to draw its trend, mirroring how SwitchesSaved and SwitchesSavedDelta are flat.
 	SwitchesSavedSeries []int `json:"switches_saved_series"`
-	// SwitchesSavedHours and SwitchesSavedMoney are the slice-4 derived figures from
-	// the settings assumption constants (ADR 0010): hours = count × MinutesPerSwitch
-	// / 60, money = hours × HourlyRate. They ride alongside the count as flat
-	// siblings (like SwitchesSavedDelta) because switches-saved has no Stat share.
-	// The server owns the arithmetic; the frontend formats (currency prefix from
-	// Assumptions.Currency), mirroring how Stat.Share is a fraction formatted client-
-	// side.
-	SwitchesSavedHours float64 `json:"switches_saved_hours"`
-	SwitchesSavedMoney float64 `json:"switches_saved_money"`
+	// SwitchesSavedMoneyLow and SwitchesSavedMoneyHigh are the money headline as a
+	// low/high range derived from the per-switch cost band (ADR 0012): low = count ×
+	// CostLow, high = count × CostHigh. They ride alongside the count as flat siblings
+	// (like SwitchesSavedDelta) because switches-saved has no Stat share. The server
+	// owns the arithmetic; the frontend formats (currency prefix from
+	// Assumptions.Currency) and collapses an equal low==high pair to a single figure.
+	// There is no hours figure — money no longer flows through hours × rate.
+	SwitchesSavedMoneyLow  float64 `json:"switches_saved_money_low"`
+	SwitchesSavedMoneyHigh float64 `json:"switches_saved_money_high"`
 	// SwitchesSavedDelta is the elapsed-aligned period-over-period change of the
 	// switches-saved count (slice 3). It rides alongside the count rather than inside
 	// a Stat because switches-saved has no share — and the renderer should not have
@@ -201,28 +201,31 @@ type Analytics struct {
 	Assumptions Assumptions `json:"assumptions"`
 }
 
-// Assumptions is the wire shape of the analytics assumption constants (ADR 0010):
-// the settings store's three values at the HTTP boundary, snake_case per the
-// project's single-convention rule. It is the GET/PUT /settings body AND the
-// read-only block on the Analytics response that names the basis of the derived
-// figures and feeds the assumption chip. The huma minimums reject nonsensical
-// edits structurally on the PUT path (a zero MinutesPerSwitch would zero the very
-// headline the feature exists to deliver).
+// Assumptions is the wire shape of the analytics assumption constants (ADR 0010,
+// money model revised by ADR 0012): the settings store's per-switch cost band at
+// the HTTP boundary, snake_case per the project's single-convention rule. It is
+// the GET/PUT /settings body AND the read-only block on the Analytics response
+// that names the basis of the money range and feeds the pill's per-switch basis
+// sub-label. The huma minimums reject nonsensical edits structurally on the PUT
+// path (a zero bound would zero the very headline the feature exists to deliver);
+// the cross-field CostHigh >= CostLow check the minimums can't express is enforced
+// in the handler.
 type Assumptions struct {
-	MinutesPerSwitch int    `json:"minutes_per_switch" minimum:"1" doc:"Minutes a single context switch costs (seeded 23)"`
-	HourlyRate       int    `json:"hourly_rate" minimum:"0" doc:"The user's hourly rate, applied to the time saved (seeded 100)"`
-	Currency         string `json:"currency" minLength:"1" doc:"Symbol prefixed onto the money figure (seeded \"$\")"`
+	CostLow  int    `json:"cost_low" minimum:"1" doc:"Low CHF estimate of one saved context switch (seeded 10: ~10-min refocus at gross salary)"`
+	CostHigh int    `json:"cost_high" minimum:"1" doc:"High CHF estimate of one saved context switch (seeded 26: 23-min flow break at loaded cost)"`
+	Currency string `json:"currency" minLength:"1" doc:"Symbol prefixed onto the money figure (seeded \"CHF\")"`
 }
 
-// switchesSavedFigures derives the slice-4 time and money headlines from the
-// switches-saved count and the assumption constants (ADR 0010): hours = count ×
-// MinutesPerSwitch / 60, money = hours × HourlyRate. A zero count (empty range)
-// yields zero of both. This is the pure, table-tested arithmetic; the handler
-// reads the constants from the settings store and the frontend formats the result.
-func switchesSavedFigures(count int, a Assumptions) (hours, money float64) {
-	hours = float64(count) * float64(a.MinutesPerSwitch) / 60
-	money = hours * float64(a.HourlyRate)
-	return hours, money
+// switchesSavedFigures derives the money headline as a low/high range from the
+// switches-saved count and the per-switch cost band (ADR 0012): moneyLow = count ×
+// CostLow, moneyHigh = count × CostHigh. A zero count (empty range) yields zero of
+// both, which the frontend collapses to a single CHF0. This is the pure,
+// table-tested arithmetic; the handler reads the band from the settings store and
+// the frontend formats and prefixes the currency.
+func switchesSavedFigures(count int, a Assumptions) (moneyLow, moneyHigh float64) {
+	moneyLow = float64(count) * float64(a.CostLow)
+	moneyHigh = float64(count) * float64(a.CostHigh)
+	return moneyLow, moneyHigh
 }
 
 // The three delta states (ADR 0011). They keep the zero-baseline cases off the

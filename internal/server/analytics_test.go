@@ -168,32 +168,31 @@ func TestDeltaLabel(t *testing.T) {
 	}
 }
 
-// TestSwitchesSavedFigures covers the slice-4 time/money arithmetic (ADR 0010):
-// time = count × MinutesPerSwitch / 60 hours, money = hours × HourlyRate. The
-// cases pin the conversion (incl. a fractional hour), the zero-count empty range,
-// and that the rate scales money but not hours.
+// TestSwitchesSavedFigures covers the money-range arithmetic (ADR 0012): the
+// headline is the band [CostLow, CostHigh] × the saved-switch count, never a
+// single point. The cases pin the default band against the research-anchored
+// readout (57 switches → CHF570 – CHF1486), the zero-count empty range (a CHF0 –
+// CHF0 collapse), and that a wider band widens the spread proportionally.
 func TestSwitchesSavedFigures(t *testing.T) {
 	tests := []struct {
-		name      string
-		count     int
-		assume    Assumptions
-		wantHours float64
-		wantMoney float64
+		name     string
+		count    int
+		assume   Assumptions
+		wantLow  float64
+		wantHigh float64
 	}{
-		{"defaults: 60 switches × 23 min = 23h at $100/hr",
-			60, Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, 23, 2300},
-		{"fractional hour: 30 × 23 min = 11.5h",
-			30, Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, 11.5, 1150},
-		{"empty range: zero count is zero time and money",
-			0, Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, 0, 0},
-		{"rate scales money, not hours",
-			60, Assumptions{MinutesPerSwitch: 60, HourlyRate: 200, Currency: "$"}, 60, 12000},
+		{"default band: 57 switches × CHF10–26 = CHF570 – CHF1482",
+			57, Assumptions{CostLow: 10, CostHigh: 26, Currency: "CHF"}, 570, 1482},
+		{"empty range: zero count collapses to CHF0 – CHF0",
+			0, Assumptions{CostLow: 10, CostHigh: 26, Currency: "CHF"}, 0, 0},
+		{"wider band widens the spread: 50 × CHF7–30 = CHF350 – CHF1500",
+			50, Assumptions{CostLow: 7, CostHigh: 30, Currency: "CHF"}, 350, 1500},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			hours, money := switchesSavedFigures(tc.count, tc.assume)
-			require.InDelta(t, tc.wantHours, hours, 1e-9)
-			require.InDelta(t, tc.wantMoney, money, 1e-9)
+			low, high := switchesSavedFigures(tc.count, tc.assume)
+			require.InDelta(t, tc.wantLow, low, 1e-9)
+			require.InDelta(t, tc.wantHigh, high, 1e-9)
 		})
 	}
 }

@@ -1,5 +1,12 @@
 # A settings store for the analytics assumption constants
 
+> **Superseded in part by [ADR 0012](0012-switches-saved-money-as-a-range.md).**
+> The store, its `.config/settings.yaml` home, and the GET/PUT-full-replace shape
+> below still stand. The *money model* does not: `MinutesPerSwitch`/`HourlyRate`
+> and the `hours × rate` formula were replaced by a per-switch `CostLow`/`CostHigh`
+> **range**, and the time figure was dropped. Read this for the store rationale,
+> 0012 for the current constants.
+
 ## Context
 
 The Analytics "Context switches saved" headline translates the auto-approved count

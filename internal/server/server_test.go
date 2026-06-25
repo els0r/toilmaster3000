@@ -2028,12 +2028,12 @@ func TestAnalyticsEmptyRangeAllZeros(t *testing.T) {
 	require.Equal(t, "none", got.SwitchesSavedDelta.State)
 }
 
-// --- Slice 4: settings store + switches-saved time/money ---
+// --- Slice 4: settings store + switches-saved money range ---
 
-// AN5 (slice 4, tracer): GET /settings returns the seeded assumption constants
-// (snake_case wire, ADR 0010); PUT /settings full-replaces them, the change
-// persists to disk (a second store over the same file reads the new values), and
-// a subsequent GET returns the replacement.
+// AN5 (tracer): GET /settings returns the seeded per-switch cost band (snake_case
+// wire, ADR 0012); PUT /settings full-replaces it, the change persists to disk (a
+// second store over the same file reads the new values), and a subsequent GET
+// returns the replacement.
 func TestSettingsGetPutRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.yaml")
 	set, err := settings.NewStore(path)
@@ -2043,10 +2043,10 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	// GET returns the seeded defaults in snake_case.
 	var got server.Assumptions
 	getJSON(t, srv.URL+apiPrefix+"/settings", &got)
-	require.Equal(t, server.Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, got)
+	require.Equal(t, server.Assumptions{CostLow: 10, CostHigh: 26, Currency: "CHF"}, got)
 
 	// PUT full-replaces.
-	next := server.Assumptions{MinutesPerSwitch: 45, HourlyRate: 200, Currency: "£"}
+	next := server.Assumptions{CostLow: 12, CostHigh: 40, Currency: "£"}
 	var put server.Assumptions
 	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings", next, &put)
 	require.Equal(t, http.StatusOK, code)
@@ -2055,8 +2055,8 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	// It persisted to disk: a fresh store over the same file reads the new values.
 	reloaded, err := settings.NewStore(path)
 	require.NoError(t, err)
-	require.Equal(t, 45, reloaded.Get().MinutesPerSwitch)
-	require.Equal(t, 200, reloaded.Get().HourlyRate)
+	require.Equal(t, 12, reloaded.Get().CostLow)
+	require.Equal(t, 40, reloaded.Get().CostHigh)
 	require.Equal(t, "£", reloaded.Get().Currency)
 
 	// And a subsequent GET serves it.
@@ -2064,19 +2064,18 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	require.Equal(t, next, got)
 }
 
-// AN5b (slice 4): the wire is snake_case (the contract the generated frontend
-// types track).
+// AN5b: the wire is snake_case (the contract the generated frontend types track).
 func TestSettingsWireIsSnakeCase(t *testing.T) {
 	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), defaultSettings(t))
 	var raw map[string]any
 	getJSON(t, srv.URL+apiPrefix+"/settings", &raw)
-	require.Contains(t, raw, "minutes_per_switch")
-	require.Contains(t, raw, "hourly_rate")
+	require.Contains(t, raw, "cost_low")
+	require.Contains(t, raw, "cost_high")
 	require.Contains(t, raw, "currency")
 }
 
-// AN5c (slice 4): a structurally-invalid PUT (zero MinutesPerSwitch would zero the
-// very headline) is rejected by huma's minimum, never persisted, never a 200.
+// AN5c: a structurally-invalid PUT (a zero bound would zero the very headline) is
+// rejected by huma's minimum, never persisted, never a 200.
 func TestSettingsPutValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.yaml")
 	set, err := settings.NewStore(path)
@@ -2084,18 +2083,35 @@ func TestSettingsPutValidation(t *testing.T) {
 	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
 
 	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings",
-		map[string]any{"minutes_per_switch": 0, "hourly_rate": 100, "currency": "$"}, nil)
+		map[string]any{"cost_low": 0, "cost_high": 26, "currency": "CHF"}, nil)
 	require.GreaterOrEqual(t, code, 400)
 	require.Less(t, code, 500)
-	require.Equal(t, 23, set.Get().MinutesPerSwitch, "rejected PUT did not mutate the store")
+	require.Equal(t, 10, set.Get().CostLow, "rejected PUT did not mutate the store")
 }
 
-// AN6 (slice 4): the analytics response carries the switches-saved time/money
-// figures derived from the settings constants (ADR 0010): hours = count ×
-// MinutesPerSwitch / 60, money = hours × HourlyRate, plus the assumptions block
-// that feeds the chip. Editing the constants (PUT /settings) recomputes the
-// figures on the next fetch — no restart.
-func TestAnalyticsSwitchesSavedTimeAndMoney(t *testing.T) {
+// AN5d (Slice E tracer): an inverted band (cost_high < cost_low) passes huma's
+// per-field minimums but is nonsensical — the high bound below the low would print
+// a backwards range. The cross-field guard huma can't express rejects it in the
+// handler (4xx), and the store is untouched.
+func TestSettingsPutRejectsInvertedBand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.yaml")
+	set, err := settings.NewStore(path)
+	require.NoError(t, err)
+	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
+
+	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings",
+		server.Assumptions{CostLow: 30, CostHigh: 10, Currency: "CHF"}, nil)
+	require.GreaterOrEqual(t, code, 400)
+	require.Less(t, code, 500)
+	require.Equal(t, 10, set.Get().CostLow, "rejected PUT did not mutate the store")
+	require.Equal(t, 26, set.Get().CostHigh)
+}
+
+// AN6: the analytics response carries the switches-saved money as a low/high range
+// derived from the per-switch cost band (ADR 0012): low = count × CostLow, high =
+// count × CostHigh, plus the assumptions block that feeds the pill's basis. Editing
+// the band (PUT /settings) recomputes the range on the next fetch — no restart.
+func TestAnalyticsSwitchesSavedMoneyRange(t *testing.T) {
 	now := time.Now()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	// Two auto approvals today -> switches_saved = 2.
@@ -2115,19 +2131,19 @@ func TestAnalyticsSwitchesSavedTimeAndMoney(t *testing.T) {
 	var got server.Analytics
 	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
 	require.Equal(t, 2, got.SwitchesSaved)
-	// 2 × 23 min / 60 = 0.7666… h; × $100 = $76.66…
-	require.InDelta(t, 2.0*23/60, got.SwitchesSavedHours, 1e-9, "hours from the seeded MinutesPerSwitch")
-	require.InDelta(t, (2.0*23/60)*100, got.SwitchesSavedMoney, 1e-9, "money from the seeded HourlyRate")
-	require.Equal(t, server.Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, got.Assumptions,
-		"the figures name the constants they were computed from (the chip)")
+	// 2 × CHF10 = CHF20 low, 2 × CHF26 = CHF52 high.
+	require.InDelta(t, 2.0*10, got.SwitchesSavedMoneyLow, 1e-9, "low from the seeded CostLow")
+	require.InDelta(t, 2.0*26, got.SwitchesSavedMoneyHigh, 1e-9, "high from the seeded CostHigh")
+	require.Equal(t, server.Assumptions{CostLow: 10, CostHigh: 26, Currency: "CHF"}, got.Assumptions,
+		"the figures name the band they were computed from (the pill basis)")
 
-	// Edit the constants, then re-fetch: the figures recompute without a restart.
+	// Edit the band, then re-fetch: the range recomputes without a restart.
 	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings",
-		server.Assumptions{MinutesPerSwitch: 30, HourlyRate: 200, Currency: "$"}, nil)
+		server.Assumptions{CostLow: 30, CostHigh: 50, Currency: "CHF"}, nil)
 	require.Equal(t, http.StatusOK, code)
 
 	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
-	require.InDelta(t, 2.0*30/60, got.SwitchesSavedHours, 1e-9, "hours recompute from the edited constant")
-	require.InDelta(t, (2.0*30/60)*200, got.SwitchesSavedMoney, 1e-9, "money recomputes from the edited rate")
-	require.Equal(t, 30, got.Assumptions.MinutesPerSwitch, "the chip reflects the edit")
+	require.InDelta(t, 2.0*30, got.SwitchesSavedMoneyLow, 1e-9, "low recomputes from the edited band")
+	require.InDelta(t, 2.0*50, got.SwitchesSavedMoneyHigh, 1e-9, "high recomputes from the edited band")
+	require.Equal(t, 30, got.Assumptions.CostLow, "the pill basis reflects the edit")
 }

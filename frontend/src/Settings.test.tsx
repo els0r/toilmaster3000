@@ -13,9 +13,9 @@ const mockFetch = vi.mocked(fetchSettings);
 const mockUpdate = vi.mocked(updateSettings);
 
 const settings = (over: Partial<Settings> = {}): Settings => ({
-  minutes_per_switch: 23,
-  hourly_rate: 100,
-  currency: "$",
+  cost_low: 10,
+  cost_high: 26,
+  currency: "CHF",
   ...over,
 });
 
@@ -32,34 +32,47 @@ async function flush() {
 }
 
 describe("SettingsPanel", () => {
-  // S1: the panel loads the persisted constants and seeds the form with them, so
-  // the editor opens on the user's current assumptions (not blank/defaults).
-  it("loads and renders the persisted assumption constants", async () => {
-    mockFetch.mockResolvedValue(settings({ minutes_per_switch: 30, hourly_rate: 150, currency: "€" }));
+  // S1: the panel loads the persisted band and seeds the form with it, so the
+  // editor opens on the user's current assumptions (not blank/defaults).
+  it("loads and renders the persisted cost band", async () => {
+    mockFetch.mockResolvedValue(settings({ cost_low: 7, cost_high: 30, currency: "€" }));
 
     render(<SettingsPanel />);
     await flush();
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText(/minutes per switch/i)).toHaveValue(30);
-    expect(screen.getByLabelText(/hourly rate/i)).toHaveValue(150);
+    expect(screen.getByLabelText(/low estimate/i)).toHaveValue(7);
+    expect(screen.getByLabelText(/high estimate/i)).toHaveValue(30);
     expect(screen.getByLabelText(/currency/i)).toHaveValue("€");
+  });
+
+  // S1b: the panel explains the mechanics (per the README) — what a saved switch
+  // is worth and where the band's ends come from — so the figure is legible.
+  it("explains the per-switch cost mechanics", async () => {
+    mockFetch.mockResolvedValue(settings());
+
+    render(<SettingsPanel />);
+    await flush();
+
+    const intro = screen.getByTestId("settings-intro");
+    expect(intro).toHaveTextContent(/context.?switch/i);
+    expect(intro).toHaveTextContent(/loaded/i);
   });
 
   // S2: editing the three fields — including the currency — and saving persists
   // the full replacement through updateSettings.
   it("edits all three constants (incl. currency) and saves them", async () => {
     mockFetch.mockResolvedValue(settings());
-    mockUpdate.mockResolvedValue(settings({ minutes_per_switch: 45, hourly_rate: 200, currency: "£" }));
+    mockUpdate.mockResolvedValue(settings({ cost_low: 12, cost_high: 40, currency: "£" }));
 
     render(<SettingsPanel />);
     await flush();
 
-    fireEvent.change(screen.getByLabelText(/minutes per switch/i), {
-      target: { value: "45" },
+    fireEvent.change(screen.getByLabelText(/low estimate/i), {
+      target: { value: "12" },
     });
-    fireEvent.change(screen.getByLabelText(/hourly rate/i), {
-      target: { value: "200" },
+    fireEvent.change(screen.getByLabelText(/high estimate/i), {
+      target: { value: "40" },
     });
     fireEvent.change(screen.getByLabelText(/currency/i), {
       target: { value: "£" },
@@ -68,8 +81,8 @@ describe("SettingsPanel", () => {
     await flush();
 
     expect(mockUpdate).toHaveBeenCalledWith({
-      minutes_per_switch: 45,
-      hourly_rate: 200,
+      cost_low: 12,
+      cost_high: 40,
       currency: "£",
     });
   });

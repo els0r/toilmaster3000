@@ -94,8 +94,8 @@ export function AnalyticsPanel() {
             sparkTestid="sparkline-switches-saved"
             label="Context switches saved"
             count={data.switches_saved}
-            hours={data.switches_saved_hours}
-            money={data.switches_saved_money}
+            moneyLow={data.switches_saved_money_low}
+            moneyHigh={data.switches_saved_money_high}
             assumptions={data.assumptions}
             delta={data.switches_saved_delta}
             series={data.switches_saved_series}
@@ -333,18 +333,18 @@ function SplitStat({
 
 // Stat is the Context-switches-saved headline: the raw count (= the auto-approved
 // count; a Human Review approval is a switch the human DID take, so it is not
-// saved) translated into the time and money it represents (slice 4, ADR 0010).
-// The server owns the arithmetic; this renders the hours saved and the money as a
-// read-only pill that surfaces the assumptions behind it, plus the same period
-// delta as the other headlines. Editing the assumptions lives in the Settings
-// tab, so the Analytics surface stays pure presentation.
+// saved) translated into the money it represents as a low/high range (ADR 0012).
+// The server owns the arithmetic; this renders the count and the money range as a
+// read-only pill that surfaces the per-switch band behind it, plus the same period
+// delta as the other headlines. There is no hours figure — money no longer flows
+// through hours × rate. Editing the band lives in the Settings tab.
 function Stat({
   testid,
   sparkTestid,
   label,
   count,
-  hours,
-  money,
+  moneyLow,
+  moneyHigh,
   assumptions,
   delta,
   series,
@@ -353,8 +353,8 @@ function Stat({
   sparkTestid: string;
   label: string;
   count: number;
-  hours: number;
-  money: number;
+  moneyLow: number;
+  moneyHigh: number;
   assumptions: Settings;
   delta: Delta;
   series: number[] | null;
@@ -370,49 +370,48 @@ function Stat({
       </div>
       <Sparkline series={series} testid={sparkTestid} />
       <div className="stat-tile-foot">
-        <span className="stat-figures tnum">{formatHours(hours)} saved</span>
-        <MoneyPill money={money} assumptions={assumptions} />
+        <MoneyPill low={moneyLow} high={moneyHigh} assumptions={assumptions} />
       </div>
     </div>
   );
 }
 
-// MoneyPill renders the money headline as a pill that also carries the assumptions
-// it was computed from ("× 23 min · $100/hr"), so the figure reads honestly
-// without a separate chip. It is read-only — the constants are edited in the
+// MoneyPill renders the money headline as a low/high range pill over its per-switch
+// basis ("CHF10–26 / switch"), so the figure reads honestly without a separate chip
+// (ADR 0012). An empty range (low == high == 0) collapses to a single CHF0 rather
+// than a backwards "CHF0 – CHF0". It is read-only — the band is edited in the
 // Settings tab — and a title repeats the basis as a full sentence on hover.
 function MoneyPill({
-  money,
+  low,
+  high,
   assumptions,
 }: {
-  money: number;
+  low: number;
+  high: number;
   assumptions: Settings;
 }) {
+  const { cost_low, cost_high, currency } = assumptions;
+  const amount =
+    Math.round(low) === Math.round(high)
+      ? formatMoney(low, currency)
+      : `${formatMoney(low, currency)} – ${formatMoney(high, currency)}`;
   return (
     <span
       className="money-pill"
       data-testid="switches-money-pill"
-      title={`Assuming ${assumptions.minutes_per_switch} min per context switch at ${assumptions.currency}${assumptions.hourly_rate}/hr`}
+      title={`Each avoided review ≈ one context switch worth ${currency}${cost_low}–${cost_high} (a ~10-min refocus up to a 23-min flow break); the range scales that band by the saved-switch count`}
     >
-      <span className="money-pill-amount tnum">
-        {formatMoney(money, assumptions.currency)}
-      </span>
+      <span className="money-pill-amount tnum">{amount}</span>
       <span className="money-pill-basis tnum">
-        {assumptions.minutes_per_switch} min/switch · {assumptions.currency}
-        {assumptions.hourly_rate}/hr
+        {currency}
+        {cost_low}–{cost_high} / switch
       </span>
     </span>
   );
 }
 
-// formatHours renders the derived time to one decimal hour (e.g. 1.15 -> "1.2h"),
-// the lean-back precision the dashboard wants — the server owns the arithmetic.
-function formatHours(hours: number): string {
-  return `${hours.toFixed(1)}h`;
-}
-
 // formatMoney prefixes the currency symbol onto the money figure rounded to whole
-// units (e.g. 115 with "$" -> "$115"); the server computes the amount, the
+// units (e.g. 115 with "CHF" -> "CHF115"); the server computes the amount, the
 // frontend formats it (mirroring how Stat.Share is a fraction formatted here).
 function formatMoney(money: number, currency: string): string {
   return `${currency}${Math.round(money)}`;

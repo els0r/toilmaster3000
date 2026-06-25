@@ -69,11 +69,11 @@ export async function fetchAnalytics(
 }
 
 // Settings is the analytics assumption constants (generated from the backend's
-// Assumptions DTO): minutes_per_switch, hourly_rate, and currency (ADR 0010).
-// They drive the switches-saved time/money figures and are shown inline as the
-// editable assumption chip. The same shape rides on the Analytics response's
-// `assumptions` block, so the chip paints from the analytics fetch and is edited
-// through updateSettings (PUT /settings).
+// Assumptions DTO): the per-switch cost band cost_low / cost_high and currency
+// (ADR 0012). They drive the switches-saved money range and are surfaced as the
+// money pill's read-only per-switch basis. The same shape rides on the Analytics
+// response's `assumptions` block, so the pill paints from the analytics fetch and
+// is edited through updateSettings (PUT /settings).
 export type Settings = components["schemas"]["Assumptions"];
 
 // fetchSettings reads the persisted assumption constants for the Settings tab's

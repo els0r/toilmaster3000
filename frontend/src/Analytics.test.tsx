@@ -16,11 +16,11 @@ const analytics = (over: Partial<Analytics> = {}): Analytics => ({
   human_review: { count: 1, share: 0.25, delta: { pct: 0, state: "none" }, series: [0, 1] },
   switches_saved: 3,
   switches_saved_series: [1, 2],
-  switches_saved_hours: 1.2,
-  switches_saved_money: 115,
+  switches_saved_money_low: 30,
+  switches_saved_money_high: 78,
   switches_saved_delta: { pct: 0, state: "none" },
   delta_label: "vs yesterday",
-  assumptions: { minutes_per_switch: 23, hourly_rate: 100, currency: "$" },
+  assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
   ...over,
 });
 
@@ -223,16 +223,16 @@ describe("AnalyticsPanel sparklines", () => {
   });
 });
 
-describe("AnalyticsPanel switches-saved time & money", () => {
-  // A7: the switches-saved stat shows its two derived figures — time in hours and
-  // money with the currency prefix — alongside the raw count (slice 4, ADR 0010).
-  it("renders the count, hours, and currency-prefixed money", async () => {
+describe("AnalyticsPanel switches-saved money range", () => {
+  // A7: the switches-saved stat shows the raw count alongside the money range; there
+  // is no hours figure anymore — money no longer flows through hours × rate (ADR 0012).
+  it("renders the count and the currency-prefixed money range", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
-        switches_saved: 3,
-        switches_saved_hours: 1.2,
-        switches_saved_money: 115,
-        assumptions: { minutes_per_switch: 23, hourly_rate: 100, currency: "$" },
+        switches_saved: 57,
+        switches_saved_money_low: 570,
+        switches_saved_money_high: 1486,
+        assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
       }),
     );
 
@@ -240,19 +240,22 @@ describe("AnalyticsPanel switches-saved time & money", () => {
     await flush();
 
     const switches = screen.getByTestId("stat-switches-saved");
-    expect(switches).toHaveTextContent("3");
-    expect(switches).toHaveTextContent("1.2h"); // 1.15h rounded to one decimal
-    expect(switches).toHaveTextContent("$115");
+    expect(switches).toHaveTextContent("57");
+    expect(switches).toHaveTextContent("CHF570");
+    expect(switches).toHaveTextContent("CHF1486");
+    // No hours figure survives the move to a money-only headline.
+    expect(switches).not.toHaveTextContent(/\dh\b/);
   });
 
-  // A8: the money figure is a read-only pill that renders the assumptions behind
-  // it ("× 23 min · $100/hr") — editing now lives in the Settings tab, so the
-  // Analytics surface stays pure presentation (no edit control here).
-  it("renders the money as a pill that surfaces the assumptions, read-only", async () => {
+  // A8: the money figure is a read-only pill rendering the count-scaled range over
+  // its per-switch basis ("CHF10–26 / switch"). Editing lives in the Settings tab,
+  // so the Analytics surface stays pure presentation (no edit control here).
+  it("renders the money as a read-only range pill with its per-switch basis", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
-        switches_saved_money: 307,
-        assumptions: { minutes_per_switch: 23, hourly_rate: 100, currency: "$" },
+        switches_saved_money_low: 570,
+        switches_saved_money_high: 1486,
+        assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
       }),
     );
 
@@ -260,12 +263,34 @@ describe("AnalyticsPanel switches-saved time & money", () => {
     await flush();
 
     const pill = screen.getByTestId("switches-money-pill");
-    expect(pill).toHaveTextContent("$307");
-    // The pill renders the assumptions that produced the figure.
-    expect(pill).toHaveTextContent("23 min");
-    expect(pill).toHaveTextContent("$100/hr");
+    expect(pill).toHaveTextContent("CHF570");
+    expect(pill).toHaveTextContent("CHF1486");
+    // The pill renders the per-switch band that produced the range.
+    expect(pill).toHaveTextContent("CHF10");
+    expect(pill).toHaveTextContent("26");
+    expect(pill).toHaveTextContent("switch");
     // No editing affordance on the Analytics tab — that moved to Settings.
     expect(screen.queryByRole("button", { name: /save/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/minutes per switch/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/cost/i)).not.toBeInTheDocument();
+  });
+
+  // A9: an empty range (count 0) collapses the low==high==0 band to a single CHF0,
+  // never a backwards-looking "CHF0 – CHF0".
+  it("collapses an empty range to a single figure", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        switches_saved: 0,
+        switches_saved_money_low: 0,
+        switches_saved_money_high: 0,
+        assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    const pill = screen.getByTestId("switches-money-pill");
+    expect(pill).toHaveTextContent("CHF0");
+    expect(pill.textContent).not.toMatch(/CHF0\s*[–-]\s*CHF0/);
   });
 });
