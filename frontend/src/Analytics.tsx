@@ -98,11 +98,10 @@ export function AnalyticsPanel() {
             series={data.human_review.series}
             caption="held back for you"
           />
-          <Stat
+          <MoneyStat
             testid="stat-switches-saved"
             sparkTestid="sparkline-switches-saved"
-            label="Context switches saved"
-            count={data.switches_saved}
+            label="Switching costs saved"
             moneyLow={data.switches_saved_money_low}
             moneyHigh={data.switches_saved_money_high}
             assumptions={data.assumptions}
@@ -533,18 +532,18 @@ function SplitStat({
   );
 }
 
-// Stat is the Context-switches-saved headline: the raw count (= the auto-approved
-// count; a Human Review approval is a switch the human DID take, so it is not
-// saved) translated into the money it represents as a low/high range (ADR 0012).
-// The server owns the arithmetic; this renders the count and the money range as a
-// read-only pill that surfaces the per-switch band behind it, plus the same period
-// delta as the other headlines. There is no hours figure — money no longer flows
-// through hours × rate. Editing the band lives in the Settings tab.
-function Stat({
+// MoneyStat is the Switching-costs-saved headline: the money the auto-approved
+// switches represent, rendered as a green low/high range in the headline slot
+// (ADR 0012). It deliberately does NOT show the raw saved-switch count — that
+// figure already leads the Auto-approved tile, so repeating it here said nothing
+// new; the money is the fresh signal. The server owns the arithmetic; this renders
+// the range, the same period delta as the other headlines, and a quiet per-switch
+// basis footnote. There is no hours figure — money no longer flows through
+// hours × rate. Editing the band lives in the Settings tab.
+function MoneyStat({
   testid,
   sparkTestid,
   label,
-  count,
   moneyLow,
   moneyHigh,
   assumptions,
@@ -554,7 +553,6 @@ function Stat({
   testid: string;
   sparkTestid: string;
   label: string;
-  count: number;
   moneyLow: number;
   moneyHigh: number;
   assumptions: Settings;
@@ -568,43 +566,33 @@ function Stat({
         <DeltaBadge delta={delta} />
       </div>
       <div className="stat-tile-value">
-        <span className="stat-value tnum">{count}</span>
+        <span className="stat-value stat-value-money tnum">
+          {formatMoneyRange(moneyLow, moneyHigh, assumptions.currency)}
+        </span>
       </div>
       <Sparkline series={series} testid={sparkTestid} />
       <div className="stat-tile-foot">
-        <MoneyPill low={moneyLow} high={moneyHigh} assumptions={assumptions} />
+        <BasisNote assumptions={assumptions} />
       </div>
     </div>
   );
 }
 
-// MoneyPill renders the money headline as a low/high range pill over its per-switch
-// basis ("CHF10–26 / switch"), so the figure reads honestly without a separate chip
-// (ADR 0012). An empty range (low == high == 0) collapses to a single CHF0 rather
-// than a backwards "CHF0 – CHF0". It is read-only — the band is edited in the
+// BasisNote is the per-switch footnote under the money headline ("CHF10–26 /
+// switch"), the honest disclosure of the band the range was scaled from (ADR 0012)
+// now that the amount itself leads the tile. A quiet muted caption, not a pill —
+// the green belongs to the headline. It is read-only — the band is edited in the
 // Settings tab — and a title repeats the basis as a full sentence on hover.
-function MoneyPill({
-  low,
-  high,
-  assumptions,
-}: {
-  low: number;
-  high: number;
-  assumptions: Settings;
-}) {
+function BasisNote({ assumptions }: { assumptions: Settings }) {
   const { cost_low, cost_high, currency } = assumptions;
-  const amount = formatMoneyRange(low, high, currency);
   return (
     <span
-      className="money-pill"
-      data-testid="switches-money-pill"
+      className="basis-note tnum"
+      data-testid="switches-basis"
       title={`Each avoided review ≈ one context switch worth ${currency}${cost_low}–${cost_high} (a ~10-min refocus up to a 23-min flow break); the range scales that band by the saved-switch count`}
     >
-      <span className="money-pill-amount tnum">{amount}</span>
-      <span className="money-pill-basis tnum">
-        {currency}
-        {cost_low}–{cost_high} / switch
-      </span>
+      {currency}
+      {cost_low}–{cost_high} / switch
     </span>
   );
 }

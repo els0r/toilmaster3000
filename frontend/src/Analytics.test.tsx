@@ -80,8 +80,9 @@ async function flush() {
 describe("AnalyticsPanel stats row", () => {
   // A1: the panel fetches on mount and renders the three headline stats —
   // Auto-approved and Human Review each with their count and share-as-percent,
-  // and Context switches saved as the raw count (= the auto count).
-  it("renders auto/human counts + shares and switches saved from the fetch", async () => {
+  // and Switching costs saved as the green money range (the count is not repeated
+  // here — it already leads the Auto-approved tile).
+  it("renders auto/human counts + shares and switching costs from the fetch", async () => {
     mockAnalytics.mockResolvedValue(analytics());
 
     render(<AnalyticsPanel />);
@@ -100,8 +101,9 @@ describe("AnalyticsPanel stats row", () => {
     expect(humanRev).toHaveTextContent("25%");
 
     const switches = screen.getByTestId("stat-switches-saved");
-    expect(switches).toHaveTextContent("Context switches saved");
-    expect(switches).toHaveTextContent("3");
+    expect(switches).toHaveTextContent("Switching costs saved");
+    expect(switches).toHaveTextContent("CHF30");
+    expect(switches).toHaveTextContent("CHF78");
   });
 
   // A2: an empty range (all zeros) renders 0 counts and 0% shares — no NaN, no
@@ -113,6 +115,8 @@ describe("AnalyticsPanel stats row", () => {
         human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" }, series: [0] },
         switches_saved: 0,
         switches_saved_series: [0],
+        switches_saved_money_low: 0,
+        switches_saved_money_high: 0,
         switches_saved_delta: { pct: 0, state: "none" },
       }),
     );
@@ -123,7 +127,7 @@ describe("AnalyticsPanel stats row", () => {
     const auto = screen.getByTestId("stat-auto-approved");
     expect(auto).toHaveTextContent("0%");
     const switches = screen.getByTestId("stat-switches-saved");
-    expect(switches).toHaveTextContent("0");
+    expect(switches).toHaveTextContent("CHF0");
   });
 });
 
@@ -420,9 +424,10 @@ describe("AnalyticsPanel by-type cohort", () => {
 });
 
 describe("AnalyticsPanel switches-saved money range", () => {
-  // A7: the switches-saved stat shows the raw count alongside the money range; there
-  // is no hours figure anymore — money no longer flows through hours × rate (ADR 0012).
-  it("renders the count and the currency-prefixed money range", async () => {
+  // A7: the switches-saved stat leads with the count-scaled money range in the
+  // headline (no raw count — that's the Auto-approved tile's job); there is no hours
+  // figure anymore — money no longer flows through hours × rate (ADR 0012).
+  it("renders the currency-prefixed money range as the headline", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
         switches_saved: 57,
@@ -436,17 +441,17 @@ describe("AnalyticsPanel switches-saved money range", () => {
     await flush();
 
     const switches = screen.getByTestId("stat-switches-saved");
-    expect(switches).toHaveTextContent("57");
     expect(switches).toHaveTextContent("CHF570");
     expect(switches).toHaveTextContent("CHF1486");
     // No hours figure survives the move to a money-only headline.
     expect(switches).not.toHaveTextContent(/\dh\b/);
   });
 
-  // A8: the money figure is a read-only pill rendering the count-scaled range over
-  // its per-switch basis ("CHF10–26 / switch"). Editing lives in the Settings tab,
-  // so the Analytics surface stays pure presentation (no edit control here).
-  it("renders the money as a read-only range pill with its per-switch basis", async () => {
+  // A8: the per-switch band renders as a read-only basis caption ("CHF10–26 /
+  // switch") under the headline — the honest disclosure behind the range, not the
+  // amount itself. Editing lives in the Settings tab, so the Analytics surface stays
+  // pure presentation (no edit control here).
+  it("renders the per-switch basis as a read-only caption", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
         switches_saved_money_low: 570,
@@ -458,20 +463,18 @@ describe("AnalyticsPanel switches-saved money range", () => {
     render(<AnalyticsPanel />);
     await flush();
 
-    const pill = screen.getByTestId("switches-money-pill");
-    expect(pill).toHaveTextContent("CHF570");
-    expect(pill).toHaveTextContent("CHF1486");
-    // The pill renders the per-switch band that produced the range.
-    expect(pill).toHaveTextContent("CHF10");
-    expect(pill).toHaveTextContent("26");
-    expect(pill).toHaveTextContent("switch");
+    const basis = screen.getByTestId("switches-basis");
+    // The basis renders the per-switch band that produced the range.
+    expect(basis).toHaveTextContent("CHF10");
+    expect(basis).toHaveTextContent("26");
+    expect(basis).toHaveTextContent("switch");
     // No editing affordance on the Analytics tab — that moved to Settings.
     expect(screen.queryByRole("button", { name: /save/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/cost/i)).not.toBeInTheDocument();
   });
 
-  // A9: an empty range (count 0) collapses the low==high==0 band to a single CHF0,
-  // never a backwards-looking "CHF0 – CHF0".
+  // A9: an empty range (count 0) collapses the low==high==0 band to a single CHF0
+  // headline, never a backwards-looking "CHF0 – CHF0".
   it("collapses an empty range to a single figure", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
@@ -485,8 +488,8 @@ describe("AnalyticsPanel switches-saved money range", () => {
     render(<AnalyticsPanel />);
     await flush();
 
-    const pill = screen.getByTestId("switches-money-pill");
-    expect(pill).toHaveTextContent("CHF0");
-    expect(pill.textContent).not.toMatch(/CHF0\s*[–-]\s*CHF0/);
+    const switches = screen.getByTestId("stat-switches-saved");
+    expect(switches).toHaveTextContent("CHF0");
+    expect(switches.textContent).not.toMatch(/CHF0\s*[–-]\s*CHF0/);
   });
 });

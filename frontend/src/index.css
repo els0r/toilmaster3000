@@ -1550,6 +1550,13 @@ textarea:focus {
   line-height: 0.9;
   color: var(--fg);
 }
+/* The Switching-costs-saved headline is a money range, not a bare count: render it
+   in the success green and a step smaller so a two-figure band ("CHF570 – CHF1486")
+   sits on one line and reads alongside the count tiles without overpowering them. */
+.stat-value-money {
+  font-size: 24px;
+  color: var(--success);
+}
 .stat-share {
   font-size: var(--text-lg);
   font-weight: var(--weight-medium);
@@ -1559,17 +1566,12 @@ textarea:focus {
   font-size: var(--text-xs);
   color: var(--fg-3);
 }
-/* The switches-saved tile foot (slice 4): the hours the count represents and the
-   money pill, stacked under the sparkline as supporting detail. */
+/* The switches-saved tile foot (slice 4): the per-switch basis footnote, stacked
+   under the sparkline as the quiet disclosure behind the headline money range. */
 .stat-tile-foot {
   display: flex;
   flex-direction: column;
   gap: 7px;
-}
-.stat-figures {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--fg-2);
 }
 
 /* The per-tile sparkline (Variant 2): a row of bars, one per day in the series,
@@ -1590,26 +1592,12 @@ textarea:focus {
   background: var(--action-solid);
 }
 
-/* The money pill (slice 4, ADR 0010): the money figure rendered as a pill that
-   also carries the assumptions it was computed from, so the headline reads
-   honestly without a separate chip. Read-only — the constants are edited in the
-   Settings tab. The amount leads; the basis trails muted on the same line. */
-.money-pill {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 7px;
+/* The per-switch basis note (slice 4, ADR 0012): a quiet muted caption disclosing
+   the band the headline money range was scaled from. No pill chrome, no green —
+   the green belongs to the headline now. Read-only; the constants are edited in
+   the Settings tab. */
+.basis-note {
   align-self: flex-start;
-  padding: 3px 10px;
-  background: var(--success-bg);
-  border-radius: var(--radius-pill);
-}
-.money-pill-amount {
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-tight);
-  color: var(--success);
-}
-.money-pill-basis {
   font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
   color: var(--fg-3);
