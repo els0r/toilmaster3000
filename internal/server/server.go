@@ -586,7 +586,7 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		body.Assumptions = assume
 		// Slice 5: bucket the SAME windowed feed by conventional-commit type, so the
 		// By-Type cohort decomposes exactly the range the headline counts came from.
-		body.ByType = cohortByType(windowed)
+		body.ByType = cohortByType(windowed, assume)
 		// The all-time scope menu rides on the response so one fetch paints the
 		// dashboard and populates the multi-select; the selection above scoped the rest.
 		body.Scopes = scopes

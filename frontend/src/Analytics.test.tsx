@@ -34,7 +34,17 @@ const COHORT_TYPES = [
   "perf", "test", "build", "ci", "revert", "other",
 ];
 function cohort(
-  over: Record<string, Partial<{ count: number; share: number; auto: number; human: number }>> = {},
+  over: Record<
+    string,
+    Partial<{
+      count: number;
+      share: number;
+      auto: number;
+      human: number;
+      money_low: number;
+      money_high: number;
+    }>
+  > = {},
 ): Analytics["by_type"] {
   return COHORT_TYPES.map((type) => ({
     type,
@@ -42,6 +52,8 @@ function cohort(
     share: 0,
     auto: 0,
     human: 0,
+    money_low: 0,
+    money_high: 0,
     ...over[type],
   }));
 }
@@ -335,6 +347,57 @@ describe("AnalyticsPanel by-type cohort", () => {
     expect(fix).toHaveTextContent("7");
     expect(fix).toHaveTextContent("70%");
     expect(fix).toHaveTextContent("5 auto / 2 human");
+  });
+
+  // A10b: each row carries its saved-switch money range, placed left of the count.
+  // The range is the bucket's auto-priced band (server-computed); a row whose money
+  // band has a real spread renders "low – high".
+  it("renders each row's money range left of the count", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        by_type: cohort({
+          feat: { count: 3, share: 1, auto: 2, human: 1, money_low: 20, money_high: 52 },
+        }),
+        assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    const feat = screen.getByTestId("cohort-row-feat");
+    expect(feat).toHaveTextContent("CHF20");
+    expect(feat).toHaveTextContent("CHF52");
+    // Money sits left of the count: its position in the row precedes the count cell.
+    const money = feat.querySelector(".cohort-money");
+    const count = feat.querySelector(".cohort-count");
+    expect(money).not.toBeNull();
+    expect(count).not.toBeNull();
+    expect(money!.compareDocumentPosition(count!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  // A10c: a row with no auto approvals prices nothing, so its band collapses to a
+  // single CHF0 — never "CHF0 – CHF0".
+  it("collapses a zero-savings row's money to a single figure", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        by_type: cohort({
+          // all-human: real activity, zero savings.
+          docs: { count: 2, share: 1, auto: 0, human: 2, money_low: 0, money_high: 0 },
+        }),
+        assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    const docs = screen.getByTestId("cohort-row-docs");
+    const money = docs.querySelector(".cohort-money");
+    expect(money).not.toBeNull();
+    expect(money!.textContent).toBe("CHF0");
   });
 
   // A11 (slice 5): a type with no approvals in the range is still shown, dimmed,

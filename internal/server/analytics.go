@@ -239,6 +239,14 @@ type TypeCohortRow struct {
 	Share float64 `json:"share"`
 	Auto  int     `json:"auto"`
 	Human int     `json:"human"`
+	// MoneyLow and MoneyHigh are the bucket's saved-switch money range, derived the
+	// same way as the headline (switchesSavedFigures) but from this row's Auto count,
+	// NOT its Count: a human review approval is a switch the human took, so it saves
+	// nothing (ADR 0009/0012). Pricing Auto keeps the per-row figures reconcilable
+	// with the auto-only headline. The server owns the arithmetic; the frontend
+	// formats and collapses an equal low==high pair to a single figure.
+	MoneyLow  float64 `json:"money_low"`
+	MoneyHigh float64 `json:"money_high"`
 }
 
 // cohortByType buckets a range's approvals by parsed conventional-commit type
@@ -250,7 +258,7 @@ type TypeCohortRow struct {
 // its share of the range total and the auto/human split by the matched_rule prefix
 // (ADR 0009). This is the pure, table-tested aggregation; the handler scopes the
 // slice to the range before calling.
-func cohortByType(approvals []engine.Approval) []TypeCohortRow {
+func cohortByType(approvals []engine.Approval, assume Assumptions) []TypeCohortRow {
 	rows := make([]TypeCohortRow, len(conventionalTypes)+1)
 	index := make(map[string]int, len(conventionalTypes))
 	for i, t := range conventionalTypes {
@@ -278,6 +286,7 @@ func cohortByType(approvals []engine.Approval) []TypeCohortRow {
 	total := len(approvals)
 	for i := range rows {
 		rows[i].Share = share(rows[i].Count, total)
+		rows[i].MoneyLow, rows[i].MoneyHigh = switchesSavedFigures(rows[i].Auto, assume)
 	}
 	return rows
 }

@@ -284,7 +284,7 @@ func typed(number int, title string, isHuman bool) engine.Approval {
 func TestCohortByTypeShape(t *testing.T) {
 	want := []string{"feat", "fix", "chore", "docs", "style", "refactor", "perf", "test", "build", "ci", "revert", "other"}
 	for _, approvals := range [][]engine.Approval{nil, {typed(1, "feat: x", false)}} {
-		rows := cohortByType(approvals)
+		rows := cohortByType(approvals, Assumptions{})
 		got := make([]string, len(rows))
 		for i, r := range rows {
 			got[i] = r.Type
@@ -342,7 +342,7 @@ func TestCohortByType(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rows := cohortByType(tc.approvals)
+			rows := cohortByType(tc.approvals, Assumptions{})
 			for _, r := range rows {
 				exp, named := tc.want[r.Type]
 				if !named {
@@ -358,6 +358,33 @@ func TestCohortByType(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCohortByTypeMoneyTracksAuto pins the load-bearing decision of the by-type
+// money column: a row's money range is auto × cost band, NOT count × band. A human
+// review approval is a switch the human DID take (ADR 0009 / the switches-saved
+// headline), so it contributes nothing to the row's savings — keeping each row
+// reconcilable with the auto-only headline. A mixed row (one auto, two human) must
+// therefore price only its single auto approval, never all three.
+func TestCohortByTypeMoneyTracksAuto(t *testing.T) {
+	assume := Assumptions{CostLow: 10, CostHigh: 26, Currency: "CHF"}
+	rows := cohortByType([]engine.Approval{
+		typed(1, "feat: a", false), // auto
+		typed(2, "feat: b", true),  // human
+		typed(3, "feat: c", true),  // human
+	}, assume)
+
+	var feat TypeCohortRow
+	for _, r := range rows {
+		if r.Type == "feat" {
+			feat = r
+		}
+	}
+	require.Equal(t, 3, feat.Count, "count includes both human approvals")
+	require.Equal(t, 1, feat.Auto, "only one auto approval")
+	// Money prices the single auto approval, not the full count.
+	require.Equal(t, float64(1*assume.CostLow), feat.MoneyLow, "money low = auto × cost_low")
+	require.Equal(t, float64(1*assume.CostHigh), feat.MoneyHigh, "money high = auto × cost_high")
 }
 
 // TestAggregateAnalytics covers the slice-1 aggregation: the auto-vs-human

@@ -2190,6 +2190,10 @@ func TestAnalyticsByTypeCohort(t *testing.T) {
 	require.Equal(t, 1, rows["feat"].Auto, "one feat was auto-approved")
 	require.Equal(t, 1, rows["feat"].Human, "one feat was a human override")
 	require.InDelta(t, 0.5, rows["feat"].Share, 1e-9, "feat is half of the 4 in-range approvals")
+	// Money rides the wire from the handler's settings band (seeded CHF10–26) and
+	// prices only the auto approval, not the human override (auto × band, not count).
+	require.Equal(t, float64(10), rows["feat"].MoneyLow, "feat money low = 1 auto × CHF10")
+	require.Equal(t, float64(26), rows["feat"].MoneyHigh, "feat money high = 1 auto × CHF26")
 	require.Equal(t, 1, rows["fix"].Count, "one fix PR today")
 	require.Equal(t, 1, rows["other"].Count, "the non-standard wip type falls into other")
 	require.Equal(t, 0, rows["chore"].Count, "an unused standard type is still present at zero")

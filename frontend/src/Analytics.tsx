@@ -112,7 +112,9 @@ export function AnalyticsPanel() {
         </div>
       )}
 
-      {data !== null && <ByTypeCohort rows={data.by_type ?? []} />}
+      {data !== null && (
+        <ByTypeCohort rows={data.by_type ?? []} assumptions={data.assumptions} />
+      )}
     </section>
   );
 }
@@ -126,7 +128,13 @@ export function AnalyticsPanel() {
 // types still pull a human in. A zero-count row is shown dimmed rather than
 // hidden, honoring "the set is bounded — show every row." There is no per-type
 // delta (jumpy at low counts).
-function ByTypeCohort({ rows }: { rows: TypeCohortRow[] }) {
+function ByTypeCohort({
+  rows,
+  assumptions,
+}: {
+  rows: TypeCohortRow[];
+  assumptions: Settings;
+}) {
   const sorted = [...rows].sort(
     (a, b) => b.count - a.count || a.type.localeCompare(b.type),
   );
@@ -141,6 +149,9 @@ function ByTypeCohort({ rows }: { rows: TypeCohortRow[] }) {
             data-testid={`cohort-row-${r.type}`}
           >
             <span className="cohort-type">{r.type}</span>
+            <span className="cohort-money tnum">
+              {formatMoneyRange(r.money_low, r.money_high, assumptions.currency)}
+            </span>
             <span className="cohort-count tnum">{r.count}</span>
             <span className="cohort-share tnum">{percent(r.share)}</span>
             <span className="cohort-split tnum">
@@ -582,10 +593,7 @@ function MoneyPill({
   assumptions: Settings;
 }) {
   const { cost_low, cost_high, currency } = assumptions;
-  const amount =
-    Math.round(low) === Math.round(high)
-      ? formatMoney(low, currency)
-      : `${formatMoney(low, currency)} – ${formatMoney(high, currency)}`;
+  const amount = formatMoneyRange(low, high, currency);
   return (
     <span
       className="money-pill"
@@ -606,6 +614,16 @@ function MoneyPill({
 // frontend formats it (mirroring how Stat.Share is a fraction formatted here).
 function formatMoney(money: number, currency: string): string {
   return `${currency}${Math.round(money)}`;
+}
+
+// formatMoneyRange renders a low/high money band as "low – high", collapsing an
+// equal pair (rounded) to a single figure so a zero or single-point band reads as
+// "CHF0" rather than a backwards "CHF0 – CHF0". Shared by the headline pill and the
+// by-type rows so the range-vs-single rule lives in exactly one place.
+function formatMoneyRange(low: number, high: number, currency: string): string {
+  return Math.round(low) === Math.round(high)
+    ? formatMoney(low, currency)
+    : `${formatMoney(low, currency)} – ${formatMoney(high, currency)}`;
 }
 
 // DeltaBadge renders a headline's elapsed-aligned period change (ADR 0011). The

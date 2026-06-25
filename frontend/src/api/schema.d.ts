@@ -391,6 +391,10 @@ export interface components {
             /** Format: int64 */
             human: number;
             /** Format: double */
+            money_high: number;
+            /** Format: double */
+            money_low: number;
+            /** Format: double */
             share: number;
             type: string;
         };

@@ -618,6 +618,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "money_high": {
+            "format": "double",
+            "type": "number"
+          },
+          "money_low": {
+            "format": "double",
+            "type": "number"
+          },
           "share": {
             "format": "double",
             "type": "number"
@@ -631,7 +639,9 @@
           "count",
           "share",
           "auto",
-          "human"
+          "human",
+          "money_low",
+          "money_high"
         ],
         "type": "object"
       }
