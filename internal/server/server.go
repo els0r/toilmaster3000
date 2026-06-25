@@ -574,6 +574,9 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		assume := settingsToBody(set.Get())
 		body.SwitchesSavedMoneyLow, body.SwitchesSavedMoneyHigh = switchesSavedFigures(body.SwitchesSaved, assume)
 		body.Assumptions = assume
+		// Slice 5: bucket the SAME windowed feed by conventional-commit type, so the
+		// By-Type cohort decomposes exactly the range the headline counts came from.
+		body.ByType = cohortByType(windowed)
 		return &analyticsOutput{Body: body}, nil
 	})
 

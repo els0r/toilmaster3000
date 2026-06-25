@@ -2147,3 +2147,50 @@ func TestAnalyticsSwitchesSavedMoneyRange(t *testing.T) {
 	require.InDelta(t, 2.0*50, got.SwitchesSavedMoneyHigh, 1e-9, "high recomputes from the edited band")
 	require.Equal(t, 30, got.Assumptions.CostLow, "the pill basis reflects the edit")
 }
+
+// AN7 (slice 5): the analytics response carries the By-Type cohort — the range's
+// approvals bucketed by parsed conventional-commit type into the fixed Conventional
+// Commits axis plus a trailing "other", each row with its count, share of the range
+// total, and the auto/human split (which types still pull a human in). The fixed set
+// is always present in spec order (zeros included), a non-standard type lands in
+// "other", and the cohort decomposes the SAME today-scoped range as the headline.
+func TestAnalyticsByTypeCohort(t *testing.T) {
+	now := time.Now()
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	seedApprovalsFile(t, statePath,
+		// today's range: 2 feat (1 of them a human override), 1 fix, 1 non-standard "wip".
+		engine.Approval{Number: 950, Title: "feat: a", URL: "u950",
+			MatchedRule: "team chores", ApprovedAt: now},
+		engine.Approval{Number: 951, Title: "feat!: breaking", URL: "u951",
+			MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: now},
+		engine.Approval{Number: 952, Title: "fix: b", URL: "u952",
+			MatchedRule: "team chores", ApprovedAt: now},
+		engine.Approval{Number: 953, Title: "wip: spike", URL: "u953",
+			MatchedRule: "team chores", ApprovedAt: now},
+	)
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store)
+	require.NoError(t, err)
+	srv := newTestServerFor(t, eng, store)
+
+	var got server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
+
+	// The fixed axis is always present, in spec order, with a trailing "other".
+	wantOrder := []string{"feat", "fix", "chore", "docs", "style", "refactor", "perf", "test", "build", "ci", "revert", "other"}
+	gotOrder := make([]string, len(got.ByType))
+	rows := make(map[string]server.TypeCohortRow, len(got.ByType))
+	for i, r := range got.ByType {
+		gotOrder[i] = r.Type
+		rows[r.Type] = r
+	}
+	require.Equal(t, wantOrder, gotOrder, "fixed Conventional Commits axis + trailing other, in spec order")
+
+	require.Equal(t, 2, rows["feat"].Count, "two feat PRs today")
+	require.Equal(t, 1, rows["feat"].Auto, "one feat was auto-approved")
+	require.Equal(t, 1, rows["feat"].Human, "one feat was a human override")
+	require.InDelta(t, 0.5, rows["feat"].Share, 1e-9, "feat is half of the 4 in-range approvals")
+	require.Equal(t, 1, rows["fix"].Count, "one fix PR today")
+	require.Equal(t, 1, rows["other"].Count, "the non-standard wip type falls into other")
+	require.Equal(t, 0, rows["chore"].Count, "an unused standard type is still present at zero")
+}

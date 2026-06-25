@@ -1517,6 +1517,67 @@ textarea:focus {
   color: var(--fg-3);
 }
 
+/* The By-Type cohort (slice 5): the range's approvals broken down by
+   conventional-commit type. The fixed Conventional Commits axis plus a trailing
+   "other" is always rendered in spec order; a zero-count row is dimmed (is-zero)
+   rather than hidden, honoring "the set is bounded — show every row." Each row
+   lays out type | count | share | auto/human split on one grid line so the columns
+   align down the table; the split is the actionable signal (which types still pull
+   a human in). It sits under the stat tiles, separated by the card's own border. */
+.by-type-cohort {
+  border-top: 1px solid var(--border);
+  padding: var(--space-4) 20px 20px;
+}
+.cohort-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.cohort-rows {
+  display: flex;
+  flex-direction: column;
+}
+.cohort-row {
+  display: grid;
+  grid-template-columns: 1fr auto 3.5em auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+.cohort-row:last-child {
+  border-bottom: none;
+}
+/* A type with no approvals in the range is still shown, dimmed, so the bounded set
+   reads as complete rather than as a filtered list. */
+.cohort-row.is-zero {
+  opacity: 0.4;
+}
+.cohort-type {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--fg);
+}
+.cohort-count {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+  text-align: right;
+}
+.cohort-share {
+  font-size: var(--text-sm);
+  color: var(--fg-2);
+  text-align: right;
+}
+.cohort-split {
+  font-size: var(--text-xs);
+  color: var(--fg-3);
+  text-align: right;
+}
+
 /* The Settings tab (slice 4, ADR 0010): the editor for the analytics assumption
    constants. A lean-back form — an intro that explains what the numbers mean,
    the three fields, and a Save with a transient confirmation. */

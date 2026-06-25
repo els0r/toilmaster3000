@@ -21,8 +21,29 @@ const analytics = (over: Partial<Analytics> = {}): Analytics => ({
   switches_saved_delta: { pct: 0, state: "none" },
   delta_label: "vs yesterday",
   assumptions: { cost_low: 10, cost_high: 26, currency: "CHF" },
+  by_type: cohort(),
   ...over,
 });
+
+// cohort builds the fixed By-Type axis (every Conventional Commits type plus a
+// trailing "other"), zeros by default, so a test can override just the rows it
+// cares about while the renderer always sees the full, stable set of rows.
+const COHORT_TYPES = [
+  "feat", "fix", "chore", "docs", "style", "refactor",
+  "perf", "test", "build", "ci", "revert", "other",
+];
+function cohort(
+  over: Record<string, Partial<{ count: number; share: number; auto: number; human: number }>> = {},
+): Analytics["by_type"] {
+  return COHORT_TYPES.map((type) => ({
+    type,
+    count: 0,
+    share: 0,
+    auto: 0,
+    human: 0,
+    ...over[type],
+  }));
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -220,6 +241,58 @@ describe("AnalyticsPanel sparklines", () => {
     expect(
       screen.getByTestId("sparkline-switches-saved").querySelectorAll(".spark-bar"),
     ).toHaveLength(4);
+  });
+});
+
+describe("AnalyticsPanel by-type cohort", () => {
+  // A10 (slice 5): the cohort renders every standard conventional-commit type in
+  // fixed order plus a trailing "other", each row carrying its count, its share of
+  // the range total as a percent, and the auto/human split — the signal of which
+  // types still pull a human in.
+  it("renders every standard type in fixed order with count, share, and the auto/human split", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        by_type: cohort({
+          feat: { count: 4, share: 0.5, auto: 3, human: 1 },
+          fix: { count: 4, share: 0.5, auto: 4, human: 0 },
+        }),
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    // All twelve rows (11 standard + other) render, in spec order.
+    const rows = screen.getAllByTestId(/^cohort-row-/);
+    expect(rows.map((r) => r.getAttribute("data-testid"))).toEqual([
+      "cohort-row-feat", "cohort-row-fix", "cohort-row-chore", "cohort-row-docs",
+      "cohort-row-style", "cohort-row-refactor", "cohort-row-perf", "cohort-row-test",
+      "cohort-row-build", "cohort-row-ci", "cohort-row-revert", "cohort-row-other",
+    ]);
+
+    const feat = screen.getByTestId("cohort-row-feat");
+    expect(feat).toHaveTextContent("feat");
+    expect(feat).toHaveTextContent("4");
+    expect(feat).toHaveTextContent("50%");
+    expect(feat).toHaveTextContent("3 auto / 1 human");
+  });
+
+  // A11 (slice 5): a type with no approvals in the range is still shown, dimmed,
+  // honoring "the set is bounded — show every row even at zero".
+  it("dims a zero-count row rather than hiding it", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({ by_type: cohort({ feat: { count: 2, share: 1, auto: 2, human: 0 } }) }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    // docs has no approvals: present but dimmed.
+    const docs = screen.getByTestId("cohort-row-docs");
+    expect(docs).toHaveTextContent("docs");
+    expect(docs.className).toMatch(/is-zero/);
+    // feat has approvals, so it is not dimmed.
+    expect(screen.getByTestId("cohort-row-feat").className).not.toMatch(/is-zero/);
   });
 });
 

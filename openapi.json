@@ -19,6 +19,15 @@
           "auto_approved": {
             "$ref": "#/components/schemas/Stat"
           },
+          "by_type": {
+            "items": {
+              "$ref": "#/components/schemas/TypeCohortRow"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "delta_label": {
             "type": "string"
           },
@@ -60,7 +69,8 @@
           "switches_saved_money_high",
           "switches_saved_delta",
           "delta_label",
-          "assumptions"
+          "assumptions",
+          "by_type"
         ],
         "type": "object"
       },
@@ -580,6 +590,38 @@
           "scopes",
           "breaking",
           "description"
+        ],
+        "type": "object"
+      },
+      "TypeCohortRow": {
+        "additionalProperties": false,
+        "properties": {
+          "auto": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "human": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "share": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "count",
+          "share",
+          "auto",
+          "human"
         ],
         "type": "object"
       }

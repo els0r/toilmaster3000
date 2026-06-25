@@ -265,6 +265,101 @@ func TestDailySeries(t *testing.T) {
 	}
 }
 
+// typed builds an approval with an explicit title and auto/human classification,
+// so a cohort case can pin a PR to a conventional-commit type AND a side of the
+// auto/human split independently. human=true stamps the ManualApprovalPrefix
+// (ADR 0009); otherwise the matched_rule is a plain auto rule name.
+func typed(number int, title string, isHuman bool) engine.Approval {
+	rule := "team chores"
+	if isHuman {
+		rule = engine.ManualApprovalPrefix + "breaking_change"
+	}
+	return engine.Approval{Number: number, Title: title, MatchedRule: rule, ApprovedAt: time.Now()}
+}
+
+// TestCohortByTypeShape covers the cohort's fixed axis (slice 5 / CONTEXT "By-Type
+// cohort"): the eleven Conventional Commits types are always emitted, in spec
+// order, with a trailing "other" bucket — even for an empty range, so the renderer
+// always has the full set of rows to lay out (zeros dimmed).
+func TestCohortByTypeShape(t *testing.T) {
+	want := []string{"feat", "fix", "chore", "docs", "style", "refactor", "perf", "test", "build", "ci", "revert", "other"}
+	for _, approvals := range [][]engine.Approval{nil, {typed(1, "feat: x", false)}} {
+		rows := cohortByType(approvals)
+		got := make([]string, len(rows))
+		for i, r := range rows {
+			got[i] = r.Type
+		}
+		require.Equal(t, want, got, "fixed type axis + trailing other, in spec order")
+	}
+}
+
+// TestCohortByType covers the cohort bucketing (slice 5): each approval lands in
+// its parsed conventional-commit type's bucket (case-folded), non-standard and
+// unparseable titles fall into "other", and every bucket carries its count, its
+// share of the range total, and the auto/human split (the actionable signal — which
+// types still pull a human in). The cases pin the correctness-sensitive edges.
+func TestCohortByType(t *testing.T) {
+	tests := []struct {
+		name      string
+		approvals []engine.Approval
+		// want maps a type to its expected {count, auto, human}; types absent from the
+		// map are asserted to be zero rows. share is checked separately against total.
+		want  map[string][3]int
+		total int
+	}{
+		{
+			name: "buckets by type with the auto/human split",
+			approvals: []engine.Approval{
+				typed(1, "feat: a", false), typed(2, "feat: b", false), typed(3, "feat!: c", true),
+				typed(4, "fix: d", false),
+				typed(5, "chore: e", true),
+			},
+			want:  map[string][3]int{"feat": {3, 2, 1}, "fix": {1, 1, 0}, "chore": {1, 0, 1}},
+			total: 5,
+		},
+		{
+			name:      "type case is folded so Feat collapses into feat",
+			approvals: []engine.Approval{typed(1, "Feat: a", false), typed(2, "FIX: b", false)},
+			want:      map[string][3]int{"feat": {1, 1, 0}, "fix": {1, 1, 0}},
+			total:     2,
+		},
+		{
+			name: "non-standard and unparseable titles fall into other",
+			approvals: []engine.Approval{
+				typed(1, "wip: spike", false),      // a \w+ type the parser accepts but not in the set
+				typed(2, "just some prose", false), // not a conventional commit at all
+				typed(3, "feat: real", false),
+			},
+			want:  map[string][3]int{"feat": {1, 1, 0}, "other": {2, 2, 0}},
+			total: 3,
+		},
+		{
+			name:      "empty range is all-zero rows with no divide-by-zero",
+			approvals: nil,
+			want:      map[string][3]int{},
+			total:     0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := cohortByType(tc.approvals)
+			for _, r := range rows {
+				exp, named := tc.want[r.Type]
+				if !named {
+					exp = [3]int{0, 0, 0}
+				}
+				require.Equal(t, exp[0], r.Count, "%s count", r.Type)
+				require.Equal(t, exp[1], r.Auto, "%s auto", r.Type)
+				require.Equal(t, exp[2], r.Human, "%s human", r.Type)
+				// Share is the bucket's fraction of the range total, 0 for an empty range.
+				require.InDelta(t, share(r.Count, tc.total), r.Share, 1e-9, "%s share", r.Type)
+				// Auto + human always partition the bucket's own count (ADR 0009).
+				require.Equal(t, r.Count, r.Auto+r.Human, "%s auto+human partitions count", r.Type)
+			}
+		})
+	}
+}
+
 // TestAggregateAnalytics covers the slice-1 aggregation: the auto-vs-human
 // partition by the matched_rule prefix (ADR 0009), each side's share of the
 // range total, and switches-saved = the auto count. The empty range yields all

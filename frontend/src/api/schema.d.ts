@@ -173,6 +173,7 @@ export interface components {
             readonly $schema?: string;
             assumptions: components["schemas"]["Assumptions"];
             auto_approved: components["schemas"]["Stat"];
+            by_type: components["schemas"]["TypeCohortRow"][] | null;
             delta_label: string;
             human_review: components["schemas"]["Stat"];
             /** Format: int64 */
@@ -379,6 +380,17 @@ export interface components {
             breaking: boolean;
             description: string;
             scopes: string[] | null;
+            type: string;
+        };
+        TypeCohortRow: {
+            /** Format: int64 */
+            auto: number;
+            /** Format: int64 */
+            count: number;
+            /** Format: int64 */
+            human: number;
+            /** Format: double */
+            share: number;
             type: string;
         };
     };

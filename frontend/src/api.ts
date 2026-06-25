@@ -43,6 +43,14 @@ export type Analytics = components["schemas"]["Analytics"];
 // only formats the badge, so no ∞/NaN can reach the renderer.
 export type Delta = components["schemas"]["Delta"];
 
+// TypeCohortRow is one row of the By-Type cohort (generated from the backend's
+// TypeCohortRow DTO): a conventional-commit type, its count of the range's
+// approvals, that count's 0..1 share of the range total, and the auto/human split
+// of the bucket — the actionable signal being which types still pull a human in.
+// The server emits the fixed Conventional Commits axis plus a trailing "other",
+// every row present and in spec order, so the frontend renders a stable table.
+export type TypeCohortRow = components["schemas"]["TypeCohortRow"];
+
 // AnalyticsRange is the time-picker selection: the four selectable look-back
 // windows (CONTEXT "Time range"). The correctness-critical boundary math lives
 // server-side; the client only names the window (and, for `days`, its length).

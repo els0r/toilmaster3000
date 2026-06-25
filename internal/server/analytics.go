@@ -6,8 +6,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/els0r/toilmaster3000/internal/conventionalcommit"
 	"github.com/els0r/toilmaster3000/internal/engine"
 )
+
+// conventionalTypes is the fixed Conventional Commits type axis, in spec order
+// (CONTEXT "By-Type cohort"). The cohort always emits every one of these rows —
+// zeros included, dimmed by the frontend — so the breakdown's shape is stable
+// regardless of which types the range happens to hold.
+var conventionalTypes = []string{
+	"feat", "fix", "chore", "docs", "style", "refactor", "perf", "test", "build", "ci", "revert",
+}
+
+// otherType is the trailing catch-all bucket: any \w+ type the parser accepted but
+// that is not in conventionalTypes (tm3k does not restrict types), plus every title
+// that does not parse as a conventional commit at all. It rides after the fixed set.
+const otherType = "other"
 
 // The four selectable analytics ranges (ADR 0011 / CONTEXT "Time range"). They
 // are the wire values of the endpoint's `range` query parameter; huma validates
@@ -199,6 +213,65 @@ type Analytics struct {
 	// a single fetch; editing them is the separate PUT /settings path, after which the
 	// tab re-fetches and the figures recompute.
 	Assumptions Assumptions `json:"assumptions"`
+	// ByType is the range's approvals bucketed by conventional-commit type (slice 5):
+	// the fixed Conventional Commits axis plus a trailing "other", every row always
+	// present and in spec order so the frontend renders a stable table (zeros dimmed).
+	// Each row carries the auto/human split — the actionable signal being which types
+	// still pull a human in. No per-type delta (jumpy at low counts).
+	ByType []TypeCohortRow `json:"by_type"`
+}
+
+// TypeCohortRow is one row of the By-Type cohort: a conventional-commit type, its
+// count of the range's approvals, that count's share of the range total (a 0..1
+// fraction the frontend formats), and the auto/human split of the bucket (ADR
+// 0009). Snake_case on the wire per the project's single-convention rule.
+type TypeCohortRow struct {
+	Type  string  `json:"type"`
+	Count int     `json:"count"`
+	Share float64 `json:"share"`
+	Auto  int     `json:"auto"`
+	Human int     `json:"human"`
+}
+
+// cohortByType buckets a range's approvals by parsed conventional-commit type
+// (slice 5 / CONTEXT "By-Type cohort"). It always returns the fixed
+// conventionalTypes axis followed by the "other" catch-all, in that order and with
+// every row present even at zero — a parsed type case-folds into its fixed bucket,
+// while a non-standard \w+ type or an unparseable title falls into "other"
+// (defensive: a bad title never panics, it just lands in other). Each row carries
+// its share of the range total and the auto/human split by the matched_rule prefix
+// (ADR 0009). This is the pure, table-tested aggregation; the handler scopes the
+// slice to the range before calling.
+func cohortByType(approvals []engine.Approval) []TypeCohortRow {
+	rows := make([]TypeCohortRow, len(conventionalTypes)+1)
+	index := make(map[string]int, len(conventionalTypes))
+	for i, t := range conventionalTypes {
+		rows[i] = TypeCohortRow{Type: t}
+		index[t] = i
+	}
+	other := len(conventionalTypes)
+	rows[other] = TypeCohortRow{Type: otherType}
+
+	for _, a := range approvals {
+		i := other
+		if c, ok := conventionalcommit.Parse(a.Title); ok {
+			if j, known := index[strings.ToLower(c.Type)]; known {
+				i = j
+			}
+		}
+		rows[i].Count++
+		if strings.HasPrefix(a.MatchedRule, engine.ManualApprovalPrefix) {
+			rows[i].Human++
+		} else {
+			rows[i].Auto++
+		}
+	}
+
+	total := len(approvals)
+	for i := range rows {
+		rows[i].Share = share(rows[i].Count, total)
+	}
+	return rows
 }
 
 // Assumptions is the wire shape of the analytics assumption constants (ADR 0010,

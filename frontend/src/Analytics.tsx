@@ -5,6 +5,7 @@ import {
   type AnalyticsRange,
   type Delta,
   type Settings,
+  type TypeCohortRow,
 } from "./api";
 
 // DEBOUNCE_MS collapses a burst of picker changes (range clicks, day-count
@@ -102,7 +103,41 @@ export function AnalyticsPanel() {
           />
         </div>
       )}
+
+      {data !== null && <ByTypeCohort rows={data.by_type ?? []} />}
     </section>
+  );
+}
+
+// ByTypeCohort renders the range's approvals broken down by conventional-commit
+// type (slice 5). The server emits the fixed Conventional Commits axis plus a
+// trailing "other", every row present and in spec order, so this is a pure
+// renderer: it lays out each row's count, its share of the range total as a
+// percent, and the auto/human split — the actionable signal being which types
+// still pull a human in. A zero-count row is shown dimmed rather than hidden,
+// honoring "the set is bounded — show every row." There is no per-type delta
+// (jumpy at low counts).
+function ByTypeCohort({ rows }: { rows: TypeCohortRow[] }) {
+  return (
+    <div className="by-type-cohort" data-testid="by-type-cohort">
+      <h3 className="cohort-title">By type</h3>
+      <div className="cohort-rows">
+        {rows.map((r) => (
+          <div
+            key={r.type}
+            className={`cohort-row${r.count === 0 ? " is-zero" : ""}`}
+            data-testid={`cohort-row-${r.type}`}
+          >
+            <span className="cohort-type">{r.type}</span>
+            <span className="cohort-count tnum">{r.count}</span>
+            <span className="cohort-share tnum">{percent(r.share)}</span>
+            <span className="cohort-split tnum">
+              {r.auto} auto / {r.human} human
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
