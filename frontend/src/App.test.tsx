@@ -11,14 +11,22 @@ vi.mock("./api", async (importOriginal) => {
     fetchApprovals: vi.fn(),
     fetchQueue: vi.fn(),
     fetchRules: vi.fn(),
+    fetchAnalytics: vi.fn(),
   };
 });
 
-import { fetchStatus, fetchApprovals, fetchQueue, fetchRules } from "./api";
+import {
+  fetchStatus,
+  fetchApprovals,
+  fetchQueue,
+  fetchRules,
+  fetchAnalytics,
+} from "./api";
 const mockStatus = vi.mocked(fetchStatus);
 const mockApprovals = vi.mocked(fetchApprovals);
 const mockQueue = vi.mocked(fetchQueue);
 const mockRules = vi.mocked(fetchRules);
+const mockAnalytics = vi.mocked(fetchAnalytics);
 
 const status = (approved: number): CycleStatus => ({
   last_run: "2026-06-18T10:00:00Z",
@@ -58,8 +66,14 @@ beforeEach(() => {
   mockApprovals.mockReset();
   mockQueue.mockReset();
   mockRules.mockReset();
+  mockAnalytics.mockReset();
   mockQueue.mockResolvedValue([]);
   mockRules.mockResolvedValue([]);
+  mockAnalytics.mockResolvedValue({
+    auto_approved: { count: 0, share: 0 },
+    human_review: { count: 0, share: 0 },
+    switches_saved: 0,
+  });
   // Each test starts from a clean hash so the default (Review) tab applies.
   window.location.hash = "";
 });
@@ -296,5 +310,49 @@ describe("App tabbed shell", () => {
     expect(
       screen.queryByTestId("review-tab-badge"),
     ).not.toBeInTheDocument();
+  });
+
+  // F-tab-analytics: the third Analytics tab exists; clicking it shows the
+  // Analytics panel (its stats row), hides the Review panel, writes #analytics,
+  // and fetches the analytics endpoint (off the 10s poll).
+  it("switches to the Analytics tab on click and updates the hash", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+
+    render(<App />);
+    await flush();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: /analytics/i }));
+    });
+    await flush();
+
+    expect(window.location.hash).toBe("#analytics");
+    expect(screen.getByRole("tab", { name: /analytics/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("stat-auto-approved")).toBeInTheDocument();
+    expect(screen.queryByText("Needs Human Review")).not.toBeInTheDocument();
+    expect(mockAnalytics).toHaveBeenCalled();
+  });
+
+  // F-tab-analytics-hash: loading with #analytics opens the Analytics tab
+  // directly — the tab is linkable / reload-stable, like the others.
+  it("opens the Analytics tab when loaded with #analytics", async () => {
+    window.location.hash = "#analytics";
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+
+    render(<App />);
+    await flush();
+
+    expect(screen.getByRole("tab", { name: /analytics/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("stat-auto-approved")).toBeInTheDocument();
   });
 });

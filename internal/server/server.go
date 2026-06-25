@@ -235,6 +235,10 @@ type queueDiffOutput struct {
 	Body PRDiffBody
 }
 
+type analyticsOutput struct {
+	Body Analytics
+}
+
 // manualApproveOutput is the success body of a manual queue approval: a simple
 // ok marker plus the approved PR number.
 type manualApproveOutput struct {
@@ -487,6 +491,28 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store) {
 			out = append(out, fileDiffToBody(f))
 		}
 		return &queueDiffOutput{Body: PRDiffBody{Files: out, TotalFiles: total}}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-analytics",
+		Method:      http.MethodGet,
+		Path:        APIPrefix + "/analytics",
+		Summary:     "Approval-history analytics for a range (slice 1: today's stats row)",
+	}, func(_ context.Context, _ *struct{}) (*analyticsOutput, error) {
+		feed := eng.Approvals()
+		// Today-scoped, the same local-midnight basis as the Approval Feed (slice 1
+		// has no time picker yet). The engine keeps the full log as its dedup/restart
+		// truth; the range scoping is a read-boundary concern, so it lives here. The
+		// correctness-critical range/delta math arrives server-side in later slices.
+		cutoff := startOfLocalDay(time.Now())
+		todays := make([]engine.Approval, 0, len(feed))
+		for _, a := range feed {
+			if a.ApprovedAt.Before(cutoff) {
+				continue
+			}
+			todays = append(todays, a)
+		}
+		return &analyticsOutput{Body: aggregateAnalytics(todays)}, nil
 	})
 
 	huma.Register(api, huma.Operation{

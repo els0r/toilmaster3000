@@ -29,6 +29,24 @@ export async function fetchApprovals(): Promise<Approval[]> {
   return resp.json();
 }
 
+// Analytics is the look-back dashboard payload (generated from the backend's
+// Analytics DTO): the auto-vs-human headline split (each a count + its 0..1
+// share of the range total) and the context-switches-saved count. Computed
+// server-side from the approval history (ADR 0009); the frontend is a pure
+// renderer. Slice 1 is today-scoped with no ranges, deltas, or cohort yet.
+export type Analytics = components["schemas"]["Analytics"];
+
+// fetchAnalytics pulls the Analytics tab's aggregates. Unlike the feed/queue/
+// status endpoints, this is fetched on tab-open and control changes (not the 10s
+// poll), so the dashboard's lean-back cadence stays off the live timer.
+export async function fetchAnalytics(): Promise<Analytics> {
+  const resp = await fetch(`${API_BASE}/analytics`);
+  if (!resp.ok) {
+    throw new Error(`analytics request failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
 // QueueItem is a Needs-Human-Review entry (generated from the backend's
 // QueueItem DTO): a PR routed here for one or more `reasons` (MVP today:
 // `["breaking_change"]`). Each carries a GitHub url and is approvable only via

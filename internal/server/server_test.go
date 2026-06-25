@@ -1773,3 +1773,86 @@ func TestApprovalsTodayScopedAtLocalMidnight(t *testing.T) {
 	require.True(t, got[802], "an approval from today is shown")
 	require.Len(t, feed, 2, "only today's approvals are on the wire")
 }
+
+// --- Analytics tab (slice 1): stats row over today's approval history ---
+
+// AN1 (tracer): GET /analytics returns today's auto-vs-human partition through
+// the typed DTO. The split is the matched_rule prefix (ADR 0009): a "human
+// approval: " prefix is Human Review, everything else Auto-approved. Each side
+// carries its share of the range total; switches-saved is the auto count. A
+// pre-midnight approval is excluded (the range is today, same local-midnight
+// basis as the feed), so it does not skew the counts or shares.
+func TestAnalyticsTodayStatsRow(t *testing.T) {
+	now := time.Now()
+	y, m, d := now.Date()
+	midnight := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	// On-disk order is oldest-first. Three of today's approvals are auto, one is a
+	// human override; one pre-midnight auto approval must NOT count toward today.
+	seedApprovalsFile(t, statePath,
+		engine.Approval{Number: 900, Title: "chore: yesterday", URL: "u900",
+			MatchedRule: "team chores", ApprovedAt: midnight.Add(-time.Nanosecond)},
+		engine.Approval{Number: 901, Title: "chore: a", URL: "u901",
+			MatchedRule: "team chores", ApprovedAt: now},
+		engine.Approval{Number: 902, Title: "fix: b", URL: "u902",
+			MatchedRule: "service-a — teammate_a", ApprovedAt: now},
+		engine.Approval{Number: 903, Title: "feat: c", URL: "u903",
+			MatchedRule: "team chores", ApprovedAt: now},
+		engine.Approval{Number: 904, Title: "feat!: breaking", URL: "u904",
+			MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: now},
+	)
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store)
+	require.NoError(t, err)
+	srv := newTestServerFor(t, eng, store)
+
+	var got server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
+
+	// Today only: 3 auto + 1 human = 4 (the pre-midnight #900 is excluded).
+	require.Equal(t, 3, got.AutoApproved.Count, "today's auto-approvals, pre-midnight excluded")
+	require.Equal(t, 1, got.HumanReview.Count, "today's human-review approvals (matched_rule prefix)")
+	require.InDelta(t, 0.75, got.AutoApproved.Share, 1e-9, "auto share of the range total")
+	require.InDelta(t, 0.25, got.HumanReview.Share, 1e-9, "human share of the range total")
+	require.InDelta(t, 1.0, got.AutoApproved.Share+got.HumanReview.Share, 1e-9, "shares sum to 100%")
+	require.Equal(t, 3, got.SwitchesSaved, "switches saved = the auto count")
+}
+
+// AN2: the wire shape is snake_case (the typed DTO's json tags), including the
+// nested per-stat count/share — the contract the generated frontend types track.
+func TestAnalyticsWireIsSnakeCase(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	seedApprovalsFile(t, statePath,
+		engine.Approval{Number: 910, Title: "chore: a", URL: "u910",
+			MatchedRule: "team chores", ApprovedAt: time.Now()},
+	)
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store)
+	require.NoError(t, err)
+	srv := newTestServerFor(t, eng, store)
+
+	var raw map[string]any
+	getJSON(t, srv.URL+apiPrefix+"/analytics", &raw)
+	require.Contains(t, raw, "auto_approved")
+	require.Contains(t, raw, "human_review")
+	require.Contains(t, raw, "switches_saved")
+	autoBlock, ok := raw["auto_approved"].(map[string]any)
+	require.True(t, ok, "auto_approved is a nested stat object")
+	require.Contains(t, autoBlock, "count")
+	require.Contains(t, autoBlock, "share")
+}
+
+// AN3: an empty range (no approvals today) returns all zeros with shares at 0 —
+// no divide-by-zero, the empty-range guard.
+func TestAnalyticsEmptyRangeAllZeros(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store) // no file -> empty feed
+	require.NoError(t, err)
+	srv := newTestServerFor(t, eng, store)
+
+	var got server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
+	require.Equal(t, server.Analytics{}, got, "empty range is the zero value: all counts and shares 0")
+}

@@ -5,6 +5,7 @@ import {
   fetchStatus,
   type Approval,
 } from "./api";
+import { AnalyticsPanel } from "./Analytics";
 import { ApprovalFeed } from "./ApprovalFeed";
 import { NeedsReview } from "./NeedsReview";
 import { RulesSection } from "./RulesEditor";
@@ -78,18 +79,39 @@ export function App() {
           >
             Rules
           </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-analytics"
+            aria-selected={tab === "analytics"}
+            aria-controls="panel-analytics"
+            className={`tab${tab === "analytics" ? " is-active" : ""}`}
+            onClick={() => setTab("analytics")}
+          >
+            Analytics
+          </button>
         </div>
 
-        {tab === "review" ? (
+        {tab === "review" && (
           <div id="panel-review" role="tabpanel" aria-labelledby="tab-review">
             <div className="main-grid">
               <NeedsReview queue={queue} onApproved={onApproved} />
               <ApprovalFeed approvals={approvals} freshNumbers={freshNumbers} />
             </div>
           </div>
-        ) : (
+        )}
+        {tab === "rules" && (
           <div id="panel-rules" role="tabpanel" aria-labelledby="tab-rules">
             <RulesSection />
+          </div>
+        )}
+        {tab === "analytics" && (
+          <div
+            id="panel-analytics"
+            role="tabpanel"
+            aria-labelledby="tab-analytics"
+          >
+            <AnalyticsPanel />
           </div>
         )}
       </div>
@@ -97,14 +119,17 @@ export function App() {
   );
 }
 
-// Tab is the set of selectable tabs; the hash names map 1:1 (#review / #rules).
-type Tab = "review" | "rules";
+// Tab is the set of selectable tabs; the hash names map 1:1 (#review / #rules /
+// #analytics).
+type Tab = "review" | "rules" | "analytics";
 const DEFAULT_TAB: Tab = "review";
 
 // tabFromHash reads the active tab from a location hash, falling back to the
 // default (Review) for an empty or unknown hash.
 function tabFromHash(hash: string): Tab {
-  return hash === "#rules" ? "rules" : DEFAULT_TAB;
+  if (hash === "#rules") return "rules";
+  if (hash === "#analytics") return "analytics";
+  return DEFAULT_TAB;
 }
 
 // useHashTab keeps the active tab in sync with location.hash with no router:
