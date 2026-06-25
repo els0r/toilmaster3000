@@ -9,6 +9,7 @@ import { AnalyticsPanel } from "./Analytics";
 import { ApprovalFeed } from "./ApprovalFeed";
 import { NeedsReview } from "./NeedsReview";
 import { RulesSection } from "./RulesEditor";
+import { SettingsPanel } from "./Settings";
 import { StatusLine } from "./StatusLine";
 import { usePollingRefetchable } from "./usePolling";
 
@@ -90,6 +91,20 @@ export function App() {
           >
             Analytics
           </button>
+          {/* Settings is a meta concern (display assumptions, not the live review
+              workflow), so it sits apart at the far right of the tab bar. */}
+          <div className="spacer" />
+          <button
+            type="button"
+            role="tab"
+            id="tab-settings"
+            aria-selected={tab === "settings"}
+            aria-controls="panel-settings"
+            className={`tab${tab === "settings" ? " is-active" : ""}`}
+            onClick={() => setTab("settings")}
+          >
+            Settings
+          </button>
         </div>
 
         {tab === "review" && (
@@ -114,14 +129,23 @@ export function App() {
             <AnalyticsPanel />
           </div>
         )}
+        {tab === "settings" && (
+          <div
+            id="panel-settings"
+            role="tabpanel"
+            aria-labelledby="tab-settings"
+          >
+            <SettingsPanel />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // Tab is the set of selectable tabs; the hash names map 1:1 (#review / #rules /
-// #analytics).
-type Tab = "review" | "rules" | "analytics";
+// #analytics / #settings).
+type Tab = "review" | "rules" | "analytics" | "settings";
 const DEFAULT_TAB: Tab = "review";
 
 // tabFromHash reads the active tab from a location hash, falling back to the
@@ -129,6 +153,7 @@ const DEFAULT_TAB: Tab = "review";
 function tabFromHash(hash: string): Tab {
   if (hash === "#rules") return "rules";
   if (hash === "#analytics") return "analytics";
+  if (hash === "#settings") return "settings";
   return DEFAULT_TAB;
 }
 

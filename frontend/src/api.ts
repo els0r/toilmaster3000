@@ -76,9 +76,21 @@ export async function fetchAnalytics(
 // through updateSettings (PUT /settings).
 export type Settings = components["schemas"]["Assumptions"];
 
-// updateSettings full-replaces the assumption constants (the popover Save). The
-// server persists them to .config/settings.yaml and returns the stored values;
-// the Analytics tab re-fetches afterwards so the figures recompute. Throws the
+// fetchSettings reads the persisted assumption constants for the Settings tab's
+// editor form. The Analytics tab does not call this — it reads the same constants
+// off its own analytics response's `assumptions` block (one fetch paints the
+// figures and the read-only money pill); this endpoint is the editable resource.
+export async function fetchSettings(): Promise<Settings> {
+  const resp = await fetch(`${API_BASE}/settings`);
+  if (!resp.ok) {
+    throw new Error(`settings request failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
+// updateSettings full-replaces the assumption constants (the Settings tab Save).
+// The server persists them to .config/settings.yaml and returns the stored
+// values; the Analytics tab recomputes its figures on its next fetch. Throws the
 // server's message on a validation failure (e.g. a zero minutes-per-switch).
 export async function updateSettings(settings: Settings): Promise<Settings> {
   const resp = await fetch(`${API_BASE}/settings`, {

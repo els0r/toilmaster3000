@@ -12,6 +12,7 @@ vi.mock("./api", async (importOriginal) => {
     fetchQueue: vi.fn(),
     fetchRules: vi.fn(),
     fetchAnalytics: vi.fn(),
+    fetchSettings: vi.fn(),
   };
 });
 
@@ -21,12 +22,14 @@ import {
   fetchQueue,
   fetchRules,
   fetchAnalytics,
+  fetchSettings,
 } from "./api";
 const mockStatus = vi.mocked(fetchStatus);
 const mockApprovals = vi.mocked(fetchApprovals);
 const mockQueue = vi.mocked(fetchQueue);
 const mockRules = vi.mocked(fetchRules);
 const mockAnalytics = vi.mocked(fetchAnalytics);
+const mockSettings = vi.mocked(fetchSettings);
 
 const status = (approved: number): CycleStatus => ({
   last_run: "2026-06-18T10:00:00Z",
@@ -67,8 +70,10 @@ beforeEach(() => {
   mockQueue.mockReset();
   mockRules.mockReset();
   mockAnalytics.mockReset();
+  mockSettings.mockReset();
   mockQueue.mockResolvedValue([]);
   mockRules.mockResolvedValue([]);
+  mockSettings.mockResolvedValue({ minutes_per_switch: 23, hourly_rate: 100, currency: "$" });
   mockAnalytics.mockResolvedValue({
     auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
     human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
@@ -359,5 +364,49 @@ describe("App tabbed shell", () => {
       "true",
     );
     expect(screen.getByTestId("stat-auto-approved")).toBeInTheDocument();
+  });
+
+  // F-tab-settings: the Settings tab exists; clicking it shows the settings
+  // editor (the currency field among them), hides the Review panel, writes
+  // #settings, and loads the persisted constants.
+  it("switches to the Settings tab on click and updates the hash", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+
+    render(<App />);
+    await flush();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: /settings/i }));
+    });
+    await flush();
+
+    expect(window.location.hash).toBe("#settings");
+    expect(screen.getByRole("tab", { name: /settings/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByLabelText(/currency/i)).toBeInTheDocument();
+    expect(screen.queryByText("Needs Human Review")).not.toBeInTheDocument();
+    expect(mockSettings).toHaveBeenCalled();
+  });
+
+  // F-tab-settings-hash: loading with #settings opens the Settings tab directly —
+  // linkable / reload-stable like the others.
+  it("opens the Settings tab when loaded with #settings", async () => {
+    window.location.hash = "#settings";
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+
+    render(<App />);
+    await flush();
+
+    expect(screen.getByRole("tab", { name: /settings/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByLabelText(/minutes per switch/i)).toBeInTheDocument();
   });
 });

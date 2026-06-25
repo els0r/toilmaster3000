@@ -18,3 +18,4 @@ frontend/*.tsbuildinfo
 # Runtime state (seeded at first run)
 .state/*.jsonl
 .config/rules.yaml
+.config/settings.yaml

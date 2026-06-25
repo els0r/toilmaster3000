@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   fetchAnalytics,
-  updateSettings,
   type Analytics,
   type AnalyticsRange,
   type Delta,
@@ -26,17 +25,12 @@ export function AnalyticsPanel() {
   const [days, setDays] = useState<number>(() => readControls().days);
   const firstRef = useRef(true);
 
-  // refetch pulls the current range immediately (not behind the debounce). The
-  // assumption-chip Save uses it so the time/money figures recompute server-side
-  // the moment the constants change — no restart, no waiting on the picker timer.
-  const refetch = () =>
-    fetchAnalytics(range, days)
-      .then(setData)
-      .catch(() => setData(null));
-
   useEffect(() => {
     writeControls(range, days);
-    const run = () => refetch();
+    const run = () =>
+      fetchAnalytics(range, days)
+        .then(setData)
+        .catch(() => setData(null));
     // The first run (tab-open) fetches immediately so the dashboard paints without
     // a delay; later runs (range / day-count edits) debounce so a burst collapses
     // to one request.
@@ -89,10 +83,6 @@ export function AnalyticsPanel() {
               money={data.switches_saved_money}
               assumptions={data.assumptions}
               delta={data.switches_saved_delta}
-              onSave={async (next) => {
-                await updateSettings(next);
-                await refetch();
-              }}
             />
           </div>
           {/* One label for the row: every headline delta compares against the same
@@ -225,9 +215,10 @@ function SplitStat({
 // Stat is the Context-switches-saved headline: the raw count (= the auto-approved
 // count; a Human Review approval is a switch the human DID take, so it is not
 // saved) translated into the time and money it represents (slice 4, ADR 0010).
-// The server owns the arithmetic; this renders hours and currency-prefixed money,
-// the same period delta as the other headlines, and the clickable assumption chip
-// that edits the constants the figures were computed from.
+// The server owns the arithmetic; this renders the hours saved and the money as a
+// read-only pill that surfaces the assumptions behind it, plus the same period
+// delta as the other headlines. Editing the assumptions lives in the Settings
+// tab, so the Analytics surface stays pure presentation.
 function Stat({
   testid,
   label,
@@ -236,7 +227,6 @@ function Stat({
   money,
   assumptions,
   delta,
-  onSave,
 }: {
   testid: string;
   label: string;
@@ -245,129 +235,44 @@ function Stat({
   money: number;
   assumptions: Settings;
   delta: Delta;
-  onSave: (next: Settings) => Promise<void>;
 }) {
   return (
     <div className="stat" data-testid={testid}>
       <span className="stat-label">{label}</span>
       <span className="stat-value tnum">{count}</span>
-      <span className="stat-figures tnum">
-        {formatHours(hours)} · {formatMoney(money, assumptions.currency)}
-      </span>
-      <AssumptionChip assumptions={assumptions} onSave={onSave} />
+      <span className="stat-figures tnum">{formatHours(hours)} saved</span>
+      <MoneyPill money={money} assumptions={assumptions} />
       <DeltaBadge delta={delta} />
     </div>
   );
 }
 
-// AssumptionChip renders the constants behind the time/money figures inline as a
-// clickable chip ("× 23 min · $100/hr") and, when opened, a popover that edits and
-// persists them (ADR 0010). Saving calls onSave (PUT /settings + a re-fetch), so
-// the figures recompute server-side without a restart. The draft is local until
-// Save, so a cancel leaves the persisted constants untouched.
-function AssumptionChip({
+// MoneyPill renders the money headline as a pill that also carries the assumptions
+// it was computed from ("× 23 min · $100/hr"), so the figure reads honestly
+// without a separate chip. It is read-only — the constants are edited in the
+// Settings tab — and a title repeats the basis as a full sentence on hover.
+function MoneyPill({
+  money,
   assumptions,
-  onSave,
 }: {
+  money: number;
   assumptions: Settings;
-  onSave: (next: Settings) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<Settings>(assumptions);
-  const [saving, setSaving] = useState(false);
-
-  // Re-seed the draft whenever the persisted constants change (a fresh fetch) or
-  // the popover (re)opens, so an edit always starts from the current values.
-  const openEditor = () => {
-    setDraft(assumptions);
-    setOpen(true);
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await onSave(draft);
-      setOpen(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
-    <span className="assumption">
-      <button
-        type="button"
-        className="assumption-chip tnum"
-        aria-label="assumptions"
-        aria-expanded={open}
-        onClick={openEditor}
-      >
-        × {assumptions.minutes_per_switch} min ·{" "}
-        {assumptions.currency}
+    <span
+      className="money-pill"
+      data-testid="switches-money-pill"
+      title={`Assuming ${assumptions.minutes_per_switch} min per context switch at ${assumptions.currency}${assumptions.hourly_rate}/hr`}
+    >
+      <span className="money-pill-amount tnum">
+        {formatMoney(money, assumptions.currency)}
+      </span>
+      <span className="money-pill-basis tnum">
+        × {assumptions.minutes_per_switch} min · {assumptions.currency}
         {assumptions.hourly_rate}/hr
-      </button>
-      {open && (
-        <div className="assumption-popover" role="dialog" aria-label="Edit assumptions">
-          <label className="assumption-field">
-            <span>Minutes per switch</span>
-            <input
-              type="number"
-              min={1}
-              className="tnum"
-              aria-label="minutes per switch"
-              value={draft.minutes_per_switch}
-              onChange={(e) =>
-                setDraft({ ...draft, minutes_per_switch: clampInt(e.target.value, 1) })
-              }
-            />
-          </label>
-          <label className="assumption-field">
-            <span>Hourly rate</span>
-            <input
-              type="number"
-              min={0}
-              className="tnum"
-              aria-label="hourly rate"
-              value={draft.hourly_rate}
-              onChange={(e) =>
-                setDraft({ ...draft, hourly_rate: clampInt(e.target.value, 0) })
-              }
-            />
-          </label>
-          <label className="assumption-field">
-            <span>Currency</span>
-            <input
-              type="text"
-              className="assumption-currency"
-              aria-label="currency"
-              value={draft.currency}
-              onChange={(e) => setDraft({ ...draft, currency: e.target.value })}
-            />
-          </label>
-          <div className="assumption-actions">
-            <button type="button" className="btn-cancel" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn-save"
-              disabled={saving || draft.currency.trim() === ""}
-              onClick={save}
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      )}
+      </span>
     </span>
   );
-}
-
-// clampInt coerces a number input to an integer at or above min, so a blank or
-// out-of-range entry never reaches the server (which also validates structurally).
-function clampInt(raw: string, min: number): number {
-  const n = Math.floor(Number(raw));
-  return Number.isFinite(n) && n >= min ? n : min;
 }
 
 // formatHours renders the derived time to one decimal hour (e.g. 1.15 -> "1.2h"),

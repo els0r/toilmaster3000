@@ -5,12 +5,11 @@ import type { Analytics } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
-  return { ...actual, fetchAnalytics: vi.fn(), updateSettings: vi.fn() };
+  return { ...actual, fetchAnalytics: vi.fn() };
 });
 
-import { fetchAnalytics, updateSettings } from "./api";
+import { fetchAnalytics } from "./api";
 const mockAnalytics = vi.mocked(fetchAnalytics);
-const mockUpdateSettings = vi.mocked(updateSettings);
 
 const analytics = (over: Partial<Analytics> = {}): Analytics => ({
   auto_approved: { count: 3, share: 0.75, delta: { pct: 0, state: "none" } },
@@ -27,7 +26,6 @@ const analytics = (over: Partial<Analytics> = {}): Analytics => ({
 beforeEach(() => {
   vi.useFakeTimers();
   mockAnalytics.mockReset();
-  mockUpdateSettings.mockReset();
   // The picker reflects its selection into the URL; reset it so each test starts
   // from the default (today) rather than inheriting a prior test's range.
   window.history.replaceState(null, "", "/");
@@ -205,43 +203,27 @@ describe("AnalyticsPanel switches-saved time & money", () => {
     expect(switches).toHaveTextContent("$115");
   });
 
-  // A8: the assumption constants render as a clickable chip ("× 23 min · $100/hr");
-  // editing them in the popover persists through updateSettings and re-fetches the
-  // analytics so the figures recompute.
-  it("edits the assumptions through the chip popover and re-fetches", async () => {
-    mockAnalytics.mockResolvedValue(analytics());
-    mockUpdateSettings.mockResolvedValue({
-      minutes_per_switch: 30,
-      hourly_rate: 200,
-      currency: "$",
-    });
+  // A8: the money figure is a read-only pill that renders the assumptions behind
+  // it ("× 23 min · $100/hr") — editing now lives in the Settings tab, so the
+  // Analytics surface stays pure presentation (no edit control here).
+  it("renders the money as a pill that surfaces the assumptions, read-only", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        switches_saved_money: 307,
+        assumptions: { minutes_per_switch: 23, hourly_rate: 100, currency: "$" },
+      }),
+    );
 
     render(<AnalyticsPanel />);
     await flush();
-    expect(mockAnalytics).toHaveBeenCalledTimes(1);
 
-    // The chip shows the current constants and opens the editor.
-    const chip = screen.getByRole("button", { name: /assumptions/i });
-    expect(chip).toHaveTextContent("23 min");
-    expect(chip).toHaveTextContent("$100/hr");
-    fireEvent.click(chip);
-
-    // Edit minutes + rate and save.
-    fireEvent.change(screen.getByLabelText(/minutes per switch/i), {
-      target: { value: "30" },
-    });
-    fireEvent.change(screen.getByLabelText(/hourly rate/i), {
-      target: { value: "200" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
-    await flush();
-
-    expect(mockUpdateSettings).toHaveBeenCalledWith({
-      minutes_per_switch: 30,
-      hourly_rate: 200,
-      currency: "$",
-    });
-    // Persisting re-fetches the analytics so the figures recompute server-side.
-    expect(mockAnalytics).toHaveBeenCalledTimes(2);
+    const pill = screen.getByTestId("switches-money-pill");
+    expect(pill).toHaveTextContent("$307");
+    // The pill renders the assumptions that produced the figure.
+    expect(pill).toHaveTextContent("23 min");
+    expect(pill).toHaveTextContent("$100/hr");
+    // No editing affordance on the Analytics tab — that moved to Settings.
+    expect(screen.queryByRole("button", { name: /save/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/minutes per switch/i)).not.toBeInTheDocument();
   });
 });
