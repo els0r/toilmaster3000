@@ -15,6 +15,9 @@ frontend/*.tsbuildinfo
 # Local CLI state (e.g. gh device id)
 .local/
 
+# Local planning
+/docs/plans/
+
 # Runtime state (seeded at first run)
 .state/*.jsonl
 .config/rules.yaml
