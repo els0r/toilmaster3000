@@ -1537,14 +1537,18 @@ textarea:focus {
   color: var(--fg-3);
 }
 .cohort-rows {
-  display: flex;
-  flex-direction: column;
-}
-.cohort-row {
   display: grid;
   grid-template-columns: 1fr auto 3.5em auto;
+  column-gap: var(--space-3);
+}
+/* Each row is a subgrid so every row shares the parent's column tracks: the auto
+   columns size to the widest content across the whole table, not per-row, so the
+   count, share, and split columns each align on a single right edge. */
+.cohort-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   align-items: baseline;
-  gap: var(--space-3);
   padding: 7px 0;
   border-bottom: 1px solid var(--border-subtle, var(--border));
 }
