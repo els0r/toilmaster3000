@@ -26,7 +26,7 @@ import (
 
 func main() {
 	api := humago.New(http.NewServeMux(), server.Config())
-	server.RegisterAPI(api, nil, nil)
+	server.RegisterAPI(api, nil, nil, nil)
 
 	doc, err := api.OpenAPI().MarshalJSON()
 	if err != nil {

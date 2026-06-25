@@ -168,6 +168,36 @@ func TestDeltaLabel(t *testing.T) {
 	}
 }
 
+// TestSwitchesSavedFigures covers the slice-4 time/money arithmetic (ADR 0010):
+// time = count × MinutesPerSwitch / 60 hours, money = hours × HourlyRate. The
+// cases pin the conversion (incl. a fractional hour), the zero-count empty range,
+// and that the rate scales money but not hours.
+func TestSwitchesSavedFigures(t *testing.T) {
+	tests := []struct {
+		name      string
+		count     int
+		assume    Assumptions
+		wantHours float64
+		wantMoney float64
+	}{
+		{"defaults: 60 switches × 23 min = 23h at $100/hr",
+			60, Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, 23, 2300},
+		{"fractional hour: 30 × 23 min = 11.5h",
+			30, Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, 11.5, 1150},
+		{"empty range: zero count is zero time and money",
+			0, Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, 0, 0},
+		{"rate scales money, not hours",
+			60, Assumptions{MinutesPerSwitch: 60, HourlyRate: 200, Currency: "$"}, 60, 12000},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hours, money := switchesSavedFigures(tc.count, tc.assume)
+			require.InDelta(t, tc.wantHours, hours, 1e-9)
+			require.InDelta(t, tc.wantMoney, money, 1e-9)
+		})
+	}
+}
+
 // TestAggregateAnalytics covers the slice-1 aggregation: the auto-vs-human
 // partition by the matched_rule prefix (ADR 0009), each side's share of the
 // range total, and switches-saved = the auto count. The empty range yields all

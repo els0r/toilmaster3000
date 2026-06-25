@@ -68,6 +68,30 @@ export async function fetchAnalytics(
   return resp.json();
 }
 
+// Settings is the analytics assumption constants (generated from the backend's
+// Assumptions DTO): minutes_per_switch, hourly_rate, and currency (ADR 0010).
+// They drive the switches-saved time/money figures and are shown inline as the
+// editable assumption chip. The same shape rides on the Analytics response's
+// `assumptions` block, so the chip paints from the analytics fetch and is edited
+// through updateSettings (PUT /settings).
+export type Settings = components["schemas"]["Assumptions"];
+
+// updateSettings full-replaces the assumption constants (the popover Save). The
+// server persists them to .config/settings.yaml and returns the stored values;
+// the Analytics tab re-fetches afterwards so the figures recompute. Throws the
+// server's message on a validation failure (e.g. a zero minutes-per-switch).
+export async function updateSettings(settings: Settings): Promise<Settings> {
+  const resp = await fetch(`${API_BASE}/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!resp.ok) {
+    throw new Error(await extractError(resp, "update settings failed"));
+  }
+  return resp.json();
+}
+
 // QueueItem is a Needs-Human-Review entry (generated from the backend's
 // QueueItem DTO): a PR routed here for one or more `reasons` (MVP today:
 // `["breaking_change"]`). Each carries a GitHub url and is approvable only via

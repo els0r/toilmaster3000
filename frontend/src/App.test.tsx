@@ -73,8 +73,11 @@ beforeEach(() => {
     auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
     human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
     switches_saved: 0,
+    switches_saved_hours: 0,
+    switches_saved_money: 0,
     switches_saved_delta: { pct: 0, state: "none" },
     delta_label: "vs yesterday",
+    assumptions: { minutes_per_switch: 23, hourly_rate: 100, currency: "$" },
   });
   // Each test starts from a clean hash so the default (Review) tab applies.
   window.location.hash = "";

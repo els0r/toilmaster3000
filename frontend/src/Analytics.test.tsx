@@ -5,24 +5,29 @@ import type { Analytics } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
-  return { ...actual, fetchAnalytics: vi.fn() };
+  return { ...actual, fetchAnalytics: vi.fn(), updateSettings: vi.fn() };
 });
 
-import { fetchAnalytics } from "./api";
+import { fetchAnalytics, updateSettings } from "./api";
 const mockAnalytics = vi.mocked(fetchAnalytics);
+const mockUpdateSettings = vi.mocked(updateSettings);
 
 const analytics = (over: Partial<Analytics> = {}): Analytics => ({
   auto_approved: { count: 3, share: 0.75, delta: { pct: 0, state: "none" } },
   human_review: { count: 1, share: 0.25, delta: { pct: 0, state: "none" } },
   switches_saved: 3,
+  switches_saved_hours: 1.2,
+  switches_saved_money: 115,
   switches_saved_delta: { pct: 0, state: "none" },
   delta_label: "vs yesterday",
+  assumptions: { minutes_per_switch: 23, hourly_rate: 100, currency: "$" },
   ...over,
 });
 
 beforeEach(() => {
   vi.useFakeTimers();
   mockAnalytics.mockReset();
+  mockUpdateSettings.mockReset();
   // The picker reflects its selection into the URL; reset it so each test starts
   // from the default (today) rather than inheriting a prior test's range.
   window.history.replaceState(null, "", "/");
@@ -175,5 +180,68 @@ describe("AnalyticsPanel time picker", () => {
     });
     await flush();
     expect(mockAnalytics).toHaveBeenLastCalledWith("days", 14);
+  });
+});
+
+describe("AnalyticsPanel switches-saved time & money", () => {
+  // A7: the switches-saved stat shows its two derived figures — time in hours and
+  // money with the currency prefix — alongside the raw count (slice 4, ADR 0010).
+  it("renders the count, hours, and currency-prefixed money", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        switches_saved: 3,
+        switches_saved_hours: 1.2,
+        switches_saved_money: 115,
+        assumptions: { minutes_per_switch: 23, hourly_rate: 100, currency: "$" },
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    const switches = screen.getByTestId("stat-switches-saved");
+    expect(switches).toHaveTextContent("3");
+    expect(switches).toHaveTextContent("1.2h"); // 1.15h rounded to one decimal
+    expect(switches).toHaveTextContent("$115");
+  });
+
+  // A8: the assumption constants render as a clickable chip ("× 23 min · $100/hr");
+  // editing them in the popover persists through updateSettings and re-fetches the
+  // analytics so the figures recompute.
+  it("edits the assumptions through the chip popover and re-fetches", async () => {
+    mockAnalytics.mockResolvedValue(analytics());
+    mockUpdateSettings.mockResolvedValue({
+      minutes_per_switch: 30,
+      hourly_rate: 200,
+      currency: "$",
+    });
+
+    render(<AnalyticsPanel />);
+    await flush();
+    expect(mockAnalytics).toHaveBeenCalledTimes(1);
+
+    // The chip shows the current constants and opens the editor.
+    const chip = screen.getByRole("button", { name: /assumptions/i });
+    expect(chip).toHaveTextContent("23 min");
+    expect(chip).toHaveTextContent("$100/hr");
+    fireEvent.click(chip);
+
+    // Edit minutes + rate and save.
+    fireEvent.change(screen.getByLabelText(/minutes per switch/i), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByLabelText(/hourly rate/i), {
+      target: { value: "200" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await flush();
+
+    expect(mockUpdateSettings).toHaveBeenCalledWith({
+      minutes_per_switch: 30,
+      hourly_rate: 200,
+      currency: "$",
+    });
+    // Persisting re-fetches the analytics so the figures recompute server-side.
+    expect(mockAnalytics).toHaveBeenCalledTimes(2);
   });
 });

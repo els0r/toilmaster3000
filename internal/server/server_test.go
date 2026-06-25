@@ -22,6 +22,7 @@ import (
 	"github.com/els0r/toilmaster3000/internal/github"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/els0r/toilmaster3000/internal/server"
+	"github.com/els0r/toilmaster3000/internal/settings"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,11 +101,29 @@ func newEngineWith(t *testing.T, fake *github.Fake, store *rule.Store) *engine.E
 
 func newTestServerFor(t *testing.T, eng *engine.Engine, store *rule.Store) *httptest.Server {
 	t.Helper()
-	h, err := server.New(testSPA(), eng, store)
+	return newServerWith(t, eng, store, defaultSettings(t))
+}
+
+// newServerWith builds a server over explicit engine, rule, and settings stores,
+// so a settings test can inject a store over a known path and reload it from disk
+// to prove persistence.
+func newServerWith(t *testing.T, eng *engine.Engine, store *rule.Store, set *settings.Store) *httptest.Server {
+	t.Helper()
+	h, err := server.New(testSPA(), eng, store, set)
 	require.NoError(t, err)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// defaultSettings builds a settings.Store over a temp-dir settings.yaml seeded
+// with the documented defaults (ADR 0010), for the tests that do not care about
+// the constants beyond their seeded values.
+func defaultSettings(t *testing.T) *settings.Store {
+	t.Helper()
+	s, err := settings.NewStore(filepath.Join(t.TempDir(), "settings.yaml"))
+	require.NoError(t, err)
+	return s
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
@@ -205,10 +224,11 @@ func TestOpenAPIReachable(t *testing.T) {
 // DTO change that isn't followed by `make generate` (regenerating the spec and
 // the frontend types) fails here. This is the spec half of the drift guard, and
 // unlike `make check` it runs in `go test` with no regeneration step. The nil
-// engine/rules are safe: spec generation never invokes the handler closures.
+// engine/rules/settings are safe: spec generation never invokes the handler
+// closures.
 func TestOpenAPISpecMatchesCommitted(t *testing.T) {
 	api := humago.New(http.NewServeMux(), server.Config())
-	server.RegisterAPI(api, nil, nil)
+	server.RegisterAPI(api, nil, nil, nil)
 
 	got, err := api.OpenAPI().MarshalJSON()
 	require.NoError(t, err)
@@ -1954,4 +1974,108 @@ func TestAnalyticsEmptyRangeAllZeros(t *testing.T) {
 	require.Equal(t, "none", got.AutoApproved.Delta.State, "0 vs 0 is 'none', not infinity")
 	require.Equal(t, "none", got.HumanReview.Delta.State)
 	require.Equal(t, "none", got.SwitchesSavedDelta.State)
+}
+
+// --- Slice 4: settings store + switches-saved time/money ---
+
+// AN5 (slice 4, tracer): GET /settings returns the seeded assumption constants
+// (snake_case wire, ADR 0010); PUT /settings full-replaces them, the change
+// persists to disk (a second store over the same file reads the new values), and
+// a subsequent GET returns the replacement.
+func TestSettingsGetPutRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.yaml")
+	set, err := settings.NewStore(path)
+	require.NoError(t, err)
+	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
+
+	// GET returns the seeded defaults in snake_case.
+	var got server.Assumptions
+	getJSON(t, srv.URL+apiPrefix+"/settings", &got)
+	require.Equal(t, server.Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, got)
+
+	// PUT full-replaces.
+	next := server.Assumptions{MinutesPerSwitch: 45, HourlyRate: 200, Currency: "£"}
+	var put server.Assumptions
+	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings", next, &put)
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, next, put, "PUT echoes the replacement")
+
+	// It persisted to disk: a fresh store over the same file reads the new values.
+	reloaded, err := settings.NewStore(path)
+	require.NoError(t, err)
+	require.Equal(t, 45, reloaded.Get().MinutesPerSwitch)
+	require.Equal(t, 200, reloaded.Get().HourlyRate)
+	require.Equal(t, "£", reloaded.Get().Currency)
+
+	// And a subsequent GET serves it.
+	getJSON(t, srv.URL+apiPrefix+"/settings", &got)
+	require.Equal(t, next, got)
+}
+
+// AN5b (slice 4): the wire is snake_case (the contract the generated frontend
+// types track).
+func TestSettingsWireIsSnakeCase(t *testing.T) {
+	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), defaultSettings(t))
+	var raw map[string]any
+	getJSON(t, srv.URL+apiPrefix+"/settings", &raw)
+	require.Contains(t, raw, "minutes_per_switch")
+	require.Contains(t, raw, "hourly_rate")
+	require.Contains(t, raw, "currency")
+}
+
+// AN5c (slice 4): a structurally-invalid PUT (zero MinutesPerSwitch would zero the
+// very headline) is rejected by huma's minimum, never persisted, never a 200.
+func TestSettingsPutValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.yaml")
+	set, err := settings.NewStore(path)
+	require.NoError(t, err)
+	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
+
+	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings",
+		map[string]any{"minutes_per_switch": 0, "hourly_rate": 100, "currency": "$"}, nil)
+	require.GreaterOrEqual(t, code, 400)
+	require.Less(t, code, 500)
+	require.Equal(t, 23, set.Get().MinutesPerSwitch, "rejected PUT did not mutate the store")
+}
+
+// AN6 (slice 4): the analytics response carries the switches-saved time/money
+// figures derived from the settings constants (ADR 0010): hours = count ×
+// MinutesPerSwitch / 60, money = hours × HourlyRate, plus the assumptions block
+// that feeds the chip. Editing the constants (PUT /settings) recomputes the
+// figures on the next fetch — no restart.
+func TestAnalyticsSwitchesSavedTimeAndMoney(t *testing.T) {
+	now := time.Now()
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	// Two auto approvals today -> switches_saved = 2.
+	seedApprovalsFile(t, statePath,
+		engine.Approval{Number: 940, Title: "chore: a", URL: "u940",
+			MatchedRule: "team chores", ApprovedAt: now},
+		engine.Approval{Number: 941, Title: "chore: b", URL: "u941",
+			MatchedRule: "team chores", ApprovedAt: now},
+	)
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store)
+	require.NoError(t, err)
+	set, err := settings.NewStore(filepath.Join(t.TempDir(), "settings.yaml"))
+	require.NoError(t, err)
+	srv := newServerWith(t, eng, store, set)
+
+	var got server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
+	require.Equal(t, 2, got.SwitchesSaved)
+	// 2 × 23 min / 60 = 0.7666… h; × $100 = $76.66…
+	require.InDelta(t, 2.0*23/60, got.SwitchesSavedHours, 1e-9, "hours from the seeded MinutesPerSwitch")
+	require.InDelta(t, (2.0*23/60)*100, got.SwitchesSavedMoney, 1e-9, "money from the seeded HourlyRate")
+	require.Equal(t, server.Assumptions{MinutesPerSwitch: 23, HourlyRate: 100, Currency: "$"}, got.Assumptions,
+		"the figures name the constants they were computed from (the chip)")
+
+	// Edit the constants, then re-fetch: the figures recompute without a restart.
+	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings",
+		server.Assumptions{MinutesPerSwitch: 30, HourlyRate: 200, Currency: "$"}, nil)
+	require.Equal(t, http.StatusOK, code)
+
+	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
+	require.InDelta(t, 2.0*30/60, got.SwitchesSavedHours, 1e-9, "hours recompute from the edited constant")
+	require.InDelta(t, (2.0*30/60)*200, got.SwitchesSavedMoney, 1e-9, "money recomputes from the edited rate")
+	require.Equal(t, 30, got.Assumptions.MinutesPerSwitch, "the chip reflects the edit")
 }

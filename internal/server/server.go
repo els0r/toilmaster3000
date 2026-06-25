@@ -21,6 +21,7 @@ import (
 	"github.com/els0r/toilmaster3000/internal/engine"
 	"github.com/els0r/toilmaster3000/internal/github"
 	"github.com/els0r/toilmaster3000/internal/rule"
+	"github.com/els0r/toilmaster3000/internal/settings"
 )
 
 // APIPrefix is the verbose-but-unambiguous mount point for the JSON API.
@@ -248,6 +249,37 @@ type analyticsOutput struct {
 	Body Analytics
 }
 
+// settingsToBody converts the stored settings constants to their wire DTO. The
+// settings.Settings type carries PascalCase YAML tags (its on-disk form); the
+// snake_case wire shape is owned here (ADR 0002 / 0010).
+func settingsToBody(s settings.Settings) Assumptions {
+	return Assumptions{
+		MinutesPerSwitch: s.MinutesPerSwitch,
+		HourlyRate:       s.HourlyRate,
+		Currency:         s.Currency,
+	}
+}
+
+// toSettings converts an inbound Assumptions wire DTO to the store's
+// settings.Settings for a full replace (the PUT /settings path).
+func (a Assumptions) toSettings() settings.Settings {
+	return settings.Settings{
+		MinutesPerSwitch: a.MinutesPerSwitch,
+		HourlyRate:       a.HourlyRate,
+		Currency:         a.Currency,
+	}
+}
+
+type settingsOutput struct {
+	Body Assumptions
+}
+
+// settingsInput is the PUT /settings request body: a full replacement of the
+// three assumption constants (huma enforces the minimums structurally).
+type settingsInput struct {
+	Body Assumptions
+}
+
 // manualApproveOutput is the success body of a manual queue approval: a simple
 // ok marker plus the approved PR number.
 type manualApproveOutput struct {
@@ -381,10 +413,10 @@ func ruleHTTPError(err error) error {
 // injected dependency tests substitute (via its fake GitHubClient and a
 // temp-dir state path), so all backend behaviour is asserted through this HTTP
 // surface.
-func New(spa fs.FS, eng *engine.Engine, rules *rule.Store) (http.Handler, error) {
+func New(spa fs.FS, eng *engine.Engine, rules *rule.Store, set *settings.Store) (http.Handler, error) {
 	mux := http.NewServeMux()
 	api := humago.New(mux, Config())
-	RegisterAPI(api, eng, rules)
+	RegisterAPI(api, eng, rules, set)
 
 	spaHandler, err := newSPAHandler(spa)
 	if err != nil {
@@ -409,7 +441,7 @@ func Config() huma.Config {
 // cmd/openapigen call it, so the generated spec stays in sync with the served
 // one by construction. The handler closures capture eng/rules but are never
 // invoked during spec generation, so passing a nil engine/rules is safe there.
-func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store) {
+func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *settings.Store) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-status",
 		Method:      http.MethodGet,
@@ -527,7 +559,34 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store) {
 		prevStart, prevEnd := prevWindow(in.Range, in.Days, now)
 		prev := aggregateAnalytics(inWindow(feed, prevStart, prevEnd))
 		body := withDeltas(cur, prev, deltaLabel(in.Range, in.Days, now))
+		// Slice 4: translate the switches-saved count into time + money using the
+		// persisted assumption constants (ADR 0010), and name them on the response so
+		// the tab paints the figures and the editable chip in one fetch.
+		assume := settingsToBody(set.Get())
+		body.SwitchesSavedHours, body.SwitchesSavedMoney = switchesSavedFigures(body.SwitchesSaved, assume)
+		body.Assumptions = assume
 		return &analyticsOutput{Body: body}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-settings",
+		Method:      http.MethodGet,
+		Path:        APIPrefix + "/settings",
+		Summary:     "Read the analytics assumption constants (the chip)",
+	}, func(_ context.Context, _ *struct{}) (*settingsOutput, error) {
+		return &settingsOutput{Body: settingsToBody(set.Get())}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-settings",
+		Method:      http.MethodPut,
+		Path:        APIPrefix + "/settings",
+		Summary:     "Full-replace the analytics assumption constants",
+	}, func(_ context.Context, in *settingsInput) (*settingsOutput, error) {
+		if err := set.Replace(in.Body.toSettings()); err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		return &settingsOutput{Body: settingsToBody(set.Get())}, nil
 	})
 
 	huma.Register(api, huma.Operation{

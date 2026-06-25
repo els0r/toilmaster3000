@@ -1332,9 +1332,76 @@ textarea:focus {
   font-weight: var(--weight-medium);
   color: var(--fg-2);
 }
-.stat-note {
-  font-size: var(--text-2xs);
+/* The switches-saved derived figures (slice 4): time + currency-prefixed money,
+   the headline the assumption chip qualifies. Sized between the count and the
+   chip so the money reads as the payoff without shouting over the raw count. */
+.stat-figures {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--fg-2);
+}
+/* The assumption chip + its edit popover (slice 4, ADR 0010). The chip names the
+   constants behind the figures ("× 23 min · $100/hr") and anchors the popover. */
+.assumption {
+  position: relative;
+}
+.assumption-chip {
+  appearance: none;
+  border: 1px dashed var(--border-strong);
+  background: var(--panel-3);
   color: var(--fg-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.assumption-chip:hover {
+  color: var(--fg-2);
+  border-color: var(--fg-3);
+}
+.assumption-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 210px;
+  padding: var(--space-3);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+}
+.assumption-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.assumption-field input {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--fg);
+  padding: 5px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.assumption-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 /* The elapsed-aligned period delta (slice 3): a direction arrow + color +
    signed percentage. Up is green, down is red; the zero-baseline states ("new",

@@ -13,6 +13,9 @@
             "readOnly": true,
             "type": "string"
           },
+          "assumptions": {
+            "$ref": "#/components/schemas/Assumptions"
+          },
           "auto_approved": {
             "$ref": "#/components/schemas/Stat"
           },
@@ -28,14 +31,25 @@
           },
           "switches_saved_delta": {
             "$ref": "#/components/schemas/Delta"
+          },
+          "switches_saved_hours": {
+            "format": "double",
+            "type": "number"
+          },
+          "switches_saved_money": {
+            "format": "double",
+            "type": "number"
           }
         },
         "required": [
           "auto_approved",
           "human_review",
           "switches_saved",
+          "switches_saved_hours",
+          "switches_saved_money",
           "switches_saved_delta",
-          "delta_label"
+          "delta_label",
+          "assumptions"
         ],
         "type": "object"
       },
@@ -88,6 +102,43 @@
           "manual",
           "state",
           "approved_at"
+        ],
+        "type": "object"
+      },
+      "Assumptions": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Assumptions.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "currency": {
+            "description": "Symbol prefixed onto the money figure (seeded \"$\")",
+            "minLength": 1,
+            "type": "string"
+          },
+          "hourly_rate": {
+            "description": "The user's hourly rate, applied to the time saved (seeded 100)",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minutes_per_switch": {
+            "description": "Minutes a single context switch costs (seeded 23)",
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minutes_per_switch",
+          "hourly_rate",
+          "currency"
         ],
         "type": "object"
       },
@@ -876,6 +927,70 @@
           }
         },
         "summary": "Full-replace a rule (also enable/disable)"
+      }
+    },
+    "/api/toilmaster3000/v1/settings": {
+      "get": {
+        "operationId": "get-settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Assumptions"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Read the analytics assumption constants (the chip)"
+      },
+      "put": {
+        "operationId": "update-settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Assumptions"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Assumptions"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Full-replace the analytics assumption constants"
       }
     },
     "/api/toilmaster3000/v1/status": {

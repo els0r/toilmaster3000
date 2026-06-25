@@ -167,8 +167,16 @@ type Analytics struct {
 	// SwitchesSaved is the context-switches-saved headline: the raw count of
 	// interruptions the robot spared the human, which equals the Auto-approved count
 	// (a Human Review approval is a switch the human DID take, so it is not saved).
-	// Slice 4 adds the derived time/money figures from the settings constants.
 	SwitchesSaved int `json:"switches_saved"`
+	// SwitchesSavedHours and SwitchesSavedMoney are the slice-4 derived figures from
+	// the settings assumption constants (ADR 0010): hours = count × MinutesPerSwitch
+	// / 60, money = hours × HourlyRate. They ride alongside the count as flat
+	// siblings (like SwitchesSavedDelta) because switches-saved has no Stat share.
+	// The server owns the arithmetic; the frontend formats (currency prefix from
+	// Assumptions.Currency), mirroring how Stat.Share is a fraction formatted client-
+	// side.
+	SwitchesSavedHours float64 `json:"switches_saved_hours"`
+	SwitchesSavedMoney float64 `json:"switches_saved_money"`
 	// SwitchesSavedDelta is the elapsed-aligned period-over-period change of the
 	// switches-saved count (slice 3). It rides alongside the count rather than inside
 	// a Stat because switches-saved has no share — and the renderer should not have
@@ -178,6 +186,36 @@ type Analytics struct {
 	// against (e.g. "vs last week, Mon–Thu aligned"). One label for the range, since
 	// all three headline deltas share the same previous-period window (ADR 0011).
 	DeltaLabel string `json:"delta_label"`
+	// Assumptions are the constants the switches-saved time/money figures were
+	// computed from (ADR 0010). They ride on the response so the Analytics tab paints
+	// the derived figures AND the clickable assumption chip ("× 23 min · $100/hr") in
+	// a single fetch; editing them is the separate PUT /settings path, after which the
+	// tab re-fetches and the figures recompute.
+	Assumptions Assumptions `json:"assumptions"`
+}
+
+// Assumptions is the wire shape of the analytics assumption constants (ADR 0010):
+// the settings store's three values at the HTTP boundary, snake_case per the
+// project's single-convention rule. It is the GET/PUT /settings body AND the
+// read-only block on the Analytics response that names the basis of the derived
+// figures and feeds the assumption chip. The huma minimums reject nonsensical
+// edits structurally on the PUT path (a zero MinutesPerSwitch would zero the very
+// headline the feature exists to deliver).
+type Assumptions struct {
+	MinutesPerSwitch int    `json:"minutes_per_switch" minimum:"1" doc:"Minutes a single context switch costs (seeded 23)"`
+	HourlyRate       int    `json:"hourly_rate" minimum:"0" doc:"The user's hourly rate, applied to the time saved (seeded 100)"`
+	Currency         string `json:"currency" minLength:"1" doc:"Symbol prefixed onto the money figure (seeded \"$\")"`
+}
+
+// switchesSavedFigures derives the slice-4 time and money headlines from the
+// switches-saved count and the assumption constants (ADR 0010): hours = count ×
+// MinutesPerSwitch / 60, money = hours × HourlyRate. A zero count (empty range)
+// yields zero of both. This is the pure, table-tested arithmetic; the handler
+// reads the constants from the settings store and the frontend formats the result.
+func switchesSavedFigures(count int, a Assumptions) (hours, money float64) {
+	hours = float64(count) * float64(a.MinutesPerSwitch) / 60
+	money = hours * float64(a.HourlyRate)
+	return hours, money
 }
 
 // The three delta states (ADR 0011). They keep the zero-baseline cases off the

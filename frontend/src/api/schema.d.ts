@@ -125,6 +125,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/toilmaster3000/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the analytics assumption constants (the chip) */
+        get: operations["get-settings"];
+        /** Full-replace the analytics assumption constants */
+        put: operations["update-settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/toilmaster3000/v1/status": {
         parameters: {
             query?: never;
@@ -153,12 +171,17 @@ export interface components {
              * @example https://example.com/schemas/Analytics.json
              */
             readonly $schema?: string;
+            assumptions: components["schemas"]["Assumptions"];
             auto_approved: components["schemas"]["Stat"];
             delta_label: string;
             human_review: components["schemas"]["Stat"];
             /** Format: int64 */
             switches_saved: number;
             switches_saved_delta: components["schemas"]["Delta"];
+            /** Format: double */
+            switches_saved_hours: number;
+            /** Format: double */
+            switches_saved_money: number;
         };
         Approval: {
             /** Format: date-time */
@@ -173,6 +196,26 @@ export interface components {
             title: string;
             title_parts: components["schemas"]["TitleParts"];
             url: string;
+        };
+        Assumptions: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/Assumptions.json
+             */
+            readonly $schema?: string;
+            /** @description Symbol prefixed onto the money figure (seeded "$") */
+            currency: string;
+            /**
+             * Format: int64
+             * @description The user's hourly rate, applied to the time saved (seeded 100)
+             */
+            hourly_rate: number;
+            /**
+             * Format: int64
+             * @description Minutes a single context switch costs (seeded 23)
+             */
+            minutes_per_switch: number;
         };
         CycleStatus: {
             /**
@@ -617,6 +660,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Assumptions"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "update-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Assumptions"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Assumptions"];
+                };
             };
             /** @description Error */
             default: {

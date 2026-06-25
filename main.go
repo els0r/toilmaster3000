@@ -29,15 +29,17 @@ import (
 	"github.com/els0r/toilmaster3000/internal/github"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/els0r/toilmaster3000/internal/server"
+	"github.com/els0r/toilmaster3000/internal/settings"
 )
 
 //go:embed all:frontend/dist
 var embeddedFrontend embed.FS
 
 const (
-	addr      = "localhost:8666"
-	statePath = ".state/approvals.jsonl"
-	rulesPath = ".config/rules.yaml"
+	addr         = "localhost:8666"
+	statePath    = ".state/approvals.jsonl"
+	rulesPath    = ".config/rules.yaml"
+	settingsPath = ".config/settings.yaml"
 )
 
 // config is the resolved startup configuration: the candidate set (repo +
@@ -135,6 +137,12 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("build rule store: %w", err)
 	}
 
+	// Load (or seed on first run) the analytics assumption constants (ADR 0010).
+	set, err := settings.NewStore(settingsPath)
+	if err != nil {
+		return fmt.Errorf("build settings store: %w", err)
+	}
+
 	eng, err := engine.New(client, statePath, rules)
 	if err != nil {
 		return fmt.Errorf("build engine: %w", err)
@@ -163,7 +171,7 @@ func run(ctx context.Context, cfg config) error {
 
 	go eng.Run(ctx)
 
-	handler, err := server.New(spa, eng, rules)
+	handler, err := server.New(spa, eng, rules, set)
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
