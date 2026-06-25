@@ -154,9 +154,11 @@ export interface components {
              */
             readonly $schema?: string;
             auto_approved: components["schemas"]["Stat"];
+            delta_label: string;
             human_review: components["schemas"]["Stat"];
             /** Format: int64 */
             switches_saved: number;
+            switches_saved_delta: components["schemas"]["Delta"];
         };
         Approval: {
             /** Format: date-time */
@@ -188,6 +190,11 @@ export interface components {
             outcome: string;
             /** Format: int64 */
             queue_count: number;
+        };
+        Delta: {
+            /** Format: double */
+            pct: number;
+            state: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -319,6 +326,7 @@ export interface components {
         Stat: {
             /** Format: int64 */
             count: number;
+            delta: components["schemas"]["Delta"];
             /** Format: double */
             share: number;
         };

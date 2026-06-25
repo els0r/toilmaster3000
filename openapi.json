@@ -16,18 +16,26 @@
           "auto_approved": {
             "$ref": "#/components/schemas/Stat"
           },
+          "delta_label": {
+            "type": "string"
+          },
           "human_review": {
             "$ref": "#/components/schemas/Stat"
           },
           "switches_saved": {
             "format": "int64",
             "type": "integer"
+          },
+          "switches_saved_delta": {
+            "$ref": "#/components/schemas/Delta"
           }
         },
         "required": [
           "auto_approved",
           "human_review",
-          "switches_saved"
+          "switches_saved",
+          "switches_saved_delta",
+          "delta_label"
         ],
         "type": "object"
       },
@@ -124,6 +132,23 @@
           "approved_count",
           "queue_count",
           "dropped_count"
+        ],
+        "type": "object"
+      },
+      "Delta": {
+        "additionalProperties": false,
+        "properties": {
+          "pct": {
+            "format": "double",
+            "type": "number"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pct",
+          "state"
         ],
         "type": "object"
       },
@@ -440,6 +465,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "delta": {
+            "$ref": "#/components/schemas/Delta"
+          },
           "share": {
             "format": "double",
             "type": "number"
@@ -447,7 +475,8 @@
         },
         "required": [
           "count",
-          "share"
+          "share",
+          "delta"
         ],
         "type": "object"
       },

@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchAnalytics, type Analytics, type AnalyticsRange } from "./api";
+import {
+  fetchAnalytics,
+  type Analytics,
+  type AnalyticsRange,
+  type Delta,
+} from "./api";
 
 // DEBOUNCE_MS collapses a burst of picker changes (range clicks, day-count
 // keystrokes) into a single fetch, so the lean-back dashboard doesn't hammer the
@@ -42,39 +47,46 @@ export function AnalyticsPanel() {
       <div className="card-head">
         <h2 className="card-title">Analytics</h2>
         <div className="spacer" />
-        <span className="card-note">look-back</span>
+        <TimePicker
+          range={range}
+          days={days}
+          onRange={setRange}
+          onDays={setDays}
+        />
       </div>
-
-      <TimePicker
-        range={range}
-        days={days}
-        onRange={setRange}
-        onDays={setDays}
-      />
 
       {data === null ? (
         <div className="card-loading">Loading analytics…</div>
       ) : (
-        <div className="stats-row">
-          <SplitStat
-            testid="stat-auto-approved"
-            label="Auto-approved"
-            count={data.auto_approved.count}
-            share={data.auto_approved.share}
-          />
-          <SplitStat
-            testid="stat-human-review"
-            label="Human review"
-            count={data.human_review.count}
-            share={data.human_review.share}
-          />
-          <Stat
-            testid="stat-switches-saved"
-            label="Context switches saved"
-            count={data.switches_saved}
-            note="interruptions the robot spared you"
-          />
-        </div>
+        <>
+          <div className="stats-row">
+            <SplitStat
+              testid="stat-auto-approved"
+              label="Auto-approved"
+              count={data.auto_approved.count}
+              share={data.auto_approved.share}
+              delta={data.auto_approved.delta}
+            />
+            <SplitStat
+              testid="stat-human-review"
+              label="Human review"
+              count={data.human_review.count}
+              share={data.human_review.share}
+              delta={data.human_review.delta}
+            />
+            <Stat
+              testid="stat-switches-saved"
+              label="Context switches saved"
+              count={data.switches_saved}
+              note="interruptions the robot spared you"
+              delta={data.switches_saved_delta}
+            />
+          </div>
+          {/* One label for the row: every headline delta compares against the same
+              elapsed-aligned previous window, so the comparison is named once, not
+              per stat (ADR 0011). */}
+          <p className="stats-delta-label">{data.delta_label}</p>
+        </>
       )}
     </section>
   );
@@ -172,48 +184,85 @@ function writeControls(range: AnalyticsRange, days: number) {
 
 // SplitStat is one side of the auto-vs-human partition: a headline count plus its
 // share of the range total, rendered as a percentage (the wire carries a 0..1
-// fraction; the frontend formats it — the share never delta's, see slice 3).
+// fraction; the frontend formats it — the share never delta's, see slice 3), and
+// the count's elapsed-aligned period delta as a badge.
 function SplitStat({
   testid,
   label,
   count,
   share,
+  delta,
 }: {
   testid: string;
   label: string;
   count: number;
   share: number;
+  delta: Delta;
 }) {
   return (
     <div className="stat" data-testid={testid}>
       <span className="stat-label">{label}</span>
       <span className="stat-value tnum">{count}</span>
       <span className="stat-share tnum">{percent(share)}</span>
+      <DeltaBadge delta={delta} />
     </div>
   );
 }
 
 // Stat is a bare headline stat (count + a static note), used for Context switches
 // saved — the count is the auto-approved count (a Human Review approval is a
-// switch the human DID take, so it is not saved). Slice 4 adds the derived
-// time/money figures and the editable assumption chip.
+// switch the human DID take, so it is not saved). It carries the same period
+// delta as the other headlines. Slice 4 adds the derived time/money figures and
+// the editable assumption chip.
 function Stat({
   testid,
   label,
   count,
   note,
+  delta,
 }: {
   testid: string;
   label: string;
   count: number;
   note: string;
+  delta: Delta;
 }) {
   return (
     <div className="stat" data-testid={testid}>
       <span className="stat-label">{label}</span>
       <span className="stat-value tnum">{count}</span>
       <span className="stat-note">{note}</span>
+      <DeltaBadge delta={delta} />
     </div>
+  );
+}
+
+// DeltaBadge renders a headline's elapsed-aligned period change (ADR 0011). The
+// server classifies the comparison so the frontend never divides by zero: a
+// "changed" delta shows a direction arrow + color + signed percentage; a "new"
+// baseline (prior period empty) reads "new"; a "none" delta (both periods empty)
+// reads "—". The arrow/color direction is derived from the sign of pct.
+function DeltaBadge({ delta }: { delta: Delta }) {
+  if (delta.state === "none") {
+    return (
+      <span className="stat-delta is-none" title="nothing to compare in either period">
+        —
+      </span>
+    );
+  }
+  if (delta.state === "new") {
+    return (
+      <span className="stat-delta is-new" title="no prior-period baseline">
+        new
+      </span>
+    );
+  }
+  const dir = delta.pct > 0 ? "up" : delta.pct < 0 ? "down" : "flat";
+  const arrow = dir === "up" ? "↑" : dir === "down" ? "↓" : "→";
+  return (
+    <span className={`stat-delta is-${dir} tnum`}>
+      {arrow} {signedPercent(delta.pct)}
+    </span>
   );
 }
 
@@ -222,4 +271,12 @@ function Stat({
 // surfaces honestly rather than as NaN.
 function percent(share: number): string {
   return `${Math.round(share * 100)}%`;
+}
+
+// signedPercent formats a signed delta fraction as a whole-number percentage with
+// an explicit + on growth (e.g. 0.5 -> "+50%", -0.2 -> "-20%"); the minus rides
+// the number for a drop. Only called for the "changed" state, so pct is finite.
+function signedPercent(pct: number): string {
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${Math.round(pct * 100)}%`;
 }

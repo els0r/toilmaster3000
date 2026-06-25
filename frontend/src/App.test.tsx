@@ -70,9 +70,11 @@ beforeEach(() => {
   mockQueue.mockResolvedValue([]);
   mockRules.mockResolvedValue([]);
   mockAnalytics.mockResolvedValue({
-    auto_approved: { count: 0, share: 0 },
-    human_review: { count: 0, share: 0 },
+    auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
+    human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
     switches_saved: 0,
+    switches_saved_delta: { pct: 0, state: "none" },
+    delta_label: "vs yesterday",
   });
   // Each test starts from a clean hash so the default (Review) tab applies.
   window.location.hash = "";

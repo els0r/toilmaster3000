@@ -1257,7 +1257,6 @@ textarea:focus {
   align-items: center;
   gap: var(--space-1);
   flex-wrap: wrap;
-  padding: var(--space-3) 0 var(--space-4);
 }
 .range-btn {
   font-family: inherit;
@@ -1334,6 +1333,33 @@ textarea:focus {
   color: var(--fg-2);
 }
 .stat-note {
+  font-size: var(--text-2xs);
+  color: var(--fg-3);
+}
+/* The elapsed-aligned period delta (slice 3): a direction arrow + color +
+   signed percentage. Up is green, down is red; the zero-baseline states ("new",
+   "—") read muted, since there is no real change to celebrate or warn about. */
+.stat-delta {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+}
+.stat-delta.is-up,
+.stat-delta.is-new {
+  color: var(--success);
+}
+.stat-delta.is-down {
+  color: var(--error);
+}
+.stat-delta.is-flat,
+.stat-delta.is-none {
+  color: var(--fg-3);
+}
+/* One caption for the whole stats row: names the aligned comparison the deltas
+   above measure against (e.g. "vs last week, Mon–Thu aligned"). */
+.stats-delta-label {
+  margin: 0;
+  padding: var(--space-2) 20px var(--space-3);
   font-size: var(--text-2xs);
   color: var(--fg-3);
 }

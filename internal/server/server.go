@@ -516,18 +516,18 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store) {
 		}
 		// The range runs [cutoff, now]; the engine keeps the full log as its dedup/
 		// restart truth, so scoping to the range is a read-boundary concern that lives
-		// here. The correctness-critical boundary math is the table-tested rangeStart;
-		// the elapsed-aligned previous-period delta arrives in slice 3.
-		cutoff := rangeStart(in.Range, in.Days, time.Now())
+		// here. The correctness-critical boundary math is the table-tested rangeStart /
+		// prevWindow; this handler only filters and composes.
+		now := time.Now()
 		feed := eng.Approvals()
-		inRange := make([]engine.Approval, 0, len(feed))
-		for _, a := range feed {
-			if a.ApprovedAt.Before(cutoff) {
-				continue
-			}
-			inRange = append(inRange, a)
-		}
-		return &analyticsOutput{Body: aggregateAnalytics(inRange)}, nil
+		cur := aggregateAnalytics(inWindow(feed, rangeStart(in.Range, in.Days, now), now))
+		// Slice 3: the elapsed-aligned previous period is compared like-for-like (only
+		// the same elapsed slice of the prior period, not partial-vs-full — ADR 0011),
+		// so each headline carries an honest period-over-period delta.
+		prevStart, prevEnd := prevWindow(in.Range, in.Days, now)
+		prev := aggregateAnalytics(inWindow(feed, prevStart, prevEnd))
+		body := withDeltas(cur, prev, deltaLabel(in.Range, in.Days, now))
+		return &analyticsOutput{Body: body}, nil
 	})
 
 	huma.Register(api, huma.Operation{

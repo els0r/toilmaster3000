@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +52,105 @@ func rangeStart(rng string, days int, now time.Time) time.Time {
 	}
 }
 
+// prevWindow returns the [start, end) of the elapsed-aligned previous period for
+// the named range (ADR 0011): the SAME elapsed slice of the prior period as has
+// elapsed in the current one, so an in-progress range is compared like-for-like
+// rather than partial-vs-full. The window is half-open — start inclusive, end
+// exclusive — so the caller counts approvals at or after start and strictly
+// before end.
+//
+//   - today — yesterday 00:00 → yesterday at now's clock time.
+//   - week  — last week's Monday 00:00 → last week at now's weekday + clock
+//     offset (the whole window shifted back 7 days).
+//   - days  — the immediately-preceding X×24h window: [now-2X·24h, now-X·24h).
+//     Equal-length by construction, so it is like-for-like for free.
+//
+// This is the correctness-critical, table-tested counterpart to rangeStart; the
+// frontend never recomputes it.
+func prevWindow(rng string, days int, now time.Time) (start, end time.Time) {
+	switch rng {
+	case rangeWeek:
+		start = rangeStart(rangeWeek, days, now).AddDate(0, 0, -7)
+		end = now.AddDate(0, 0, -7)
+		return start, end
+	case rangeDays:
+		window := time.Duration(days) * 24 * time.Hour
+		end = now.Add(-window)
+		start = now.Add(-2 * window)
+		return start, end
+	case rangeMonth:
+		start = rangeStart(rangeMonth, days, now).AddDate(0, -1, 0)
+		// The previous end is last month at now's day-of-month + clock time. Building
+		// it field-by-field (rather than AddDate'ing the elapsed duration) is what
+		// makes the day-of-month explicit, so the clamp below is well-defined.
+		y, m, d := now.Date()
+		lastY, lastM := y, m-1
+		if lastM < time.January {
+			lastY, lastM = y-1, time.December
+		}
+		// Clamp: if now's day-of-month has no counterpart last month (e.g. the 31st
+		// against February), cap the previous end at last month's final instant —
+		// which is this month's 1st 00:00, the current range start. Without this,
+		// time.Date would normalise the overflow forward into the current month.
+		if d > daysInMonth(lastY, lastM, now.Location()) {
+			end = rangeStart(rangeMonth, days, now)
+			return start, end
+		}
+		end = time.Date(lastY, lastM, d, now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), now.Location())
+		return start, end
+	default: // today
+		start = startOfLocalDay(now).AddDate(0, 0, -1)
+		end = now.AddDate(0, 0, -1)
+		return start, end
+	}
+}
+
+// daysInMonth returns the number of days in the given year/month. It uses Go's
+// date normalisation: day 0 of month+1 is the last day of month, whose Day() is
+// the month's length (leap Februaries included).
+func daysInMonth(year int, month time.Month, loc *time.Location) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, loc).Day()
+}
+
+// deltaLabel names the elapsed-aligned slice a range's delta compares against, so
+// the period-over-period number reads honestly rather than as a bare percentage
+// (ADR 0011). The week/month labels reflect now's position within the period (its
+// weekday / day-of-month); today and days are fixed phrasings. It is server-owned
+// like the boundary math — the frontend renders the string verbatim.
+func deltaLabel(rng string, days int, now time.Time) string {
+	switch rng {
+	case rangeWeek:
+		return "vs last week, Mon–" + now.Weekday().String()[:3] + " aligned"
+	case rangeMonth:
+		return "vs last month, through the " + ordinal(now.Day())
+	case rangeDays:
+		unit := "days"
+		if days == 1 {
+			unit = "day"
+		}
+		return "vs preceding " + strconv.Itoa(days) + " " + unit
+	default: // today
+		return "vs yesterday"
+	}
+}
+
+// ordinal renders n with its English ordinal suffix (1→"1st", 22→"22nd",
+// 25→"25th"). The 11–13 teens always take "th" regardless of last digit.
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return strconv.Itoa(n) + suffix
+}
+
 // Analytics is the wire shape of the Analytics tab's look-back dashboard for a
 // range: the auto-vs-human headline split and the context-switches-saved
 // headline. Snake_case on the wire per the project's single-convention rule. It
@@ -69,14 +169,66 @@ type Analytics struct {
 	// (a Human Review approval is a switch the human DID take, so it is not saved).
 	// Slice 4 adds the derived time/money figures from the settings constants.
 	SwitchesSaved int `json:"switches_saved"`
+	// SwitchesSavedDelta is the elapsed-aligned period-over-period change of the
+	// switches-saved count (slice 3). It rides alongside the count rather than inside
+	// a Stat because switches-saved has no share — and the renderer should not have
+	// to re-derive "switches == auto" to find its delta.
+	SwitchesSavedDelta Delta `json:"switches_saved_delta"`
+	// DeltaLabel names the elapsed-aligned slice every headline delta compares
+	// against (e.g. "vs last week, Mon–Thu aligned"). One label for the range, since
+	// all three headline deltas share the same previous-period window (ADR 0011).
+	DeltaLabel string `json:"delta_label"`
 }
 
-// Stat is one headline stat: a count and its share of the range total, a 0..1
-// fraction (the frontend formats it as a percentage). An empty range yields a 0
-// share with no divide-by-zero.
+// The three delta states (ADR 0011). They keep the zero-baseline cases off the
+// wire as explicit markers instead of ∞/NaN, so the frontend renders without
+// guarding against divide-by-zero artifacts.
+const (
+	// deltaChanged is a real, finite %-change against a non-zero baseline; Pct
+	// carries the signed fraction (which may be exactly 0 for an unchanged count).
+	deltaChanged = "changed"
+	// deltaNew is a zero baseline with a non-zero current count — growth from
+	// nothing, which has no finite percentage; the frontend renders it as "new".
+	deltaNew = "new"
+	// deltaNone is both counts zero — nothing happened either period, so there is
+	// no comparison to make; the frontend renders it as "—".
+	deltaNone = "none"
+)
+
+// Delta is a headline count's elapsed-aligned period-over-period change (ADR
+// 0011). State classifies the comparison (changed | new | none); Pct is the
+// signed fraction (now-prev)/prev, meaningful only when State is "changed" and 0
+// otherwise. The aligned-comparison label lives once on Analytics (DeltaLabel),
+// not here, since all headline deltas share the same window.
+type Delta struct {
+	Pct   float64 `json:"pct"`
+	State string  `json:"state"`
+}
+
+// computeDelta returns the elapsed-aligned change of a current count against its
+// aligned previous count: a finite signed fraction against a non-zero baseline,
+// "new" when the baseline is zero but the current count is not, and "none" when
+// both are zero — never a divide-by-zero (ADR 0011).
+func computeDelta(now, prev int) Delta {
+	switch {
+	case prev == 0 && now == 0:
+		return Delta{State: deltaNone}
+	case prev == 0:
+		return Delta{State: deltaNew}
+	default:
+		return Delta{Pct: float64(now-prev) / float64(prev), State: deltaChanged}
+	}
+}
+
+// Stat is one headline stat: a count, its share of the range total (a 0..1
+// fraction the frontend formats as a percentage), and the count's elapsed-aligned
+// period-over-period Delta (slice 3). An empty range yields a 0 share with no
+// divide-by-zero. The share is shown for the current range but never delta'd — a
+// share-point delta beside a count delta misreads (CONTEXT "Stats row").
 type Stat struct {
 	Count int     `json:"count"`
 	Share float64 `json:"share"`
+	Delta Delta   `json:"delta"`
 }
 
 // aggregateAnalytics computes the slice-1 stats row from the range's approvals:
@@ -100,6 +252,36 @@ func aggregateAnalytics(approvals []engine.Approval) Analytics {
 		HumanReview:   Stat{Count: humanCount, Share: share(humanCount, total)},
 		SwitchesSaved: autoCount,
 	}
+}
+
+// inWindow returns the approvals whose ApprovedAt falls in the half-open window
+// [start, end) — at or after start, strictly before end. Both the current range
+// ([rangeStart, now]) and the aligned previous period ([prevWindow start, end))
+// scope through this one filter, so the read boundary is computed in exactly one
+// place. The engine keeps the full log; this is a read-side concern only.
+func inWindow(approvals []engine.Approval, start, end time.Time) []engine.Approval {
+	out := make([]engine.Approval, 0, len(approvals))
+	for _, a := range approvals {
+		if a.ApprovedAt.Before(start) || !a.ApprovedAt.Before(end) {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// withDeltas attaches the elapsed-aligned period deltas (slice 3) to a
+// current-range aggregate by comparing each headline count against the SAME
+// aggregate computed over the aligned previous-period window, and stamps the
+// shared comparison label. Shares are not delta'd. The previous aggregate is just
+// aggregateAnalytics over the prior window, so the partition logic is shared and
+// only the boundary math (prevWindow) is slice-3-specific.
+func withDeltas(cur, prev Analytics, label string) Analytics {
+	cur.AutoApproved.Delta = computeDelta(cur.AutoApproved.Count, prev.AutoApproved.Count)
+	cur.HumanReview.Delta = computeDelta(cur.HumanReview.Count, prev.HumanReview.Count)
+	cur.SwitchesSavedDelta = computeDelta(cur.SwitchesSaved, prev.SwitchesSaved)
+	cur.DeltaLabel = label
+	return cur
 }
 
 // share returns n's fraction of total as a 0..1 value, guarding the empty range

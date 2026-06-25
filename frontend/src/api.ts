@@ -36,6 +36,13 @@ export async function fetchApprovals(): Promise<Approval[]> {
 // renderer. Slice 1 is today-scoped with no ranges, deltas, or cohort yet.
 export type Analytics = components["schemas"]["Analytics"];
 
+// Delta is a headline count's elapsed-aligned period-over-period change (slice 3):
+// a signed fraction `pct` plus a `state` — "changed" (finite %), "new" (zero
+// baseline, no finite %), or "none" (both periods empty). The server owns the
+// boundary math and the zero-baseline classification (ADR 0011); the frontend
+// only formats the badge, so no ∞/NaN can reach the renderer.
+export type Delta = components["schemas"]["Delta"];
+
 // AnalyticsRange is the time-picker selection: the four selectable look-back
 // windows (CONTEXT "Time range"). The correctness-critical boundary math lives
 // server-side; the client only names the window (and, for `days`, its length).

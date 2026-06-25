@@ -12,9 +12,11 @@ import { fetchAnalytics } from "./api";
 const mockAnalytics = vi.mocked(fetchAnalytics);
 
 const analytics = (over: Partial<Analytics> = {}): Analytics => ({
-  auto_approved: { count: 3, share: 0.75 },
-  human_review: { count: 1, share: 0.25 },
+  auto_approved: { count: 3, share: 0.75, delta: { pct: 0, state: "none" } },
+  human_review: { count: 1, share: 0.25, delta: { pct: 0, state: "none" } },
   switches_saved: 3,
+  switches_saved_delta: { pct: 0, state: "none" },
+  delta_label: "vs yesterday",
   ...over,
 });
 
@@ -69,9 +71,10 @@ describe("AnalyticsPanel stats row", () => {
   it("renders all zeros for an empty range", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
-        auto_approved: { count: 0, share: 0 },
-        human_review: { count: 0, share: 0 },
+        auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
+        human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
         switches_saved: 0,
+        switches_saved_delta: { pct: 0, state: "none" },
       }),
     );
 
@@ -82,6 +85,50 @@ describe("AnalyticsPanel stats row", () => {
     expect(auto).toHaveTextContent("0%");
     const switches = screen.getByTestId("stat-switches-saved");
     expect(switches).toHaveTextContent("0");
+  });
+});
+
+describe("AnalyticsPanel period deltas", () => {
+  // A5: each headline stat carries an elapsed-aligned period delta rendered as a
+  // signed percentage, and the row names the aligned comparison once (slice 3).
+  it("renders signed deltas on each headline stat and the comparison label", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        auto_approved: { count: 3, share: 0.75, delta: { pct: 0.5, state: "changed" } },
+        human_review: { count: 1, share: 0.25, delta: { pct: -0.2, state: "changed" } },
+        switches_saved: 3,
+        switches_saved_delta: { pct: 0.5, state: "changed" },
+        delta_label: "vs preceding 1 day",
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    expect(screen.getByTestId("stat-auto-approved")).toHaveTextContent("+50%");
+    expect(screen.getByTestId("stat-human-review")).toHaveTextContent("-20%");
+    expect(screen.getByTestId("stat-switches-saved")).toHaveTextContent("+50%");
+    // The aligned-comparison label appears once for the row, not per stat.
+    expect(screen.getByText("vs preceding 1 day")).toBeInTheDocument();
+  });
+
+  // A6: the zero-baseline states render as words, never as ∞/NaN — "new" when the
+  // prior period was empty but this one is not, "—" when both are empty.
+  it("renders 'new' for a zero baseline and '—' for both-zero", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        auto_approved: { count: 5, share: 1, delta: { pct: 0, state: "new" } },
+        human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
+        switches_saved: 5,
+        switches_saved_delta: { pct: 0, state: "new" },
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    expect(screen.getByTestId("stat-auto-approved")).toHaveTextContent("new");
+    expect(screen.getByTestId("stat-human-review")).toHaveTextContent("—");
   });
 });
 

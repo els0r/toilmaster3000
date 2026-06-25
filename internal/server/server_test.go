@@ -1867,6 +1867,47 @@ func TestAnalyticsRangeValidation(t *testing.T) {
 	}
 }
 
+// AN4 (slice 3): each headline stat carries an elapsed-aligned period delta —
+// its count compared against the same elapsed slice of the prior period (ADR
+// 0011). With range=days the two windows are deterministic relative to now: the
+// current [now-24h, now) holds three auto approvals, the preceding [now-48h,
+// now-24h) holds two, so the auto delta is (3-2)/2 = +0.5 and switches-saved
+// (= the auto count) tracks it. Human is 0 vs 0 → "none". The endpoint also names
+// the aligned comparison so the number reads honestly.
+func TestAnalyticsHeadlineDeltasVsAlignedPriorPeriod(t *testing.T) {
+	now := time.Now()
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	seedApprovalsFile(t, statePath,
+		// Previous window [now-48h, now-24h): two auto approvals (the baseline).
+		engine.Approval{Number: 930, Title: "chore: prev a", URL: "u930",
+			MatchedRule: "team chores", ApprovedAt: now.Add(-26 * time.Hour)},
+		engine.Approval{Number: 931, Title: "chore: prev b", URL: "u931",
+			MatchedRule: "team chores", ApprovedAt: now.Add(-25 * time.Hour)},
+		// Current window [now-24h, now): three auto approvals.
+		engine.Approval{Number: 932, Title: "chore: cur a", URL: "u932",
+			MatchedRule: "team chores", ApprovedAt: now.Add(-3 * time.Hour)},
+		engine.Approval{Number: 933, Title: "chore: cur b", URL: "u933",
+			MatchedRule: "team chores", ApprovedAt: now.Add(-2 * time.Hour)},
+		engine.Approval{Number: 934, Title: "chore: cur c", URL: "u934",
+			MatchedRule: "team chores", ApprovedAt: now.Add(-1 * time.Hour)},
+	)
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store)
+	require.NoError(t, err)
+	srv := newTestServerFor(t, eng, store)
+
+	var got server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics?range=days&days=1", &got)
+
+	require.Equal(t, 3, got.AutoApproved.Count, "current window auto count")
+	require.Equal(t, "changed", got.AutoApproved.Delta.State, "3 vs a non-zero baseline is a finite delta")
+	require.InDelta(t, 0.5, got.AutoApproved.Delta.Pct, 1e-9, "(3-2)/2 = +50%")
+	require.Equal(t, "changed", got.SwitchesSavedDelta.State, "switches-saved tracks the auto count")
+	require.InDelta(t, 0.5, got.SwitchesSavedDelta.Pct, 1e-9)
+	require.Equal(t, "none", got.HumanReview.Delta.State, "no human approvals either period -> none")
+	require.Equal(t, "vs preceding 1 day", got.DeltaLabel, "the aligned-comparison label")
+}
+
 // AN2: the wire shape is snake_case (the typed DTO's json tags), including the
 // nested per-stat count/share — the contract the generated frontend types track.
 func TestAnalyticsWireIsSnakeCase(t *testing.T) {
@@ -1892,7 +1933,9 @@ func TestAnalyticsWireIsSnakeCase(t *testing.T) {
 }
 
 // AN3: an empty range (no approvals today) returns all zeros with shares at 0 —
-// no divide-by-zero, the empty-range guard.
+// no divide-by-zero, the empty-range guard. With both the current and previous
+// period empty, every headline delta is "none" (rendered "—"), never ∞/NaN
+// (slice 3, ADR 0011).
 func TestAnalyticsEmptyRangeAllZeros(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store := storeWith(t, matchAllChores())
@@ -1902,5 +1945,13 @@ func TestAnalyticsEmptyRangeAllZeros(t *testing.T) {
 
 	var got server.Analytics
 	getJSON(t, srv.URL+apiPrefix+"/analytics", &got)
-	require.Equal(t, server.Analytics{}, got, "empty range is the zero value: all counts and shares 0")
+	require.Zero(t, got.AutoApproved.Count, "no approvals -> zero auto")
+	require.Zero(t, got.HumanReview.Count, "no approvals -> zero human")
+	require.Zero(t, got.SwitchesSaved, "no approvals -> zero switches saved")
+	require.Zero(t, got.AutoApproved.Share, "empty range -> 0 share, no divide-by-zero")
+	require.Zero(t, got.HumanReview.Share, "empty range -> 0 share, no divide-by-zero")
+	// Both periods empty: every headline delta is the "none" state ("—" in the UI).
+	require.Equal(t, "none", got.AutoApproved.Delta.State, "0 vs 0 is 'none', not infinity")
+	require.Equal(t, "none", got.HumanReview.Delta.State)
+	require.Equal(t, "none", got.SwitchesSavedDelta.State)
 }
