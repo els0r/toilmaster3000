@@ -268,7 +268,7 @@ function MoneyPill({
         {formatMoney(money, assumptions.currency)}
       </span>
       <span className="money-pill-basis tnum">
-        × {assumptions.minutes_per_switch} min · {assumptions.currency}
+        {assumptions.minutes_per_switch} min/switch · {assumptions.currency}
         {assumptions.hourly_rate}/hr
       </span>
     </span>
