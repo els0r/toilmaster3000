@@ -256,16 +256,18 @@ breaking-change Invariant). The two Gates:
     state — it is simply not a candidate yet.
 
 ### UI layout (tabs)
-The app is **two tabs** under a persistent heartbeat strip (see Cycle status):
+The app is **three tabs** under a persistent heartbeat strip (see Cycle status):
 - **Review** — the Needs-Human-Review queue and the Approval Feed, side by side
   (the daily-glance surface). The Review tab carries a **queue-count badge** so
   the actionable count stays visible even from the Rules tab.
 - **Rules** — the Rules section (the occasional-config surface).
+- **Analytics** — the approval-history dashboard (the look-back surface; see
+  Analytics).
 
-The two surfaces have different cadences (Review watched constantly, Rules touched
-rarely), so they are not co-scrolled. The active tab lives in the **URL hash**
-(`#review` / `#rules`, default Review) — a reload keeps your place and the Rules
-tab is linkable, with no router dependency.
+The three surfaces have different cadences (Review watched constantly, Rules and
+Analytics touched rarely), so they are not co-scrolled. The active tab lives in the
+**URL hash** (`#review` / `#rules` / `#analytics`, default Review) — a reload keeps
+your place and each tab is linkable, with no router dependency.
 
 ### Rules section (UI)
 The actionable config surface (the Rules tab): lists rules, lets the user
@@ -308,6 +310,101 @@ silently hide the three title-part excludes. Validation note: authors are **not*
 regex-checked on the client (only the six title-part regexes are); author
 patterns are validated server-side, and diff `0` is treated as unconstrained
 (same as empty), not as a constraining bound.
+
+## Analytics
+
+The **Analytics tab** is a look-back dashboard over the **approval history** — the
+durable record in `approvals.jsonl`. It answers "how much toil did the robot save,
+and on what." Its cadence is occasional (lean-back), not live: fetched on tab-open
+and on each control change (debounced), **not** on the 10s poll timer.
+
+### Approval history (the only analyzable signal)
+Analytics is computed **exclusively from `approvals.jsonl`** — the one durable
+history tm3k keeps. Two consequences fix the whole feature's meaning:
+- The **Needs-Human-Review queue is never persisted** (derived live each cycle) and
+  **dropped PRs** exist only in logs. So analytics can describe **approvals**, not
+  the full review burden. A PR that hit the queue but was closed/merged by someone
+  else — or still sits there — was never approved, so it is **invisible** to
+  analytics. Accepted: this is an *approval*-history view, no new persistence.
+- Within the log, **auto vs human is the `matched_rule` prefix**: an entry whose
+  `matched_rule` starts with `"human approval: "` is a **Human Review** approval (a
+  human stepped in via the queue Approve button); everything else is
+  **Auto-approved**. The two partition all recorded approvals — `auto + human =
+  total`, so their shares sum to 100%.
+
+### Time range (lightweight Grafana-style picker)
+Four selectable ranges, all in **workstation-local time** (same local-midnight
+basis as the Approval Feed):
+- **today** — local midnight → now.
+- **this week** — **Monday** 00:00 (ISO 8601) → now.
+- **this month** — calendar 1st 00:00 → now.
+- **last X days** — rolling `X×24h` ending now (includes today's partial).
+
+The three named ranges are **in-progress** (partial) when viewed.
+
+### Previous period (elapsed-aligned delta)
+Every headline stat carries a **relative change vs the previous period**, computed
+**like-for-like**: only the *elapsed slice* of the current period is compared
+against the **same elapsed slice** of the prior period — never partial-vs-full.
+- **today** vs **yesterday 00:00 → same clock time**.
+- **this week** vs **last week, Monday → same weekday+clock offset**.
+- **this month** vs **last month, day-1 → same day-of-month+clock offset**;
+  **clamped** when the current day-of-month has no counterpart (e.g. viewing on the
+  31st caps last month at its final instant).
+- **last X days** is already equal-length, so its previous period is the
+  immediately-preceding `X×24h` window — like-for-like for free.
+
+A delta is the **%-change of the count** `(now − prev)/prev`, rendered as an
+up/down arrow + color + `±N%`. **Zero baseline** (prev = 0) renders **"new"**
+(or **"—"** when both are zero) — never ∞ or a divide-by-zero. The delta label
+names the aligned comparison (e.g. "vs last week, Mon–Wed aligned").
+
+### Stats row
+Three headline stats for the selected range (+ scope filter), each with a delta:
+- **Auto-approved** — count + **share** (% of total approvals in range).
+- **Human Review** — count + share. (Shares are shown for the current range but
+  **not** delta'd — a share-point delta beside a count delta misreads.)
+- **Context switches saved** — *the headline value*. **`count = the Auto-approved
+  count`** (each auto-approval is one interruption the human did not take; a Human
+  Review approval is a switch the human *did* take, so it is **not** saved). Shown
+  three ways from the settings constants: the raw count, **time** =
+  `count × MinutesPerSwitch / 60` hours, and **money** = `hours × HourlyRate`
+  (prefixed with `Currency`). The two constants are shown inline as the
+  **assumption chip** (`× 23 min · $100/hr`), which is **clickable** → a popover
+  edits them (see Settings).
+
+### By-Type cohort
+A breakdown of the range's approvals **by conventional-commit type**. The type axis
+is the **fixed Conventional Commits set** — `feat, fix, chore, docs, style,
+refactor, perf, test, build, ci, revert` — rendered in that order, **all rows
+shown** even at zero (zeros dimmed), honoring "the set is bounded." A trailing
+**`other`** bucket catches any non-standard `\w+` type the parser accepted (tm3k
+does **not** restrict types — the parser's type is `\w+`; "permitted" means the
+*spec* set, not a tm3k-enforced one). Each row shows **count + % of range total +
+the auto/human split** (`55 auto / 4 human`) — the actionable signal is *which
+types still pull a human in*. **No per-type delta** (jumpy at low counts).
+
+### Scope filter
+A **multi-select (OR)** filter over **scopes**. Options enumerate **every scope
+ever seen** in the log (all-time union via `splitScopes`, case-folded) — a stable
+list independent of the selected range, presented as a searchable control (the real
+log already holds 45+ distinct scopes). A PR matches when its scope set contains
+**any** selected scope (a title's scope is comma/slash-split into multiple scopes —
+`chore(team/service-b)` → `team`, `service-b` — so one PR can match several). The
+filter scopes the **entire view** — stats row, By-Type cohort, and all deltas
+recompute for the selected scopes. Default: **All scopes** (no filter).
+
+### Aggregation (server-side)
+All analytics math runs **server-side** in a new `GET …/analytics` handler: it
+reads the full `approvals.jsonl`, parses each title (reusing the
+conventional-commit parser + `splitScopes`), computes the range and
+elapsed-aligned previous-period boundaries (Go owns the tz / month-clamp / elapsed
+math — table-driven tested, per the project's "test weight on pure logic" ethos),
+buckets by type, applies the scope filter, and returns aggregates + the all-time
+scope list as a DTO (ADR 0002, snake_case wire; titles parsed on read, ADR 0006).
+The frontend is a **pure renderer** — range + scope live in component/URL state and
+trigger a debounced re-fetch; the correctness-critical date logic never leaves Go.
+Empty range → all zeros, deltas render "—".
 
 ## Engine
 
@@ -425,6 +522,9 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 | `GET` | `/api/toilmaster3000/v1/approvals` | feed, newest-first, **today only** (`approved_at ≥ local midnight`; reads `approvals.jsonl`) |
 | `GET` | `/api/toilmaster3000/v1/queue` | Needs-Human-Review items (derived live) |
 | `POST` | `/api/toilmaster3000/v1/queue/{number}/approve` | manual override approve |
+| `GET` | `/api/toilmaster3000/v1/analytics` | approval-history aggregates for a range (+ scope filter): totals, shares, switches-saved, by-type cohort, elapsed-aligned deltas, all-time scope list. Query: `range=today\|week\|month\|days`, `days=N` (for `days`), `scope=a,b` (repeatable/CSV) |
+| `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `minutes_per_switch`, `hourly_rate`, `currency` |
+| `PUT` | `/api/toilmaster3000/v1/settings` | update the constants (full replace) |
 | `GET` | `/api/toilmaster3000/v1/rules` | list rules |
 | `POST` | `/api/toilmaster3000/v1/rules` | create a rule |
 | `PUT` | `/api/toilmaster3000/v1/rules/{id}` | update / enable / disable (full replace) |
@@ -453,6 +553,12 @@ Repo is self-contained (will be relocated later). Layout:
   both the dedup set (numbers loaded into memory at startup) and the Approval
   Feed's data source. Record shape (**snake_case**):
   `{ number, title, author, url, matched_rule, approved_at }`.
+- **`.config/settings.yaml`** — the analytics assumption constants, the **first
+  non-rule persisted state** in tm3k. PascalCase YAML (matching `rules.yaml`):
+  `MinutesPerSwitch: 23`, `HourlyRate: 100`, `Currency: "$"`. Loaded at startup,
+  rewritten on `PUT /settings`. Seeded with those defaults on first run (no file).
+  Drives the Context-switches-saved time/money figures and the editable assumption
+  chip (see Analytics).
 - **Seeding (rules):** on first run (no `.config/rules.yaml`), write two starter
   default rules (both enabled) as editable examples, so the tool does something
   sensible out of the box:
