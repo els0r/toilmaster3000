@@ -1819,6 +1819,54 @@ func TestAnalyticsTodayStatsRow(t *testing.T) {
 	require.Equal(t, 3, got.SwitchesSaved, "switches saved = the auto count")
 }
 
+// AN1b (slice 2): the `range` query parameter drives the cutoff. An approval 36h
+// old is excluded by the default `today` range but included by `range=days&days=7`
+// — proving the boundary is recomputed from the param, not hard-wired to today.
+// Anchored on time.Now() with offsets so the buckets hold whatever real day the
+// test runs (today's midnight is always ≤ now, so −36h is always pre-midnight).
+func TestAnalyticsRangeParamDrivesCutoff(t *testing.T) {
+	now := time.Now()
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	seedApprovalsFile(t, statePath,
+		engine.Approval{Number: 920, Title: "chore: a day and a half ago", URL: "u920",
+			MatchedRule: "team chores", ApprovedAt: now.Add(-36 * time.Hour)},
+		engine.Approval{Number: 921, Title: "chore: just now", URL: "u921",
+			MatchedRule: "team chores", ApprovedAt: now},
+	)
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store)
+	require.NoError(t, err)
+	srv := newTestServerFor(t, eng, store)
+
+	var today server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics?range=today", &today)
+	require.Equal(t, 1, today.AutoApproved.Count, "today excludes the 36h-old approval")
+
+	var week server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics?range=days&days=7", &week)
+	require.Equal(t, 2, week.AutoApproved.Count, "the rolling 7-day window includes the 36h-old approval")
+}
+
+// AN1c (slice 2): structural + semantic validation of the range params. An
+// unknown `range` is rejected by huma's enum; `range=days` with no `days` is the
+// semantic guard (huma can't make a field conditionally required) and is rejected
+// in handler code. Both surface as a 4xx, never a 200 with silently-wrong math.
+func TestAnalyticsRangeValidation(t *testing.T) {
+	srv := newTestServer(t)
+
+	for _, url := range []string{
+		srv.URL + apiPrefix + "/analytics?range=fortnight", // not in the enum
+		srv.URL + apiPrefix + "/analytics?range=days",      // days range needs a day count
+		srv.URL + apiPrefix + "/analytics?range=days&days=0",
+	} {
+		resp, err := http.Get(url)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.GreaterOrEqual(t, resp.StatusCode, 400, "rejected: %s", url)
+		require.Less(t, resp.StatusCode, 500, "client error, not a server crash: %s", url)
+	}
+}
+
 // AN2: the wire shape is snake_case (the typed DTO's json tags), including the
 // nested per-stat count/share — the contract the generated frontend types track.
 func TestAnalyticsWireIsSnakeCase(t *testing.T) {

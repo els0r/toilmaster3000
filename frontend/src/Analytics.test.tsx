@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import { AnalyticsPanel } from "./Analytics";
 import type { Analytics } from "./api";
 
@@ -21,6 +21,9 @@ const analytics = (over: Partial<Analytics> = {}): Analytics => ({
 beforeEach(() => {
   vi.useFakeTimers();
   mockAnalytics.mockReset();
+  // The picker reflects its selection into the URL; reset it so each test starts
+  // from the default (today) rather than inheriting a prior test's range.
+  window.history.replaceState(null, "", "/");
 });
 
 afterEach(() => {
@@ -79,5 +82,51 @@ describe("AnalyticsPanel stats row", () => {
     expect(auto).toHaveTextContent("0%");
     const switches = screen.getByTestId("stat-switches-saved");
     expect(switches).toHaveTextContent("0");
+  });
+});
+
+describe("AnalyticsPanel time picker", () => {
+  // A3: the panel fetches the default range (today) on mount, then re-fetches with
+  // the newly-selected range after the debounce — and NOT before it (a debounced
+  // control: a burst of clicks collapses to one fetch).
+  it("refetches with the selected range, debounced", async () => {
+    mockAnalytics.mockResolvedValue(analytics());
+
+    render(<AnalyticsPanel />);
+    await flush();
+    expect(mockAnalytics).toHaveBeenCalledTimes(1);
+    expect(mockAnalytics).toHaveBeenLastCalledWith("today", expect.anything());
+
+    fireEvent.click(screen.getByRole("button", { name: /this week/i }));
+    // Debounce window not yet elapsed -> still just the mount fetch.
+    expect(mockAnalytics).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    await flush();
+    expect(mockAnalytics).toHaveBeenCalledTimes(2);
+    expect(mockAnalytics).toHaveBeenLastCalledWith("week", expect.anything());
+  });
+
+  // A4: selecting the custom "last X days" range reveals a day-count input, and
+  // editing it re-fetches the days range with that count (the only range that
+  // carries a day count on the wire).
+  it("fetches the days range with the custom day count", async () => {
+    mockAnalytics.mockResolvedValue(analytics());
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: /last .* days/i }));
+    fireEvent.change(screen.getByLabelText(/day count/i), {
+      target: { value: "14" },
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    await flush();
+    expect(mockAnalytics).toHaveBeenLastCalledWith("days", 14);
   });
 });

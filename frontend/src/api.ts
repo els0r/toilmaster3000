@@ -36,11 +36,25 @@ export async function fetchApprovals(): Promise<Approval[]> {
 // renderer. Slice 1 is today-scoped with no ranges, deltas, or cohort yet.
 export type Analytics = components["schemas"]["Analytics"];
 
-// fetchAnalytics pulls the Analytics tab's aggregates. Unlike the feed/queue/
-// status endpoints, this is fetched on tab-open and control changes (not the 10s
-// poll), so the dashboard's lean-back cadence stays off the live timer.
-export async function fetchAnalytics(): Promise<Analytics> {
-  const resp = await fetch(`${API_BASE}/analytics`);
+// AnalyticsRange is the time-picker selection: the four selectable look-back
+// windows (CONTEXT "Time range"). The correctness-critical boundary math lives
+// server-side; the client only names the window (and, for `days`, its length).
+export type AnalyticsRange = "today" | "week" | "month" | "days";
+
+// fetchAnalytics pulls the Analytics tab's aggregates for the selected range.
+// Unlike the feed/queue/status endpoints, this is fetched on tab-open and control
+// changes (debounced), not on the 10s poll, so the dashboard's lean-back cadence
+// stays off the live timer. `days` rides the wire only for the `days` range (the
+// other three derive their bounds entirely server-side).
+export async function fetchAnalytics(
+  range: AnalyticsRange = "today",
+  days = 7,
+): Promise<Analytics> {
+  const params = new URLSearchParams({ range });
+  if (range === "days") {
+    params.set("days", String(days));
+  }
+  const resp = await fetch(`${API_BASE}/analytics?${params}`);
   if (!resp.ok) {
     throw new Error(`analytics request failed: ${resp.status}`);
   }

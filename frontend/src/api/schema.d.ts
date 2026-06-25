@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Approval-history analytics for a range (slice 1: today's stats row) */
+        /** Approval-history analytics for a selectable range (slice 2: time picker) */
         get: operations["get-analytics"];
         put?: never;
         post?: never;
@@ -339,7 +339,12 @@ export type $defs = Record<string, never>;
 export interface operations {
     "get-analytics": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Look-back window: today | week (ISO Monday) | month (calendar 1st) | days (rolling) */
+                range?: "today" | "week" | "month" | "days";
+                /** @description Rolling-window length in days; required for range=days */
+                days?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;

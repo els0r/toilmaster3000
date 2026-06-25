@@ -235,6 +235,15 @@ type queueDiffOutput struct {
 	Body PRDiffBody
 }
 
+// analyticsInput carries the time-picker selection. `range` is the selectable
+// window (huma enforces the enum, defaulting to today so a bare request still
+// works); `days` is the custom rolling-window length, structurally bounded to >= 1
+// and semantically required only for range=days (guarded in the handler).
+type analyticsInput struct {
+	Range string `query:"range" enum:"today,week,month,days" default:"today" doc:"Look-back window: today | week (ISO Monday) | month (calendar 1st) | days (rolling)"`
+	Days  int    `query:"days" minimum:"1" doc:"Rolling-window length in days; required for range=days"`
+}
+
 type analyticsOutput struct {
 	Body Analytics
 }
@@ -497,22 +506,28 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store) {
 		OperationID: "get-analytics",
 		Method:      http.MethodGet,
 		Path:        APIPrefix + "/analytics",
-		Summary:     "Approval-history analytics for a range (slice 1: today's stats row)",
-	}, func(_ context.Context, _ *struct{}) (*analyticsOutput, error) {
+		Summary:     "Approval-history analytics for a selectable range (slice 2: time picker)",
+	}, func(_ context.Context, in *analyticsInput) (*analyticsOutput, error) {
+		// huma validates `range` (enum) and `days` (>= 1 when present) structurally;
+		// the days-range needs a day count, which huma can't make conditionally
+		// required, so guard it here (ADR 0011 / CONTEXT "Time range").
+		if in.Range == rangeDays && in.Days < 1 {
+			return nil, huma.Error422UnprocessableEntity("days is required and must be >= 1 for the days range")
+		}
+		// The range runs [cutoff, now]; the engine keeps the full log as its dedup/
+		// restart truth, so scoping to the range is a read-boundary concern that lives
+		// here. The correctness-critical boundary math is the table-tested rangeStart;
+		// the elapsed-aligned previous-period delta arrives in slice 3.
+		cutoff := rangeStart(in.Range, in.Days, time.Now())
 		feed := eng.Approvals()
-		// Today-scoped, the same local-midnight basis as the Approval Feed (slice 1
-		// has no time picker yet). The engine keeps the full log as its dedup/restart
-		// truth; the range scoping is a read-boundary concern, so it lives here. The
-		// correctness-critical range/delta math arrives server-side in later slices.
-		cutoff := startOfLocalDay(time.Now())
-		todays := make([]engine.Approval, 0, len(feed))
+		inRange := make([]engine.Approval, 0, len(feed))
 		for _, a := range feed {
 			if a.ApprovedAt.Before(cutoff) {
 				continue
 			}
-			todays = append(todays, a)
+			inRange = append(inRange, a)
 		}
-		return &analyticsOutput{Body: aggregateAnalytics(todays)}, nil
+		return &analyticsOutput{Body: aggregateAnalytics(inRange)}, nil
 	})
 
 	huma.Register(api, huma.Operation{

@@ -492,6 +492,37 @@
     "/api/toilmaster3000/v1/analytics": {
       "get": {
         "operationId": "get-analytics",
+        "parameters": [
+          {
+            "description": "Look-back window: today | week (ISO Monday) | month (calendar 1st) | days (rolling)",
+            "explode": false,
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "default": "today",
+              "description": "Look-back window: today | week (ISO Monday) | month (calendar 1st) | days (rolling)",
+              "enum": [
+                "today",
+                "week",
+                "month",
+                "days"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Rolling-window length in days; required for range=days",
+            "explode": false,
+            "in": "query",
+            "name": "days",
+            "schema": {
+              "description": "Rolling-window length in days; required for range=days",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -514,7 +545,7 @@
             "description": "Error"
           }
         },
-        "summary": "Approval-history analytics for a range (slice 1: today's stats row)"
+        "summary": "Approval-history analytics for a selectable range (slice 2: time picker)"
       }
     },
     "/api/toilmaster3000/v1/approvals": {
