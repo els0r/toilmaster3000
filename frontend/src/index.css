@@ -48,7 +48,6 @@
   --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 4px;
-  --radius-lg: 10px;
   --radius-pill: 999px;
   --radius-full: 50%;
 
@@ -1293,7 +1292,7 @@ textarea:focus {
   color: var(--fg);
   background: var(--panel);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 9px 13px;
   cursor: pointer;
 }
@@ -1318,7 +1317,7 @@ textarea:focus {
   width: 230px;
   background: var(--panel);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-modal);
   padding: 6px;
 }
@@ -1390,7 +1389,7 @@ textarea:focus {
   gap: var(--space-3);
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 16px 17px;
 }
 .stat-tile-head {
