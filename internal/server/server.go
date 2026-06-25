@@ -552,7 +552,16 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		// prevWindow; this handler only filters and composes.
 		now := time.Now()
 		feed := eng.Approvals()
-		cur := aggregateAnalytics(inWindow(feed, rangeStart(in.Range, in.Days, now), now))
+		start := rangeStart(in.Range, in.Days, now)
+		windowed := inWindow(feed, start, now)
+		cur := aggregateAnalytics(windowed)
+		// Variant 2: each headline tile draws a per-local-day sparkline of its count
+		// over the range. The series buckets the SAME windowed feed the counts came
+		// from, so the bars sum to the headline; switches-saved reuses the auto series.
+		autoSeries, humanSeries := dailySeries(windowed, start, now)
+		cur.AutoApproved.Series = autoSeries
+		cur.HumanReview.Series = humanSeries
+		cur.SwitchesSavedSeries = autoSeries
 		// Slice 3: the elapsed-aligned previous period is compared like-for-like (only
 		// the same elapsed slice of the prior period, not partial-vs-full — ADR 0011),
 		// so each headline carries an honest period-over-period delta.

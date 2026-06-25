@@ -75,9 +75,10 @@ beforeEach(() => {
   mockRules.mockResolvedValue([]);
   mockSettings.mockResolvedValue({ minutes_per_switch: 23, hourly_rate: 100, currency: "$" });
   mockAnalytics.mockResolvedValue({
-    auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
-    human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
+    auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" }, series: [0] },
+    human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" }, series: [0] },
     switches_saved: 0,
+    switches_saved_series: [0],
     switches_saved_hours: 0,
     switches_saved_money: 0,
     switches_saved_delta: { pct: 0, state: "none" },

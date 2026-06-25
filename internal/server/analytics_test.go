@@ -198,6 +198,74 @@ func TestSwitchesSavedFigures(t *testing.T) {
 	}
 }
 
+// TestDailySeries covers the Variant-2 sparkline data: the range's approvals
+// bucketed into per-local-day counts of each headline, oldest day first, so each
+// tile can draw a daily trend. Bucket i is the local day startOfLocalDay(start)+i
+// days; the auto/human split per bucket reuses the matched_rule prefix (ADR
+// 0009). The cases pin the correctness-sensitive edges: an empty window still
+// yields a zero-filled series of the right length (no empty sparkline surprises),
+// a partial-day rolling window spans the calendar days it touches, and counts
+// land in the right day bucket.
+func TestDailySeries(t *testing.T) {
+	at := func(y int, m time.Month, d, hh, mm int) time.Time {
+		return time.Date(y, m, d, hh, mm, 0, 0, time.UTC)
+	}
+	// autoAt / humanAt place a classified approval at a specific instant.
+	autoAt := func(ts time.Time) engine.Approval {
+		return engine.Approval{MatchedRule: "team chores", ApprovedAt: ts}
+	}
+	humanAt := func(ts time.Time) engine.Approval {
+		return engine.Approval{MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: ts}
+	}
+	tests := []struct {
+		name       string
+		approvals  []engine.Approval
+		start, now time.Time
+		wantAuto   []int
+		wantHuman  []int
+	}{
+		{
+			name:      "empty one-day window is a single zero bucket, not an empty series",
+			approvals: nil,
+			start:     at(2026, 6, 25, 0, 0), now: at(2026, 6, 25, 14, 30),
+			wantAuto: []int{0}, wantHuman: []int{0},
+		},
+		{
+			name:      "single day buckets auto and human side by side",
+			approvals: []engine.Approval{autoAt(at(2026, 6, 25, 9, 0)), autoAt(at(2026, 6, 25, 11, 0)), humanAt(at(2026, 6, 25, 13, 0))},
+			start:     at(2026, 6, 25, 0, 0), now: at(2026, 6, 25, 14, 30),
+			wantAuto: []int{2}, wantHuman: []int{1},
+		},
+		{
+			// week range (Mon Jun 22 → Thu Jun 25): four day buckets, oldest first.
+			name: "multi-day window buckets each approval into its local day",
+			approvals: []engine.Approval{
+				autoAt(at(2026, 6, 22, 8, 0)),
+				autoAt(at(2026, 6, 24, 9, 0)), humanAt(at(2026, 6, 24, 10, 0)),
+				autoAt(at(2026, 6, 25, 12, 0)),
+			},
+			start: at(2026, 6, 22, 0, 0), now: at(2026, 6, 25, 12, 0),
+			wantAuto: []int{1, 0, 1, 1}, wantHuman: []int{0, 0, 1, 0},
+		},
+		{
+			// days=7 rolling window starting mid-afternoon: it touches 8 calendar days
+			// (a partial first day through a partial last), so the series has 8 buckets
+			// and the endpoints land in bucket 0 and bucket 7.
+			name:      "partial-day rolling window spans every calendar day it touches",
+			approvals: []engine.Approval{autoAt(at(2026, 6, 18, 20, 0)), autoAt(at(2026, 6, 25, 10, 0))},
+			start:     at(2026, 6, 18, 14, 30), now: at(2026, 6, 25, 14, 30),
+			wantAuto: []int{1, 0, 0, 0, 0, 0, 0, 1}, wantHuman: []int{0, 0, 0, 0, 0, 0, 0, 0},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotAuto, gotHuman := dailySeries(tc.approvals, tc.start, tc.now)
+			require.Equal(t, tc.wantAuto, gotAuto, "auto series")
+			require.Equal(t, tc.wantHuman, gotHuman, "human series")
+		})
+	}
+}
+
 // TestAggregateAnalytics covers the slice-1 aggregation: the auto-vs-human
 // partition by the matched_rule prefix (ADR 0009), each side's share of the
 // range total, and switches-saved = the auto count. The empty range yields all

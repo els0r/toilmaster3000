@@ -182,6 +182,7 @@ export interface components {
             switches_saved_hours: number;
             /** Format: double */
             switches_saved_money: number;
+            switches_saved_series: number[] | null;
         };
         Approval: {
             /** Format: date-time */
@@ -370,6 +371,7 @@ export interface components {
             /** Format: int64 */
             count: number;
             delta: components["schemas"]["Delta"];
+            series: number[] | null;
             /** Format: double */
             share: number;
         };

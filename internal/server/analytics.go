@@ -1,6 +1,7 @@
 package server
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -168,6 +169,12 @@ type Analytics struct {
 	// interruptions the robot spared the human, which equals the Auto-approved count
 	// (a Human Review approval is a switch the human DID take, so it is not saved).
 	SwitchesSaved int `json:"switches_saved"`
+	// SwitchesSavedSeries is the per-local-day count of saved switches across the
+	// range (oldest day first), backing the switches-saved tile's sparkline (Variant
+	// 2). It equals the auto-approved series — a saved switch is an auto-approval —
+	// but rides as a flat sibling so the renderer needn't re-derive "switches == auto"
+	// to draw its trend, mirroring how SwitchesSaved and SwitchesSavedDelta are flat.
+	SwitchesSavedSeries []int `json:"switches_saved_series"`
 	// SwitchesSavedHours and SwitchesSavedMoney are the slice-4 derived figures from
 	// the settings assumption constants (ADR 0010): hours = count × MinutesPerSwitch
 	// / 60, money = hours × HourlyRate. They ride alongside the count as flat
@@ -267,6 +274,49 @@ type Stat struct {
 	Count int     `json:"count"`
 	Share float64 `json:"share"`
 	Delta Delta   `json:"delta"`
+	// Series is the per-local-day count across the range (oldest day first), backing
+	// the headline tile's sparkline (Variant 2). One bucket per calendar day the
+	// range touches; an empty range yields a zero-filled series, never an empty one,
+	// so the sparkline always has bars to lay out.
+	Series []int `json:"series"`
+}
+
+// dayIndex returns the count of local calendar days from start's day to t's day
+// (0 when they share a day, 1 for the next day, …). Both ends are normalised to
+// their local midnight and the span is rounded to whole days, so a DST boundary
+// (a 23h or 25h "day") still resolves to the correct integer offset rather than
+// drifting by one. It is the bucket index for dailySeries.
+func dayIndex(start, t time.Time) int {
+	from := startOfLocalDay(start)
+	to := startOfLocalDay(t)
+	return int(math.Round(to.Sub(from).Hours() / 24))
+}
+
+// dailySeries buckets a range's approvals into per-local-day counts of each
+// headline (auto vs human by the matched_rule prefix, ADR 0009), oldest day
+// first, to back the Variant-2 per-tile sparklines. Bucket i is the local day
+// startOfLocalDay(start)+i days; the series length covers every calendar day the
+// window [start, now] touches, so an empty window still yields a zero-filled
+// series (never an empty sparkline) of the right length. Approvals outside the
+// window are ignored defensively — the caller pre-scopes via inWindow, so this
+// only re-buckets what is already in range. Switches-saved reuses the auto series
+// (a saved switch is an auto-approval), so it is not returned separately here.
+func dailySeries(approvals []engine.Approval, start, now time.Time) (autoSeries, humanSeries []int) {
+	n := max(dayIndex(start, now)+1, 1)
+	autoSeries = make([]int, n)
+	humanSeries = make([]int, n)
+	for _, a := range approvals {
+		i := dayIndex(start, a.ApprovedAt)
+		if i < 0 || i >= n {
+			continue
+		}
+		if strings.HasPrefix(a.MatchedRule, engine.ManualApprovalPrefix) {
+			humanSeries[i]++
+		} else {
+			autoSeries[i]++
+		}
+	}
+	return autoSeries, humanSeries
 }
 
 // aggregateAnalytics computes the slice-1 stats row from the range's approvals:

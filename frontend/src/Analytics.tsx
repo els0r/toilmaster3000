@@ -45,61 +45,73 @@ export function AnalyticsPanel() {
 
   return (
     <section className="card analytics-card">
-      <div className="card-head">
-        <h2 className="card-title">Analytics</h2>
+      <div className="card-head analytics-head">
+        <div className="analytics-heading">
+          <h2 className="card-title">Analytics</h2>
+          <p className="analytics-subtitle">How much the robot is handling for you</p>
+        </div>
         <div className="spacer" />
-        <TimePicker
-          range={range}
-          days={days}
-          onRange={setRange}
-          onDays={setDays}
-        />
+        <div className="picker-area">
+          <TimePicker
+            range={range}
+            days={days}
+            onRange={setRange}
+            onDays={setDays}
+          />
+          {/* The aligned-comparison label rides under the picker (Variant 2's
+              compare slot): every headline delta measures against the same
+              elapsed-aligned previous window, so it is named once (ADR 0011). */}
+          {data !== null && <p className="stats-delta-label">{data.delta_label}</p>}
+        </div>
       </div>
 
       {data === null ? (
         <div className="card-loading">Loading analytics…</div>
       ) : (
-        <>
-          <div className="stats-row">
-            <SplitStat
-              testid="stat-auto-approved"
-              label="Auto-approved"
-              count={data.auto_approved.count}
-              share={data.auto_approved.share}
-              delta={data.auto_approved.delta}
-            />
-            <SplitStat
-              testid="stat-human-review"
-              label="Human review"
-              count={data.human_review.count}
-              share={data.human_review.share}
-              delta={data.human_review.delta}
-            />
-            <Stat
-              testid="stat-switches-saved"
-              label="Context switches saved"
-              count={data.switches_saved}
-              hours={data.switches_saved_hours}
-              money={data.switches_saved_money}
-              assumptions={data.assumptions}
-              delta={data.switches_saved_delta}
-            />
-          </div>
-          {/* One label for the row: every headline delta compares against the same
-              elapsed-aligned previous window, so the comparison is named once, not
-              per stat (ADR 0011). */}
-          <p className="stats-delta-label">{data.delta_label}</p>
-        </>
+        <div className="stat-tiles">
+          <SplitStat
+            testid="stat-auto-approved"
+            sparkTestid="sparkline-auto-approved"
+            label="Auto-approved"
+            count={data.auto_approved.count}
+            share={data.auto_approved.share}
+            delta={data.auto_approved.delta}
+            series={data.auto_approved.series}
+            caption="of all PRs in range"
+          />
+          <SplitStat
+            testid="stat-human-review"
+            sparkTestid="sparkline-human-review"
+            label="Human review"
+            count={data.human_review.count}
+            share={data.human_review.share}
+            delta={data.human_review.delta}
+            series={data.human_review.series}
+            caption="held back for you"
+          />
+          <Stat
+            testid="stat-switches-saved"
+            sparkTestid="sparkline-switches-saved"
+            label="Context switches saved"
+            count={data.switches_saved}
+            hours={data.switches_saved_hours}
+            money={data.switches_saved_money}
+            assumptions={data.assumptions}
+            delta={data.switches_saved_delta}
+            series={data.switches_saved_series}
+          />
+        </div>
       )}
     </section>
   );
 }
 
-// TimePicker is the lightweight Grafana-style range control: four mutually
-// exclusive windows, plus a day-count input revealed only for the custom "last X
-// days" range (the one range that carries a length on the wire). It is a pure
-// controlled component — selection lives in AnalyticsPanel (and the URL); the
-// server owns every boundary computation.
+// TimePicker is the Variant-2 range control: a dropdown whose toggle names the
+// active window and whose menu offers the four mutually-exclusive ranges, plus a
+// day-count input revealed only for the custom "last X days" range (the one range
+// that carries a length on the wire). It is a pure controlled component —
+// selection lives in AnalyticsPanel (and the URL); the server owns every boundary
+// computation.
 function TimePicker({
   range,
   days,
@@ -111,25 +123,75 @@ function TimePicker({
   onRange: (r: AnalyticsRange) => void;
   onDays: (d: number) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss the menu on an outside click or Escape, so it behaves like a real
+  // dropdown rather than a panel that lingers once the user looks elsewhere.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   const options: { value: AnalyticsRange; label: string }[] = [
     { value: "today", label: "Today" },
     { value: "week", label: "This week" },
     { value: "month", label: "This month" },
     { value: "days", label: `Last ${days} days` },
   ];
+  const active = options.find((o) => o.value === range) ?? options[0];
+
+  const pick = (value: AnalyticsRange) => {
+    onRange(value);
+    setOpen(false);
+  };
+
   return (
-    <div className="time-picker" role="group" aria-label="Time range">
-      {options.map(({ value, label }) => (
-        <button
-          key={value}
-          type="button"
-          className={`range-btn${range === value ? " is-active" : ""}`}
-          aria-pressed={range === value}
-          onClick={() => onRange(value)}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="range-picker" ref={rootRef}>
+      <button
+        type="button"
+        className="range-toggle"
+        data-testid="range-toggle"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <CalendarIcon />
+        <span className="range-toggle-label">{active.label}</span>
+        <CaretIcon open={open} />
+      </button>
+
+      {open && (
+        <div className="range-menu" role="menu" aria-label="Time range">
+          {options.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={range === value}
+              className={`range-menu-item${range === value ? " is-active" : ""}`}
+              onClick={() => pick(value)}
+            >
+              <span className="range-menu-check" aria-hidden="true">
+                {range === value ? "✓" : ""}
+              </span>
+              <span className="range-menu-label">{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {range === "days" && (
         <label className="day-count">
           <span className="day-count-label">days</span>
@@ -143,6 +205,51 @@ function TimePicker({
           />
         </label>
       )}
+    </div>
+  );
+}
+
+// CalendarIcon and CaretIcon dress the range toggle (Variant 2): a calendar glyph
+// leads, a caret that flips when the menu is open trails. Both are presentational.
+function CalendarIcon() {
+  return (
+    <svg className="range-toggle-cal" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="4.5" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3 9.5h18M8 2.5v4M16 2.5v4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CaretIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`range-toggle-caret${open ? " is-open" : ""}`}
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Sparkline draws a headline's per-day series as a row of bars (Variant 2) — one
+// bar per day, scaled to the series max, the latest day highlighted as "current".
+// It is presentational (aria-hidden); the count beside it carries the value for
+// assistive tech. An absent/empty series simply yields no bars.
+function Sparkline({ series, testid }: { series: number[] | null; testid: string }) {
+  const data = series ?? [];
+  const max = Math.max(1, ...data);
+  return (
+    <div className="sparkline" data-testid={testid} aria-hidden="true">
+      {data.map((v, i) => (
+        <span
+          key={i}
+          className={`spark-bar${i === data.length - 1 ? " is-current" : ""}`}
+          style={{ height: `${Math.max(8, Math.round((v / max) * 100))}%` }}
+        />
+      ))}
     </div>
   );
 }
@@ -191,23 +298,35 @@ function writeControls(range: AnalyticsRange, days: number) {
 // the count's elapsed-aligned period delta as a badge.
 function SplitStat({
   testid,
+  sparkTestid,
   label,
   count,
   share,
   delta,
+  series,
+  caption,
 }: {
   testid: string;
+  sparkTestid: string;
   label: string;
   count: number;
   share: number;
   delta: Delta;
+  series: number[] | null;
+  caption: string;
 }) {
   return (
-    <div className="stat" data-testid={testid}>
-      <span className="stat-label">{label}</span>
-      <span className="stat-value tnum">{count}</span>
-      <span className="stat-share tnum">{percent(share)}</span>
-      <DeltaBadge delta={delta} />
+    <div className="stat-tile" data-testid={testid}>
+      <div className="stat-tile-head">
+        <span className="stat-label">{label}</span>
+        <DeltaBadge delta={delta} />
+      </div>
+      <div className="stat-tile-value">
+        <span className="stat-value tnum">{count}</span>
+        <span className="stat-share tnum">{percent(share)}</span>
+      </div>
+      <Sparkline series={series} testid={sparkTestid} />
+      <span className="stat-caption">{caption}</span>
     </div>
   );
 }
@@ -221,28 +340,39 @@ function SplitStat({
 // tab, so the Analytics surface stays pure presentation.
 function Stat({
   testid,
+  sparkTestid,
   label,
   count,
   hours,
   money,
   assumptions,
   delta,
+  series,
 }: {
   testid: string;
+  sparkTestid: string;
   label: string;
   count: number;
   hours: number;
   money: number;
   assumptions: Settings;
   delta: Delta;
+  series: number[] | null;
 }) {
   return (
-    <div className="stat" data-testid={testid}>
-      <span className="stat-label">{label}</span>
-      <span className="stat-value tnum">{count}</span>
-      <span className="stat-figures tnum">{formatHours(hours)} saved</span>
-      <MoneyPill money={money} assumptions={assumptions} />
-      <DeltaBadge delta={delta} />
+    <div className="stat-tile" data-testid={testid}>
+      <div className="stat-tile-head">
+        <span className="stat-label">{label}</span>
+        <DeltaBadge delta={delta} />
+      </div>
+      <div className="stat-tile-value">
+        <span className="stat-value tnum">{count}</span>
+      </div>
+      <Sparkline series={series} testid={sparkTestid} />
+      <div className="stat-tile-foot">
+        <span className="stat-figures tnum">{formatHours(hours)} saved</span>
+        <MoneyPill money={money} assumptions={assumptions} />
+      </div>
     </div>
   );
 }

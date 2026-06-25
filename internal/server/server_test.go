@@ -1867,6 +1867,58 @@ func TestAnalyticsRangeParamDrivesCutoff(t *testing.T) {
 	require.Equal(t, 2, week.AutoApproved.Count, "the rolling 7-day window includes the 36h-old approval")
 }
 
+// AN1d (Variant 2): each headline carries a per-local-day sparkline series. The
+// bars sum to the headline count, the series spreads an old and a fresh approval
+// into different day buckets (proving it buckets by day, not one lump), and
+// switches-saved mirrors the auto series. Anchored on time.Now() with offsets so
+// it holds whatever real day the test runs.
+func TestAnalyticsSeriesPerDay(t *testing.T) {
+	sum := func(xs []int) int {
+		var s int
+		for _, x := range xs {
+			s += x
+		}
+		return s
+	}
+	nonZero := func(xs []int) int {
+		var n int
+		for _, x := range xs {
+			if x > 0 {
+				n++
+			}
+		}
+		return n
+	}
+
+	now := time.Now()
+	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	seedApprovalsFile(t, statePath,
+		engine.Approval{Number: 930, Title: "chore: two days ago", URL: "u930",
+			MatchedRule: "team chores", ApprovedAt: now.Add(-48 * time.Hour)},
+		engine.Approval{Number: 931, Title: "chore: just now", URL: "u931",
+			MatchedRule: "team chores", ApprovedAt: now},
+		engine.Approval{Number: 932, Title: "feat!: just now", URL: "u932",
+			MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: now},
+	)
+	store := storeWith(t, matchAllChores())
+	eng, err := engine.New(github.NewFake(), statePath, store)
+	require.NoError(t, err)
+	srv := newTestServerFor(t, eng, store)
+
+	var got server.Analytics
+	getJSON(t, srv.URL+apiPrefix+"/analytics?range=days&days=7", &got)
+
+	// The bars are a daily decomposition of the headline, so they sum back to it.
+	require.Equal(t, got.AutoApproved.Count, sum(got.AutoApproved.Series), "auto bars sum to the count")
+	require.Equal(t, got.HumanReview.Count, sum(got.HumanReview.Series), "human bars sum to the count")
+	// The two auto approvals are 48h apart, so they land in distinct day buckets —
+	// proving the series buckets by calendar day rather than collapsing to one bar.
+	require.Equal(t, 2, nonZero(got.AutoApproved.Series), "the old and the fresh auto-approval occupy different days")
+	// Switches-saved is the auto-approval series by definition (a saved switch is an
+	// auto-approval), surfaced as a flat sibling so the renderer needn't re-derive it.
+	require.Equal(t, got.AutoApproved.Series, got.SwitchesSavedSeries, "switches series mirrors the auto series")
+}
+
 // AN1c (slice 2): structural + semantic validation of the range params. An
 // unknown `range` is rejected by huma's enum; `range=days` with no `days` is the
 // semantic guard (huma can't make a field conditionally required) and is rejected

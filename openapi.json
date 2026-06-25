@@ -39,12 +39,23 @@
           "switches_saved_money": {
             "format": "double",
             "type": "number"
+          },
+          "switches_saved_series": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "auto_approved",
           "human_review",
           "switches_saved",
+          "switches_saved_series",
           "switches_saved_hours",
           "switches_saved_money",
           "switches_saved_delta",
@@ -519,6 +530,16 @@
           "delta": {
             "$ref": "#/components/schemas/Delta"
           },
+          "series": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "share": {
             "format": "double",
             "type": "number"
@@ -527,7 +548,8 @@
         "required": [
           "count",
           "share",
-          "delta"
+          "delta",
+          "series"
         ],
         "type": "object"
       },

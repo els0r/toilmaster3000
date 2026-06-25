@@ -12,9 +12,10 @@ import { fetchAnalytics } from "./api";
 const mockAnalytics = vi.mocked(fetchAnalytics);
 
 const analytics = (over: Partial<Analytics> = {}): Analytics => ({
-  auto_approved: { count: 3, share: 0.75, delta: { pct: 0, state: "none" } },
-  human_review: { count: 1, share: 0.25, delta: { pct: 0, state: "none" } },
+  auto_approved: { count: 3, share: 0.75, delta: { pct: 0, state: "none" }, series: [1, 2] },
+  human_review: { count: 1, share: 0.25, delta: { pct: 0, state: "none" }, series: [0, 1] },
   switches_saved: 3,
+  switches_saved_series: [1, 2],
   switches_saved_hours: 1.2,
   switches_saved_money: 115,
   switches_saved_delta: { pct: 0, state: "none" },
@@ -74,9 +75,10 @@ describe("AnalyticsPanel stats row", () => {
   it("renders all zeros for an empty range", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
-        auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
-        human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
+        auto_approved: { count: 0, share: 0, delta: { pct: 0, state: "none" }, series: [0] },
+        human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" }, series: [0] },
         switches_saved: 0,
+        switches_saved_series: [0],
         switches_saved_delta: { pct: 0, state: "none" },
       }),
     );
@@ -97,9 +99,10 @@ describe("AnalyticsPanel period deltas", () => {
   it("renders signed deltas on each headline stat and the comparison label", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
-        auto_approved: { count: 3, share: 0.75, delta: { pct: 0.5, state: "changed" } },
-        human_review: { count: 1, share: 0.25, delta: { pct: -0.2, state: "changed" } },
+        auto_approved: { count: 3, share: 0.75, delta: { pct: 0.5, state: "changed" }, series: [1, 2] },
+        human_review: { count: 1, share: 0.25, delta: { pct: -0.2, state: "changed" }, series: [1, 0] },
         switches_saved: 3,
+        switches_saved_series: [1, 2],
         switches_saved_delta: { pct: 0.5, state: "changed" },
         delta_label: "vs preceding 1 day",
       }),
@@ -120,9 +123,10 @@ describe("AnalyticsPanel period deltas", () => {
   it("renders 'new' for a zero baseline and '—' for both-zero", async () => {
     mockAnalytics.mockResolvedValue(
       analytics({
-        auto_approved: { count: 5, share: 1, delta: { pct: 0, state: "new" } },
-        human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" } },
+        auto_approved: { count: 5, share: 1, delta: { pct: 0, state: "new" }, series: [2, 3] },
+        human_review: { count: 0, share: 0, delta: { pct: 0, state: "none" }, series: [0, 0] },
         switches_saved: 5,
+        switches_saved_series: [2, 3],
         switches_saved_delta: { pct: 0, state: "new" },
       }),
     );
@@ -136,20 +140,28 @@ describe("AnalyticsPanel period deltas", () => {
 });
 
 describe("AnalyticsPanel time picker", () => {
-  // A3: the panel fetches the default range (today) on mount, then re-fetches with
-  // the newly-selected range after the debounce — and NOT before it (a debounced
-  // control: a burst of clicks collapses to one fetch).
-  it("refetches with the selected range, debounced", async () => {
+  // A3: the Variant-2 range control is a dropdown — the toggle opens a menu, and
+  // picking a range re-fetches with it after the debounce, NOT before (a burst of
+  // picks collapses to one fetch). The toggle also reflects the active range.
+  it("opens the dropdown and refetches the picked range, debounced", async () => {
     mockAnalytics.mockResolvedValue(analytics());
 
     render(<AnalyticsPanel />);
     await flush();
     expect(mockAnalytics).toHaveBeenCalledTimes(1);
     expect(mockAnalytics).toHaveBeenLastCalledWith("today", expect.anything());
+    // The toggle names the active range; the menu is closed until opened.
+    const toggle = screen.getByTestId("range-toggle");
+    expect(toggle).toHaveTextContent(/today/i);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /this week/i }));
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /this week/i }));
     // Debounce window not yet elapsed -> still just the mount fetch.
     expect(mockAnalytics).toHaveBeenCalledTimes(1);
+    // Picking closes the menu and updates the toggle label.
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(toggle).toHaveTextContent(/this week/i);
 
     await act(async () => {
       vi.advanceTimersByTime(500);
@@ -159,16 +171,17 @@ describe("AnalyticsPanel time picker", () => {
     expect(mockAnalytics).toHaveBeenLastCalledWith("week", expect.anything());
   });
 
-  // A4: selecting the custom "last X days" range reveals a day-count input, and
-  // editing it re-fetches the days range with that count (the only range that
-  // carries a day count on the wire).
-  it("fetches the days range with the custom day count", async () => {
+  // A4: choosing the custom "last X days" range from the menu reveals a day-count
+  // input, and editing it re-fetches the days range with that count (the only
+  // range that carries a day count on the wire).
+  it("fetches the days range with the custom day count chosen from the menu", async () => {
     mockAnalytics.mockResolvedValue(analytics());
 
     render(<AnalyticsPanel />);
     await flush();
 
-    fireEvent.click(screen.getByRole("button", { name: /last .* days/i }));
+    fireEvent.click(screen.getByTestId("range-toggle"));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /last .* days/i }));
     fireEvent.change(screen.getByLabelText(/day count/i), {
       target: { value: "14" },
     });
@@ -178,6 +191,35 @@ describe("AnalyticsPanel time picker", () => {
     });
     await flush();
     expect(mockAnalytics).toHaveBeenLastCalledWith("days", 14);
+  });
+});
+
+describe("AnalyticsPanel sparklines", () => {
+  // A9 (Variant 2): each headline tile draws a sparkline of its per-day series —
+  // one bar per day — so the daily trend reads at a glance beside the count.
+  it("renders one sparkline bar per day in each headline's series", async () => {
+    mockAnalytics.mockResolvedValue(
+      analytics({
+        auto_approved: {
+          count: 4,
+          share: 1,
+          delta: { pct: 0, state: "none" },
+          series: [1, 0, 1, 2],
+        },
+        switches_saved: 4,
+        switches_saved_series: [1, 0, 1, 2],
+      }),
+    );
+
+    render(<AnalyticsPanel />);
+    await flush();
+
+    const spark = screen.getByTestId("sparkline-auto-approved");
+    expect(spark.querySelectorAll(".spark-bar")).toHaveLength(4);
+    // The switches tile draws its own series too.
+    expect(
+      screen.getByTestId("sparkline-switches-saved").querySelectorAll(".spark-bar"),
+    ).toHaveLength(4);
   });
 });
 
