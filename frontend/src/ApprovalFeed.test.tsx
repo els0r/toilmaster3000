@@ -43,19 +43,10 @@ describe("ApprovalFeed", () => {
     expect(numLinks[1]).toHaveAttribute("href", "https://github.com/o/r/pull/1");
   });
 
-  // Slice 1: the feed renders the server-parsed parts (icon, scope pill,
-  // capitalized clean description) — never the raw "type(scope):" prefix.
-  it("renders the parsed title parts, capitalized, without the prefix", () => {
-    render(<ApprovalFeed approvals={approvals} />);
-
-    // Capitalized clean description (render transform; the prefix is stripped).
-    expect(screen.getByText("Typo")).toBeInTheDocument();
-    expect(screen.getByText("Bump deps")).toBeInTheDocument();
-    // The scope rides a pill, the type rides an icon.
-    expect(screen.getByText("deps")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "fix" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "chore" })).toBeInTheDocument();
-  });
+  // The shared row skeleton (parsed title parts, capitalized description, scope
+  // pill, type icon) is specified once in PrRow.test + CommitTitle.test
+  // (ADR 0014); the feed's own concerns — ordering, rule/manual, time, and the
+  // PR-State bar — are covered below.
 
   // Slice 4: an auto-approval shows the matched rule name in a chip (no manual
   // badge), driven by the server's `manual` flag — not a client string sniff.

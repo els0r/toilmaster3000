@@ -435,44 +435,17 @@ textarea:focus {
   border-bottom: 1px solid var(--border);
 }
 
-/* ---------- queue (needs human review) ---------- */
-.queue-row {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  padding: 17px 18px 17px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.queue-row:last-child {
-  border-bottom: none;
-}
-.queue-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.queue-titleline {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  flex-wrap: wrap;
-}
 /* commit-title: the shared parsed-title renderer (icon + scope pills + clean
-   description + a separate #num link), used by both the feed and the queue. */
+   description + a separate #num link), used by every station via PrRow. */
 .commit-title {
   display: inline-flex;
   align-items: baseline;
   gap: 9px;
   flex-wrap: wrap;
 }
-.feed-titleline .commit-title {
-  gap: 8px;
-}
 /* type-gutter: the row's left column holding the per-type glyph (a sibling of
-   the body, not inline in the title), so it can align with the first line
-   (queue) or center on the whole row (feed) per the design source. */
+   the body, not inline in the title). PrRow aligns it to the first line at the
+   default density and centers it on the whole row when compact (the feed). */
 .type-gutter {
   flex: none;
   display: flex;
@@ -480,9 +453,6 @@ textarea:focus {
   justify-content: center;
   width: 16px;
   height: 16px;
-}
-.queue-row .type-gutter {
-  margin-top: 2px;
 }
 .type-icon {
   display: block;
@@ -500,7 +470,8 @@ textarea:focus {
   white-space: nowrap;
 }
 /* entry-link: the capitalized clean description — the primary link of the
-   title line. The size class (queue-link / feed-link) sets its scale. */
+   title line. Its scale is set by the enclosing PrRow density
+   (.pr-titleline .entry-link / .pr-row--compact .pr-titleline .entry-link). */
 .entry-link {
   font-weight: var(--weight-medium);
   color: var(--fg);
@@ -528,13 +499,41 @@ textarea:focus {
   margin-left: 4px;
   font-size: 0.85em;
 }
-.feed-row .entry-num {
-  font-size: var(--text-2xs);
+
+/* ---------- pr-row: the one shared funnel-station row (ADR 0014) ----------
+   One canonical row behind every station (Dropped, Staging, Needs-Human-Review,
+   Approval Feed). Separators are owned by the .pr-list container so the rule is
+   wrap-agnostic (the feed wraps each row for its state bar + flash). `density`
+   is the only visual axis: the default roomy row, or the feed's compact scale. */
+.pr-list > * + * {
+  border-top: 1px solid var(--border);
 }
-.queue-link {
+.pr-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 15px 18px 15px 14px;
+}
+.pr-row .type-gutter {
+  margin-top: 2px;
+}
+.pr-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-titleline {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.pr-titleline .entry-link {
   font-size: var(--text-md);
 }
-.entry-meta {
+.pr-meta {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -542,9 +541,43 @@ textarea:focus {
   font-size: var(--text-xs);
   color: var(--fg-2);
 }
-.entry-meta .sep {
+.pr-meta .sep {
   color: var(--border-strong);
 }
+.pr-action {
+  flex: none;
+}
+
+/* compact density — the Approval Feed's denser scan-scale: a smaller title and
+   meta, tighter rows, and a vertically-centered gutter. */
+.pr-row--compact {
+  align-items: center;
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+.pr-row--compact .type-gutter {
+  margin-top: 0;
+}
+.pr-row--compact .pr-body {
+  gap: 5px;
+}
+.pr-row--compact .pr-titleline {
+  gap: 8px;
+}
+.pr-row--compact .pr-titleline .commit-title {
+  gap: 8px;
+}
+.pr-row--compact .pr-titleline .entry-link {
+  font-size: var(--text-sm);
+}
+.pr-row--compact .pr-meta {
+  gap: 7px;
+  font-size: var(--text-2xs);
+}
+.pr-row--compact .entry-num {
+  font-size: var(--text-2xs);
+}
+
 /* diff-pill: the queued PR's diff magnitude as one clickable pill (green-bold
    +N, red-bold −M, muted K files) that opens the Diff card. */
 .diff-pill {
@@ -628,16 +661,12 @@ textarea:focus {
   max-height: 620px;
   overflow-y: auto;
 }
-.feed-row {
+/* feed-row-wrap: the positioned ancestor the feed's absolute overlays (the PR
+   State bar + fresh-approval flash) resolve against. It tightly wraps the shared
+   PrRow so the overlays cover exactly the row box; separators come from the
+   enclosing .pr-list (ADR 0014). */
+.feed-row-wrap {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 13px 18px 13px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.feed-row:last-child {
-  border-bottom: none;
 }
 .feed-flash {
   position: absolute;
@@ -665,36 +694,6 @@ textarea:focus {
 }
 .feed-state-closed {
   background: var(--pr-closed);
-}
-.feed-body {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.feed-titleline {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.feed-link {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  line-height: 1.35;
-}
-.feed-meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-  font-size: var(--text-2xs);
-  color: var(--fg-2);
-}
-.feed-meta .sep {
-  color: var(--border-strong);
 }
 .badge-manual {
   display: inline-flex;
@@ -1818,39 +1817,20 @@ textarea:focus {
 
 /* Itemized funnel rows (Dropped + approved-elsewhere) reuse the queue/feed row
    anatomy: a type gutter, a parsed title line, a meta line. */
-.funnel-row {
-  display: flex;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  border-top: 1px solid var(--border);
-}
-.funnel-row:first-child {
-  border-top: none;
-}
-.funnel-body {
-  min-width: 0;
-  flex: 1;
-}
-.funnel-titleline {
-  margin-bottom: 2px;
-}
 .failing-checks {
   color: var(--error);
   font-weight: var(--weight-medium);
 }
 
-/* Staging — the interactive funnel bucket. Each row reuses the funnel-row
-   anatomy plus the two rule-minting shortcut buttons on the right; the meta line
-   carries the diff magnitude (reusing the diff-pill's +add/−del/files colors). */
-.staging-row {
-  align-items: center;
-}
+/* Staging — the interactive funnel bucket. Each PrRow carries the two
+   rule-minting shortcut buttons in its action slot; the meta line carries the
+   diff magnitude (the DiffMag leaf, sharing the +add/−del/files colors). */
 .staging-actions {
   display: flex;
   gap: var(--space-2);
   flex-shrink: 0;
 }
-.staging-row .diff-mag {
+.diff-mag {
   display: inline-flex;
   gap: var(--space-2);
   align-items: baseline;
