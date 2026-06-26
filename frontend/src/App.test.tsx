@@ -91,6 +91,9 @@ const funnelItem = (n: number): FunnelItem => ({
   author: "dana",
   url: `https://github.com/o/r/pull/${n}`,
   failing_checks: 0,
+  additions: 0,
+  deletions: 0,
+  changed_files: 0,
 });
 
 beforeEach(() => {

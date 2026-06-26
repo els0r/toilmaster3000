@@ -1,7 +1,20 @@
-import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { PipelineFunnel } from "./Pipeline";
 import type { Approval, FunnelItem, Pipeline, QueueItem } from "./api";
+
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
+  return { ...actual, createRule: vi.fn() };
+});
+
+import { createRule } from "./api";
+const mockCreate = vi.mocked(createRule);
+
+beforeEach(() => {
+  mockCreate.mockReset();
+  mockCreate.mockResolvedValue({ name: "x", enabled: true });
+});
 
 const funnelItem = (over: Partial<FunnelItem> = {}): FunnelItem => ({
   number: 100,
@@ -10,6 +23,9 @@ const funnelItem = (over: Partial<FunnelItem> = {}): FunnelItem => ({
   author: "dana",
   url: "https://github.com/o/r/pull/100",
   failing_checks: 0,
+  additions: 0,
+  deletions: 0,
+  changed_files: 0,
   ...over,
 });
 
@@ -264,14 +280,101 @@ describe("Pipeline funnel — stations 4 & 5 reuse + approved-elsewhere", () => 
   });
 });
 
-describe("Pipeline funnel — Staging placeholder & loading", () => {
-  // Station 3 (interactive Staging) ships in the next change; a clearly-marked
-  // placeholder mount point reserves its spot in the funnel.
-  it("renders a Staging placeholder mount point", () => {
-    renderFunnel({ incoming: 0 });
-    expect(screen.getByTestId("staging-placeholder")).toBeInTheDocument();
+describe("Pipeline funnel — Staging", () => {
+  const staged = (over: Partial<FunnelItem> = {}) =>
+    funnelItem({
+      number: 70,
+      title: "feat(ui/api): a new panel",
+      title_parts: {
+        type: "feat",
+        scopes: ["ui", "api"],
+        breaking: false,
+        description: "a new panel",
+      },
+      author: " camille",
+      url: "https://github.com/o/r/pull/70",
+      additions: 120,
+      deletions: 8,
+      changed_files: 5,
+      ...over,
+    });
+
+  // Each eligible-but-uncovered PR renders with its parsed title (icon + scope
+  // pills + clean description), its author, and its diff magnitude — the operator
+  // sees the cohort and the change's size before minting a rule.
+  it("renders a staging row with title parts, author, and diff magnitude", () => {
+    renderFunnel({ incoming: 1, staging: [staged()] });
+
+    const card = screen.getByTestId("staging");
+    expect(within(card).getByText("A new panel")).toBeInTheDocument();
+    expect(within(card).getByText("ui")).toBeInTheDocument();
+    expect(within(card).getByText("api")).toBeInTheDocument();
+    expect(within(card).getByText("camille", { exact: false })).toBeInTheDocument();
+    expect(within(card).getByText("+120")).toBeInTheDocument();
+    expect(within(card).getByText("−8")).toBeInTheDocument();
+    expect(within(card).getByText(/5 files/)).toBeInTheDocument();
+    const link = within(card).getByRole("link", { name: /#70/ });
+    expect(link).toHaveAttribute("href", "https://github.com/o/r/pull/70");
   });
 
+  // The "+ Approval rule" button opens the FULL Rules editor pre-filled: the
+  // anchored type ^feat$, the un-anchored FIRST scope (ui, NOT ^ui$ — a
+  // multi-scope title must still match), class approve via createRule, and an
+  // editable auto-generated name. Saving rides POST /rules unchanged.
+  it("opens the full editor pre-filled with an anchored-type / un-anchored-scope draft", async () => {
+    renderFunnel({ incoming: 1, staging: [staged()] });
+
+    const card = screen.getByTestId("staging");
+    fireEvent.click(within(card).getByRole("button", { name: /approval rule for #70/i }));
+
+    // The full editor — all six title-part rows — is open, pre-filled.
+    expect(screen.getByLabelText("title type")).toHaveValue("^feat$");
+    expect(screen.getByLabelText("title scope")).toHaveValue("ui");
+    expect(screen.getByLabelText("title description")).toHaveValue("");
+    expect(screen.getByLabelText("author include")).toHaveValue("");
+    expect(screen.getByLabelText("diff min")).toHaveValue(null);
+    // The name is auto-generated and editable.
+    const name = screen.getByLabelText("rule name") as HTMLInputElement;
+    expect(name.value).toContain("feat");
+    expect(name.value).toContain("ui");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][0]).toMatchObject({
+      type_include: "^feat$",
+      scope_include: "ui",
+      class: "approve",
+    });
+    // No author/diff/excludes leak onto the wire.
+    expect(mockCreate.mock.calls[0][0].authors_include).toBeUndefined();
+    expect(mockCreate.mock.calls[0][0].diff_min).toBeUndefined();
+  });
+
+  // The "+ Human-review rule" button opens the same editor with class review.
+  it("opens the editor with class review for the human-review button", async () => {
+    renderFunnel({ incoming: 1, staging: [staged()] });
+
+    const card = screen.getByTestId("staging");
+    fireEvent.click(
+      within(card).getByRole("button", { name: /human-review rule for #70/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][0]).toMatchObject({ class: "review" });
+  });
+
+  // Empty Staging is progress, not absence: an unambiguous "every eligible PR is
+  // covered" message reads as "nothing to do here."
+  it("renders the every-eligible-covered empty state when staging is empty", () => {
+    renderFunnel({ incoming: 0, staging: [] });
+
+    const card = screen.getByTestId("staging");
+    expect(within(card).getByText(/every eligible PR is covered/i)).toBeInTheDocument();
+  });
+});
+
+describe("Pipeline funnel — loading", () => {
   // A null snapshot (first load or a cleared failed fetch) shows the funnel
   // loading state and none of the snapshot-derived stations.
   it("shows a loading state and no buckets when the snapshot is null", () => {
@@ -286,6 +389,6 @@ describe("Pipeline funnel — Staging placeholder & loading", () => {
     expect(screen.getByText(/loading funnel/i)).toBeInTheDocument();
     expect(screen.queryByTestId("incoming-total")).not.toBeInTheDocument();
     expect(screen.queryByTestId("dropped-red")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("staging-placeholder")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("staging")).not.toBeInTheDocument();
   });
 });

@@ -6,9 +6,19 @@ import {
   validateDraft,
   ruleRegexError,
   summarize,
+  stagingDraft,
   type Draft,
 } from "./ruleDraft";
 import type { Rule } from "./api";
+import type { TitleParts } from "./CommitTitle";
+
+const parts = (over: Partial<TitleParts> = {}): TitleParts => ({
+  type: "feat",
+  scopes: [],
+  breaking: false,
+  description: "a thing",
+  ...over,
+});
 
 const rule = (over: Partial<Rule> = {}): Rule => ({
   name: "r",
@@ -235,5 +245,74 @@ describe("summarize", () => {
   // A rule that constrains nothing reads as matching everything.
   it("falls back to 'matches every PR'", () => {
     expect(summarize(rule())).toBe("matches every PR");
+  });
+});
+
+describe("stagingDraft", () => {
+  // The Staging shortcut prefill is deliberately broad — type + scope, no author
+  // — so one rule drains the whole cohort rather than breeding per-author
+  // duplicates (CONTEXT). TypeInclude is ANCHORED (^feat$, exact type) while
+  // ScopeInclude is a plain substring (no ^…$): a multi-scope title like
+  // feat(ui/api): x must still match a `ui` ScopeInclude, so anchoring it would
+  // break the cohort.
+  it("anchors the type and leaves the scope un-anchored", () => {
+    const d = stagingDraft(parts({ type: "feat", scopes: ["ui"] }), "approve");
+    expect(d.typeInc).toBe("^feat$");
+    expect(d.scopeInc).toBe("ui");
+  });
+
+  // The class is stamped from the button (approve vs review), exactly like the
+  // card-implied class everywhere else — never an editable field.
+  it("stamps the class from the button", () => {
+    expect(stagingDraft(parts(), "approve").cls).toBe("approve");
+    expect(stagingDraft(parts(), "review").cls).toBe("review");
+  });
+
+  // Author, excludes, and diff bounds stay blank — the prefill constrains only
+  // type + scope so the operator can broaden or narrow from there.
+  it("leaves author, excludes, and diff blank", () => {
+    const d = stagingDraft(parts({ type: "feat", scopes: ["ui"] }), "approve");
+    expect(d.authorInc).toBe("");
+    expect(d.authorExc).toBe("");
+    expect(d.typeExc).toBe("");
+    expect(d.scopeExc).toBe("");
+    expect(d.descInc).toBe("");
+    expect(d.descExc).toBe("");
+    expect(d.diffMin).toBe("");
+    expect(d.diffMax).toBe("");
+  });
+
+  // It's a NEW rule (POST /rules on save), with an editable auto-generated name
+  // derived from type + scope so the operator can rename before saving.
+  it("is a new rule with an editable auto-generated name", () => {
+    const d = stagingDraft(parts({ type: "feat", scopes: ["ui"] }), "approve");
+    expect(d.isNew).toBe(true);
+    expect(d.id).toBeUndefined();
+    expect(d.enabled).toBe(true);
+    expect(d.name).toContain("feat");
+    expect(d.name).toContain("ui");
+  });
+
+  // Only the FIRST scope seeds ScopeInclude — a multi-scope title narrows to its
+  // primary scope, and the operator widens from there if needed.
+  it("uses only the first scope", () => {
+    const d = stagingDraft(parts({ type: "fix", scopes: ["api", "ui"] }), "review");
+    expect(d.scopeInc).toBe("api");
+  });
+
+  // A scope-less title prefills the anchored type and leaves ScopeInclude blank
+  // (no scope to seed); the auto-name still reads from the type alone.
+  it("omits the scope when the title has none", () => {
+    const d = stagingDraft(parts({ type: "docs", scopes: [] }), "approve");
+    expect(d.typeInc).toBe("^docs$");
+    expect(d.scopeInc).toBe("");
+    expect(d.name).toContain("docs");
+  });
+
+  // The prefilled draft constrains type (and scope), so it is NOT a
+  // constrains-nothing rule — Save is reachable without further edits.
+  it("produces a draft that constrains something", () => {
+    const d = stagingDraft(parts({ type: "feat", scopes: ["ui"] }), "approve");
+    expect(validateDraft(d).constrainsNothing).toBe(false);
   });
 });

@@ -257,7 +257,7 @@ function RuleRow({
 // on every keystroke and blocks Save while any is invalid or the rule constrains
 // nothing (which would match every PR). The server validates again; its message
 // surfaces through the parent's error alert.
-function RuleModal({
+export function RuleModal({
   draft,
   onChange,
   onCancel,

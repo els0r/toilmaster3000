@@ -1,13 +1,21 @@
-import type { ReactNode } from "react";
-import type {
-  Approval,
-  FunnelItem,
-  Pipeline as PipelineSnapshot,
-  QueueItem,
+import { useState, type ReactNode } from "react";
+import {
+  createRule,
+  type Approval,
+  type FunnelItem,
+  type Pipeline as PipelineSnapshot,
+  type QueueItem,
 } from "./api";
 import { ApprovalFeed } from "./ApprovalFeed";
 import { CommitTitle, TypeIcon } from "./CommitTitle";
 import { NeedsReview } from "./NeedsReview";
+import { RuleModal } from "./RulesEditor";
+import {
+  draftToRule,
+  stagingDraft,
+  type Draft,
+  type RuleClass,
+} from "./ruleDraft";
 
 // SEGMENTS are the six terminal stages that partition Incoming, in funnel order
 // (top→bottom of the spine). Each has a stable class hook for its color and a
@@ -237,11 +245,140 @@ function ApprovedElsewhere({ items }: { items: FunnelItem[] }) {
   );
 }
 
-// PipelineFunnel renders the read-only Cycle Funnel: Incoming (a distribution
-// bar), Dropped (red + draft), a Staging placeholder, Needs-Human-Review (the
-// existing queue panel), and the Approval ledger (the existing feed, with
-// approved-elsewhere rows highlighted above it). It composes the live /pipeline
-// snapshot with the /queue and /approvals payloads the app already polls.
+// StagingRow renders one eligible-but-uncovered PR: the type glyph in the
+// gutter, the server-parsed title (icon + scope pills + clean description), the
+// author and diff magnitude (the change's size at a glance), and the two
+// rule-minting buttons. Each button opens the FULL Rules editor pre-filled from
+// this PR's parsed title — the shortcut that lets an operator drain the cohort in
+// seconds. The diff magnitude reuses NeedsReview's +add/−del/files convention.
+function StagingRow({
+  item,
+  onMint,
+}: {
+  item: FunnelItem;
+  onMint: (cls: RuleClass) => void;
+}) {
+  return (
+    <div className="funnel-row staging-row">
+      <span className="type-gutter" title={item.title}>
+        <TypeIcon type={item.title_parts.type} />
+      </span>
+      <div className="funnel-body">
+        <div className="funnel-titleline">
+          <CommitTitle
+            parts={item.title_parts}
+            rawTitle={item.title}
+            number={item.number}
+            url={item.url}
+            linkClassName="funnel-link"
+          />
+        </div>
+        <div className="entry-meta">
+          <span>{item.author}</span>
+          <span className="sep">·</span>
+          <span className="diff-mag tnum">
+            <span className="diff-add">+{item.additions}</span>
+            <span className="diff-del">−{item.deletions}</span>
+            {item.changed_files > 0 && (
+              <span className="diff-files">{item.changed_files} files</span>
+            )}
+          </span>
+        </div>
+      </div>
+      <div className="staging-actions">
+        <button
+          type="button"
+          className="btn-ghost"
+          aria-label={`add approval rule for #${item.number}`}
+          onClick={() => onMint("approve")}
+        >
+          + Approval rule
+        </button>
+        <button
+          type="button"
+          className="btn-ghost"
+          aria-label={`add human-review rule for #${item.number}`}
+          onClick={() => onMint("review")}
+        >
+          + Human-review rule
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// StagingStation renders the funnel's Staging — the previously-invisible eligible
+// PRs no rule covers. Each row carries the two rule-minting shortcut buttons; a
+// click opens the FULL shipped Rules editor pre-filled from the PR's parsed title
+// (anchored type, un-anchored first scope, broad by design so one rule drains the
+// cohort). Saving rides POST /rules unchanged (#3 makes the matched PR leave
+// Staging next cycle). An empty Staging renders an unambiguous "every eligible PR
+// is covered" message — "nothing to do here" reads as progress.
+function StagingStation({ items }: { items: FunnelItem[] }) {
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (!draft) return;
+    setError(null);
+    try {
+      await createRule(draftToRule(draft));
+      setDraft(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <section className="card station-staging" data-testid="staging">
+      <div className="card-head">
+        <h2 className="card-title">Staging</h2>
+        <span className="card-count tnum">{items.length}</span>
+        <div className="spacer" />
+        <span className="card-note">eligible · no rule yet</span>
+      </div>
+
+      {error && (
+        <p className="row-alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      {items.length === 0 ? (
+        <div className="card-empty">
+          Every eligible PR is covered — nothing staged.
+        </div>
+      ) : (
+        <div>
+          {items.map((item) => (
+            <StagingRow
+              key={item.number}
+              item={item}
+              onMint={(cls) => setDraft(stagingDraft(item.title_parts, cls))}
+            />
+          ))}
+        </div>
+      )}
+
+      {draft && (
+        <RuleModal
+          draft={draft}
+          onChange={setDraft}
+          onCancel={() => setDraft(null)}
+          onSave={() => void save()}
+          onDelete={() => setDraft(null)}
+        />
+      )}
+    </section>
+  );
+}
+
+// PipelineFunnel renders the Cycle Funnel: Incoming (a distribution bar), Dropped
+// (red + draft), Staging (the interactive rule-minting bucket),
+// Needs-Human-Review (the existing queue panel), and the Approval ledger (the
+// existing feed, with approved-elsewhere rows highlighted above it). It composes
+// the live /pipeline snapshot with the /queue and /approvals payloads the app
+// already polls.
 //
 // `pipeline` is null while the first snapshot is loading OR after a failed
 // candidate fetch — a failed fetch CLEARS the funnel rather than showing stale
@@ -274,14 +411,9 @@ export function PipelineFunnel({
         <>
           <IncomingStation pipeline={pipeline} filterExpr={filterExpr} />
           <DroppedStation pipeline={pipeline} />
-          {/* Station 3 — Staging — is interactive (rule-creation buttons) and
-              ships in the next change. The mount point is reserved here. */}
-          <div
-            className="station-staging-placeholder"
-            data-testid="staging-placeholder"
-          >
-            Staging — coming soon
-          </div>
+          {/* Staging — the funnel's third terminal bucket — is interactive: each
+              eligible-but-uncovered PR carries the two rule-minting shortcuts. */}
+          <StagingStation items={pipeline.staging ?? []} />
         </>
       )}
 

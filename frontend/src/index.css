@@ -1857,15 +1857,21 @@ textarea:focus {
   font-weight: var(--weight-medium);
 }
 
-/* Staging placeholder — the interactive station ships next; reserve its spot. */
-.station-staging-placeholder {
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  text-align: center;
-  color: var(--fg-3);
-  font-size: var(--text-sm, var(--text-xs));
-  background: var(--attn-bg);
+/* Staging — the interactive funnel bucket. Each row reuses the funnel-row
+   anatomy plus the two rule-minting shortcut buttons on the right; the meta line
+   carries the diff magnitude (reusing the diff-pill's +add/−del/files colors). */
+.staging-row {
+  align-items: center;
+}
+.staging-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.staging-row .diff-mag {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: baseline;
 }
 
 /* Approved-elsewhere — highlighted rows above the ledger (soft dedup, left alone). */
