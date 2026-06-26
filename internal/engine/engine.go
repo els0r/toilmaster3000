@@ -240,10 +240,13 @@ func (e *Engine) queueItem(number int) (QueueItem, bool) {
 
 // RunCycleOnce runs exactly one find->approve cycle synchronously: it fetches
 // the candidate set once, then for each candidate evaluates the enabled rules
-// (in file order) and approves — through the locked approve() path — only those
-// matched by at least one enabled rule. A failed fetch skips the whole cycle
-// and is recorded as the cycle outcome; one PR's approval failure is logged and
-// skipped without aborting the cycle. The background loop calls this too.
+// (in file order) and approves — through the locked approve() path — every
+// matching PR NOT ALREADY APPROVED. "Already approved" is two cases: it sits in
+// tm3k's own dedup set, or GitHub reports it APPROVED by someone else (soft
+// dedup, ADR 0013) — both are left alone, never re-approved. A failed fetch
+// skips the whole cycle and is recorded as the cycle outcome; one PR's approval
+// failure is logged and skipped without aborting the cycle. The background loop
+// calls this too.
 func (e *Engine) RunCycleOnce(ctx context.Context) {
 	now := time.Now()
 	e.logger.Info("cycle: starting")
@@ -273,6 +276,19 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 	for _, pr := range candidates {
 		if e.alreadyApproved(pr.Number) {
 			// Already approved (auto or manual): never re-approve, never queue.
+			continue
+		}
+		if approvedElsewhere(pr) {
+			// Soft dedup (ADR 0013): GitHub already reports this PR as APPROVED by
+			// someone other than tm3k (it is APPROVED yet absent from approvals.jsonl,
+			// so not our approval). The context switch an auto-approver exists to save
+			// is already gone, so tm3k leaves it alone — exactly like an already-
+			// deduped PR: it does not approve and records nothing to the ledger. This
+			// keeps saved-switches analytics from double-counting across a team running
+			// multiple tm3k instances.
+			e.logger.Info("cycle: PR left alone, approved elsewhere",
+				"pr", pr.Number,
+			)
 			continue
 		}
 		if pr.IsDraft {
@@ -347,6 +363,20 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 		"dropped", dropped,
 	)
 	e.recordCycle(now, "ok", approved, dropped, queue)
+}
+
+// reviewDecisionApproved is gh's reviewDecision value for a PR an approving
+// review has already cleared.
+const reviewDecisionApproved = "APPROVED"
+
+// approvedElsewhere reports whether GitHub already considers the PR APPROVED.
+// It is consulted only AFTER the dedup-set check, so a true result here means
+// the approval is NOT tm3k's own (the PR is absent from approvals.jsonl): it was
+// approved elsewhere (a teammate, a human, or another tm3k instance). Per ADR
+// 0013 such a PR is left alone — a soft dedup — so tm3k never re-approves it and
+// records nothing, keeping saved-switches analytics honest across instances.
+func approvedElsewhere(pr github.PR) bool {
+	return pr.ReviewDecision == reviewDecisionApproved
 }
 
 // alreadyApproved reports whether the PR is already in the dedup set (locked

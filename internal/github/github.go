@@ -41,6 +41,13 @@ type PR struct {
 	// before the PR is ever parsed or matched. The CLI seam only decodes these;
 	// AllGreen does the judging.
 	Checks []Check
+	// ReviewDecision is gh's reviewDecision from the same single gh list call
+	// (APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""). The CLI seam only
+	// decodes it; the engine's approve path judges it. An APPROVED candidate whose
+	// number is absent from approvals.jsonl was approved elsewhere — tm3k leaves it
+	// alone as a soft dedup (ADR 0013), so saved-switches analytics never double-
+	// counts across a team running multiple tm3k instances.
+	ReviewDecision string
 }
 
 // FileDiff is one changed file of a PR, as the GitHub files API emits it: the
@@ -126,6 +133,9 @@ type ghListItem struct {
 	// StatusCheckRollup is gh's heterogeneous array of check entries for the PR,
 	// pulled in the same single list call (no per-PR N+1).
 	StatusCheckRollup []Check `json:"statusCheckRollup"`
+	// ReviewDecision is gh's coarse review-state signal, pulled in the same single
+	// list call (no per-PR N+1) to drive the approved-elsewhere soft dedup.
+	ReviewDecision string `json:"reviewDecision"`
 }
 
 // ListCandidates pulls the candidate set once via a single gh call.
@@ -133,7 +143,7 @@ func (c *CLI) ListCandidates(ctx context.Context) ([]PR, error) {
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
 		"--repo", c.repo,
 		"--search", c.search,
-		"--json", "number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup",
+		"--json", "number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision",
 	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -150,15 +160,16 @@ func (c *CLI) ListCandidates(ctx context.Context) ([]PR, error) {
 	prs := make([]PR, 0, len(items))
 	for _, it := range items {
 		prs = append(prs, PR{
-			Number:       it.Number,
-			Title:        it.Title,
-			Author:       it.Author.Login,
-			URL:          it.URL,
-			Additions:    it.Additions,
-			Deletions:    it.Deletions,
-			ChangedFiles: it.ChangedFiles,
-			IsDraft:      it.IsDraft,
-			Checks:       it.StatusCheckRollup,
+			Number:         it.Number,
+			Title:          it.Title,
+			Author:         it.Author.Login,
+			URL:            it.URL,
+			Additions:      it.Additions,
+			Deletions:      it.Deletions,
+			ChangedFiles:   it.ChangedFiles,
+			IsDraft:        it.IsDraft,
+			Checks:         it.StatusCheckRollup,
+			ReviewDecision: it.ReviewDecision,
 		})
 	}
 	return prs, nil
