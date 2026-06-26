@@ -37,6 +37,7 @@ const status = (approved: number): CycleStatus => ({
   approved_count: approved,
   queue_count: 0,
   dropped_count: 0,
+  staging_count: 0,
 });
 
 const approval = (n: number): Approval => ({

@@ -24,6 +24,7 @@ describe("StatusLine", () => {
       approved_count: 3,
       queue_count: 2,
       dropped_count: 5,
+      staging_count: 4,
     };
     mockFetchStatus.mockResolvedValue(status);
 
@@ -32,6 +33,7 @@ describe("StatusLine", () => {
     expect(await screen.findByText(/approved 3/i)).toBeInTheDocument();
     expect(screen.getByText(/queue 2/i)).toBeInTheDocument();
     expect(screen.getByText(/dropped 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/staging 4/i)).toBeInTheDocument();
     expect(screen.getByText(/ok/i)).toBeInTheDocument();
   });
 
@@ -43,6 +45,7 @@ describe("StatusLine", () => {
       approved_count: 0,
       queue_count: 0,
       dropped_count: 0,
+      staging_count: 0,
     });
 
     render(<StatusLine />);
