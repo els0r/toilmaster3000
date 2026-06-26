@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/toilmaster3000/v1/pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live Cycle Funnel snapshot (the four terminal lists + distribution counts) */
+        get: operations["get-pipeline"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/toilmaster3000/v1/queue": {
         parameters: {
             query?: never;
@@ -298,6 +315,16 @@ export interface components {
             patch: string;
             status: string;
         };
+        FunnelItem: {
+            author: string;
+            /** Format: int64 */
+            failing_checks: number;
+            /** Format: int64 */
+            number: number;
+            title: string;
+            title_parts: components["schemas"]["TitleParts"];
+            url: string;
+        };
         ManualApproveOutputBody: {
             /**
              * Format: uri
@@ -319,6 +346,26 @@ export interface components {
             files: components["schemas"]["FileDiff"][] | null;
             /** Format: int64 */
             total_files: number;
+        };
+        Pipeline: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/Pipeline.json
+             */
+            readonly $schema?: string;
+            /** Format: int64 */
+            approved_by_tm3k: number;
+            approved_elsewhere: components["schemas"]["FunnelItem"][] | null;
+            /** Format: int64 */
+            approved_this_cycle: number;
+            dropped_draft: components["schemas"]["FunnelItem"][] | null;
+            dropped_red: components["schemas"]["FunnelItem"][] | null;
+            /** Format: int64 */
+            incoming: number;
+            /** Format: int64 */
+            needs_human_review: number;
+            staging: components["schemas"]["FunnelItem"][] | null;
         };
         QueueItem: {
             /** Format: int64 */
@@ -459,6 +506,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Approval"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pipeline"];
                 };
             };
             /** @description Error */

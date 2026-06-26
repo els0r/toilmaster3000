@@ -345,6 +345,40 @@
         ],
         "type": "object"
       },
+      "FunnelItem": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "failing_checks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "title_parts": {
+            "$ref": "#/components/schemas/TitleParts"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "title",
+          "title_parts",
+          "author",
+          "url",
+          "failing_checks"
+        ],
+        "type": "object"
+      },
       "ManualApproveOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -400,6 +434,83 @@
         "required": [
           "files",
           "total_files"
+        ],
+        "type": "object"
+      },
+      "Pipeline": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Pipeline.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "approved_by_tm3k": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "approved_elsewhere": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "approved_this_cycle": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dropped_draft": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "dropped_red": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "incoming": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "needs_human_review": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "staging": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "incoming",
+          "dropped_red",
+          "dropped_draft",
+          "staging",
+          "approved_elsewhere",
+          "needs_human_review",
+          "approved_by_tm3k",
+          "approved_this_cycle"
         ],
         "type": "object"
       },
@@ -760,6 +871,34 @@
           }
         },
         "summary": "Approval Feed, newest-first"
+      }
+    },
+    "/api/toilmaster3000/v1/pipeline": {
+      "get": {
+        "operationId": "get-pipeline",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pipeline"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Live Cycle Funnel snapshot (the four terminal lists + distribution counts)"
       }
     },
     "/api/toilmaster3000/v1/queue": {
