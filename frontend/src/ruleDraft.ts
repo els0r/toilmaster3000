@@ -1,4 +1,5 @@
 import type { Rule } from "./api";
+import type { TitleParts } from "./CommitTitle";
 
 // ruleDraft owns the Rule Draft: the editable projection of a wire Rule while it
 // sits in the editor modal. Every predicate is held as the raw text the user
@@ -111,6 +112,36 @@ export function blankDraft(cls: RuleClass): Draft {
     FIELD_KEYS.map((k) => [k, ""]),
   ) as Record<FieldKey, string>;
   return { name: "", enabled: true, isNew: true, cls, ...fields };
+}
+
+// stagingDraft seeds a NEW rule from a staging PR's parsed title — the Staging
+// shortcut that lets an operator drain a cohort in seconds. The prefill is
+// deliberately broad (type + scope, no author; CONTEXT) so one rule covers the
+// whole cohort rather than breeding per-author duplicates. The type is ANCHORED
+// (`^feat$`, an exact match) but the first scope is a PLAIN SUBSTRING (no `^…$`):
+// a multi-scope title like `feat(ui/api): x` must still match a `ui` scope, so
+// anchoring the scope would break the cohort. Author, excludes, and diff stay
+// blank; the auto-generated name (type + scope) is editable like any other
+// field. Class comes from the button that opened the editor.
+export function stagingDraft(parts: TitleParts, cls: RuleClass): Draft {
+  const firstScope = (parts.scopes ?? [])[0] ?? "";
+  return {
+    ...blankDraft(cls),
+    name: autoName(parts.type, firstScope),
+    // Anchored type ⇒ exact type match; un-anchored scope ⇒ substring so a
+    // multi-scope title still matches.
+    typeInc: parts.type ? `^${parts.type}$` : "",
+    scopeInc: firstScope,
+  };
+}
+
+// autoName derives the editable default rule name from a staging PR's type and
+// first scope — `feat(ui) auto-approve`-style — so the operator sees a sensible
+// label they can rename before saving. Scope-less titles read from the type
+// alone.
+function autoName(type: string, scope: string): string {
+  const head = scope ? `${type}(${scope})` : type;
+  return `${head} rule`;
 }
 
 // ruleToDraft loads a wire Rule into the modal's editable text. Its class comes
