@@ -35,6 +35,13 @@ type CycleStatus struct {
 	ApprovedCount int        `json:"approved_count"`
 	QueueCount    int        `json:"queue_count"`
 	DroppedCount  int        `json:"dropped_count"`
+	// StagingCount is how many PRs the live funnel snapshot has in Staging — the
+	// always-polled heartbeat's view of the new actionable signal, so an operator
+	// sees it from every tab without opening the Pipeline tab. It is drawn from the
+	// same funnel snapshot /pipeline serves (len(eng.Funnel().Staging)), not
+	// recomputed, and is 0 before the first cycle / after a cleared fetch (the
+	// snapshot is zero-valued then).
+	StagingCount int `json:"staging_count"`
 }
 
 // TitleParts is the server-parsed conventional-commit title, computed once on
@@ -451,7 +458,13 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		Path:        APIPrefix + "/status",
 		Summary:     "Cycle status line",
 	}, func(_ context.Context, _ *struct{}) (*statusOutput, error) {
-		return &statusOutput{Body: cycleStatusToBody(eng.Status())}, nil
+		body := cycleStatusToBody(eng.Status())
+		// The Staging count rides the heartbeat so every tab sees it; it is drawn
+		// from the same live funnel snapshot /pipeline serves (the single source of
+		// truth), not recomputed. Zero-valued before the first cycle / after a
+		// cleared fetch, when Staging is empty.
+		body.StagingCount = len(eng.Funnel().Staging)
+		return &statusOutput{Body: body}, nil
 	})
 
 	huma.Register(api, huma.Operation{

@@ -292,6 +292,44 @@ func TestCycleApprovesAndFeedNewestFirst(t *testing.T) {
 	require.NotNil(t, status.LastRun)
 }
 
+// B4b: GET /status surfaces the live funnel's Staging count alongside the
+// approved/dropped tallies. An eligible, green PR that matches no rule falls
+// through to Staging, so the heartbeat strip can show it from every tab without
+// fetching /pipeline. The count is drawn from the same snapshot /pipeline serves.
+func TestStatusReportsStagingCount(t *testing.T) {
+	store := storeWith(t, matchAllChores())
+	fake := github.NewFake(
+		// A green chore -> auto-approved (so the cycle is not a no-op).
+		github.PR{Number: 1, Title: "chore: ready", Author: "alice", URL: "u1", Checks: greenChecks()},
+		// A green feat matching no rule -> falls through to Staging.
+		github.PR{Number: 2, Title: "feat: new panel", Author: "bob", URL: "u2", Checks: greenChecks()},
+	)
+	eng := newEngineWith(t, fake, store)
+	srv := newTestServerFor(t, eng, store)
+
+	eng.RunCycleOnce(context.Background())
+
+	var status server.CycleStatus
+	getJSON(t, srv.URL+apiPrefix+"/status", &status)
+	require.Equal(t, 1, status.StagingCount, "the one unmatched eligible PR is staged")
+	require.Equal(t, 1, status.ApprovedCount)
+
+	// The staging count agrees with the /pipeline snapshot it is drawn from.
+	var pipe server.Pipeline
+	getJSON(t, srv.URL+apiPrefix+"/pipeline", &pipe)
+	require.Equal(t, len(pipe.Staging), status.StagingCount, "the /status staging count mirrors the funnel snapshot")
+}
+
+// B4c: a never-run cycle reports staging 0 — the zero-valued snapshot has an
+// empty Staging list, so the heartbeat shows 0 before the first cycle.
+func TestStatusStagingZeroBeforeFirstCycle(t *testing.T) {
+	srv := newTestServer(t)
+
+	var status server.CycleStatus
+	getJSON(t, srv.URL+apiPrefix+"/status", &status)
+	require.Equal(t, 0, status.StagingCount, "no cycle yet -> staging 0")
+}
+
 // B5: an already-approved candidate is never re-approved across cycles
 // (idempotent, quiet), and the feed does not grow.
 func TestDedupAcrossCycles(t *testing.T) {

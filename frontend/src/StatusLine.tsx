@@ -116,8 +116,10 @@ function Brand({ idle = false }: { idle?: boolean }) {
   );
 }
 
-// Counts renders the approved/queue tallies. Each label+number stays in a single
-// element so "approved N" / "queue N" read as one phrase.
+// Counts renders the approved/queue/dropped tallies plus the live funnel's
+// staging count — the new actionable signal surfaced on the always-polled
+// heartbeat so it shows from every tab. Each label+number stays in a single
+// element so "approved N" / "staging N" read as one phrase.
 function Counts({ status }: { status: CycleStatus }) {
   return (
     <div className="hb-counts tnum">
@@ -126,6 +128,8 @@ function Counts({ status }: { status: CycleStatus }) {
       <span className="queue">queue {status.queue_count}</span>
       <span className="sep">·</span>
       <span className="dropped">dropped {status.dropped_count}</span>
+      <span className="sep">·</span>
+      <span className="staging">staging {status.staging_count}</span>
     </div>
   );
 }

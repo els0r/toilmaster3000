@@ -253,6 +253,8 @@ export interface components {
             outcome: string;
             /** Format: int64 */
             queue_count: number;
+            /** Format: int64 */
+            staging_count: number;
         };
         Delta: {
             /** Format: double */
