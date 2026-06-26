@@ -50,6 +50,7 @@ const pipeline = (over: Partial<Pipeline> = {}): Pipeline => ({
   needs_human_review: 0,
   approved_by_tm3k: 0,
   approved_this_cycle: 0,
+  search: "",
   ...over,
 });
 
@@ -110,14 +111,23 @@ describe("Pipeline funnel — Incoming", () => {
     expect(within(screen.getByTestId("legend-approved-elsewhere")).getByText("1")).toBeInTheDocument();
   });
 
-  // The configured filter expression rides on Incoming as a code chip so the
-  // operator can confirm which search produced the set.
-  it("shows the configured filter expression as a code chip", () => {
-    renderFunnel({ incoming: 0 }, { filterExpr: "is:open draft:false" });
+  // The configured filter expression rides on the live /pipeline snapshot (its
+  // `search` field) as a code chip so the operator can confirm which search
+  // produced the set — not a frontend constant (issue #12).
+  it("shows the snapshot's configured search as a code chip", () => {
+    renderFunnel({ incoming: 0, search: "is:open team-review-requested:o/team" });
 
     const chip = screen.getByTestId("filter-chip");
     expect(chip.tagName).toBe("CODE");
-    expect(chip).toHaveTextContent("is:open draft:false");
+    expect(chip).toHaveTextContent("is:open team-review-requested:o/team");
+  });
+
+  // With no search configured the snapshot's empty `search` shows no chip — no
+  // empty code element cluttering the header.
+  it("renders no filter chip when the snapshot has no search", () => {
+    renderFunnel({ incoming: 0, search: "" });
+
+    expect(screen.queryByTestId("filter-chip")).not.toBeInTheDocument();
   });
 });
 

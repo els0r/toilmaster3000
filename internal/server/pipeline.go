@@ -51,6 +51,12 @@ type Pipeline struct {
 	NeedsHumanReview  int `json:"needs_human_review"`
 	ApprovedByTm3k    int `json:"approved_by_tm3k"`
 	ApprovedThisCycle int `json:"approved_this_cycle"`
+	// Search is the operator's configured candidate query (the engine's --search /
+	// TM3K_SEARCH), surfaced so the Incoming station can show WHICH search produced
+	// this set as a code chip. It is server-construction config, not funnel data, so
+	// the handler sets it on the body directly rather than via pipelineToBody (which
+	// maps only the engine's Funnel). Empty when no search is configured.
+	Search string `json:"search"`
 }
 
 // funnelItemToBody converts an engine FunnelItem to its wire DTO, computing the

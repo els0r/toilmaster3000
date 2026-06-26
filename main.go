@@ -171,7 +171,7 @@ func run(ctx context.Context, cfg config) error {
 
 	go eng.Run(ctx)
 
-	handler, err := server.New(spa, eng, rules, set)
+	handler, err := server.New(spa, eng, rules, set, cfg.search)
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}

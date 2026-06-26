@@ -58,15 +58,12 @@ function len(list: FunnelItem[] | null): number {
 // chip. The bar partitions Incoming into its six terminal stages; already-approved
 // PRs fold into the approved-by-tm3k segment, keeping Incoming an honest
 // "everything we saw."
-function IncomingStation({
-  pipeline,
-  filterExpr,
-}: {
-  pipeline: PipelineSnapshot;
-  filterExpr?: string;
-}) {
+function IncomingStation({ pipeline }: { pipeline: PipelineSnapshot }) {
   const total = pipeline.incoming;
   const segments = SEGMENTS.map((s) => ({ ...s, n: s.count(pipeline) }));
+  // The chip's value is the live configured search from the snapshot itself
+  // (issue #12) — empty when no search is configured, in which case no chip shows.
+  const filterExpr = pipeline.search;
 
   return (
     <section className="card station-incoming">
@@ -390,14 +387,12 @@ export function PipelineFunnel({
   queue,
   approvals,
   freshNumbers,
-  filterExpr,
   onApproved,
 }: {
   pipeline: PipelineSnapshot | null;
   queue: QueueItem[] | null;
   approvals: Approval[] | null;
   freshNumbers?: Set<number>;
-  filterExpr?: string;
   onApproved?: () => void;
 }) {
   return (
@@ -411,7 +406,7 @@ export function PipelineFunnel({
         </section>
       ) : (
         <>
-          <IncomingStation pipeline={pipeline} filterExpr={filterExpr} />
+          <IncomingStation pipeline={pipeline} />
           <DroppedStation pipeline={pipeline} />
           {/* Staging — the funnel's third terminal bucket — is interactive: each
               eligible-but-uncovered PR carries the two rule-minting shortcuts. */}

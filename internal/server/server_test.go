@@ -109,7 +109,7 @@ func newTestServerFor(t *testing.T, eng *engine.Engine, store *rule.Store) *http
 // to prove persistence.
 func newServerWith(t *testing.T, eng *engine.Engine, store *rule.Store, set *settings.Store) *httptest.Server {
 	t.Helper()
-	h, err := server.New(testSPA(), eng, store, set)
+	h, err := server.New(testSPA(), eng, store, set, "")
 	require.NoError(t, err)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -130,6 +130,19 @@ func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	eng, store := newEngine(t, github.NewFake())
 	return newTestServerFor(t, eng, store)
+}
+
+// newServerWithSearch builds a server over a known configured search expression,
+// so a test can assert the value the operator configured (the engine's --search /
+// TM3K_SEARCH) is surfaced on the /pipeline snapshot.
+func newServerWithSearch(t *testing.T, search string) *httptest.Server {
+	t.Helper()
+	eng, store := newEngine(t, github.NewFake())
+	h, err := server.New(testSPA(), eng, store, defaultSettings(t), search)
+	require.NoError(t, err)
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 func getJSON(t *testing.T, url string, into any) {
@@ -228,7 +241,7 @@ func TestOpenAPIReachable(t *testing.T) {
 // closures.
 func TestOpenAPISpecMatchesCommitted(t *testing.T) {
 	api := humago.New(http.NewServeMux(), server.Config())
-	server.RegisterAPI(api, nil, nil, nil)
+	server.RegisterAPI(api, nil, nil, nil, "")
 
 	got, err := api.OpenAPI().MarshalJSON()
 	require.NoError(t, err)
@@ -318,6 +331,19 @@ func TestStatusReportsStagingCount(t *testing.T) {
 	var pipe server.Pipeline
 	getJSON(t, srv.URL+apiPrefix+"/pipeline", &pipe)
 	require.Equal(t, len(pipe.Staging), status.StagingCount, "the /status staging count mirrors the funnel snapshot")
+}
+
+// Issue #12: GET /pipeline surfaces the operator's configured --search so the
+// Incoming filter chip can show the live value, not a frontend constant. The
+// search is server-construction config (it never enters the engine's Funnel), so
+// the handler sets it on the body directly.
+func TestPipelineReportsConfiguredSearch(t *testing.T) {
+	const search = "is:open team-review-requested:o/team"
+	srv := newServerWithSearch(t, search)
+
+	var pipe server.Pipeline
+	getJSON(t, srv.URL+apiPrefix+"/pipeline", &pipe)
+	require.Equal(t, search, pipe.Search, "the /pipeline snapshot carries the configured search expression")
 }
 
 // B4c: a never-run cycle reports staging 0 — the zero-valued snapshot has an

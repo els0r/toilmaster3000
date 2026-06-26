@@ -512,6 +512,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "search": {
+            "type": "string"
+          },
           "staging": {
             "items": {
               "$ref": "#/components/schemas/FunnelItem"
@@ -530,7 +533,8 @@
           "approved_elsewhere",
           "needs_human_review",
           "approved_by_tm3k",
-          "approved_this_cycle"
+          "approved_this_cycle",
+          "search"
         ],
         "type": "object"
       },
