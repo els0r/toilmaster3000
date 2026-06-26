@@ -107,9 +107,12 @@ fixed `manual (breaking override)` string).
   Review Rule name).
 
 ### Auto-approval
-The backend autonomously approves every PR matching a filtering condition,
-within ~1 minute of it appearing. No human is in the loop for the happy path.
-This mirrors the existing scripts exactly.
+The backend autonomously approves every PR matching a filtering condition **that
+is not already approved**, within ~1 minute of it appearing. No human is in the
+loop for the happy path. This mirrors the existing scripts exactly — with one
+narrowing: a PR GitHub already reports as `APPROVED` by someone other than tm3k is
+**left alone** (soft dedup), not re-approved (see Approved elsewhere; ADR 0013).
+The toil this removes — the click — is already gone once anyone has approved.
 
 ### Rule
 A named, enable/disable-able matching condition for PRs. Modelled as a Go struct
@@ -209,16 +212,26 @@ diverts to Needs-Human-Review — now generalized into a user-configurable,
 named Rule class rather than a single hard-wired threshold.
 
 ### Candidate set
-The **eligible** PRs the backend pulls once per cycle via a single `gh` call:
+The PRs the backend pulls once per cycle via a single `gh` call:
 the configured **search** (e.g. `is:open team-review-requested:owner/team`)
 against the configured **repo** (e.g. `owner/name`). Repo and search are
 **global** — supplied at startup via `--repo`/`TM3K_REPO` and
 `--search`/`TM3K_SEARCH` (a flag overrides its env var; both are required) —
 not per-rule.
-Only PRs that pass **Eligibility** (see below) are candidates; ineligible PRs are
-dropped before any Rule or Invariant runs. Each enabled Rule is applied as an
-in-process Go predicate over this set; a PR is approved if any enabled rule
-matches (minus already-approved ones).
+
+**Two scopes, two names (do not conflate):**
+- **Incoming** — the **raw** pull, *every* PR the search returned this cycle,
+  before any gate runs. This is what `github.ListCandidates()` returns and what
+  the **Cycle Funnel** (see below) visualizes as its parent set.
+- **Eligible candidate** — an Incoming PR that **passed both Gates** (see
+  Eligibility). Only eligible candidates reach Rule evaluation; ineligible ones
+  are dropped before any Rule or Invariant runs.
+
+Each enabled Rule is applied as an in-process Go predicate over the eligible
+candidates; a PR is approved if any enabled rule matches (minus already-approved
+ones). *(Historical note: this section once called the eligible subset "the
+candidate set"; the Cycle Funnel made the raw-vs-eligible distinction load-bearing,
+so "Incoming" now names the raw pull precisely.)*
 
 ### Eligibility (Gates)
 A PR must be **eligible** to be a candidate at all. Eligibility is composed of
@@ -255,19 +268,130 @@ breaking-change Invariant). The two Gates:
     becomes eligible automatically once checks finish. No persistent "waiting"
     state — it is simply not a candidate yet.
 
+### Cycle Funnel (the queues view)
+A UI surface that makes **every Incoming PR of the latest cycle visible**, where
+before only approvals (persisted) and the Needs-Human-Review queue (live) were
+shown — dropped and uncovered PRs existed only in logs and counts. It models one
+cycle as a **funnel**: **Incoming** is the parent set, and every Incoming PR lands
+in **exactly one** terminal stage downstream. The stages partition Incoming, so
+the counts reconcile *for this cycle*:
+
+```
+INCOMING (raw pull, this cycle)
+  = Dropped:draft + Dropped:pipeline-red + Staging + Needs-Human-Review
+    + Approved-by-tm3k + Approved-elsewhere
+```
+
+The Incoming **distribution bar** partitions on **current standing**, so its
+**Approved-by-tm3k** segment is *every* dedup-member PR still in the pull — not
+just this cycle's new approvals — split visually from the highlighted
+**Approved-elsewhere** segment. This means there are **three distinct "approved"
+numbers**, deliberately at different scopes (the cadence-seam doctrine, same word
+labeled): the bar's *standing* count (dedup members in the pull, any day), the
+heartbeat's *this-cycle* count (`approvedThisCycle`), and the ledger's *today*
+count (station 5). A PR tm3k approved on a prior day but still open sits in the
+**Approved-by-tm3k** segment, is **not** itemized (it's done — in the ledger if
+today, history otherwise), and keeps Incoming honest as "everything we saw."
+
+The five stages:
+1. **Incoming** — the raw pull (see Candidate set).
+2. **Dropped** — PRs an Eligibility Gate removed, split into **two side-by-side
+   sub-queues**: **draft** (Ready-for-Review Gate) and **pipeline red** (All-Green
+   Gate). These were previously only a combined `dropped` count + per-PR log line.
+3. **Staging** — **eligible, but matched no Rule** (`evaluateRules` returned no
+   reasons and no Approve match). **Genuinely new — invisible before.** This is the
+   stage the user actively drains: each Staging PR carries two actions —
+   **[+ Human Review rule]** and **[+ Approve rule]** (see Staging actions) — that
+   author a Rule which moves the PR (and its like) out of Staging next cycle. The
+   design goal is for Staging to **grow thinner over time** as the robot/human take
+   over more PRs for a named, deliberate reason. *(Unparseable-title eligible PRs
+   also land here; no rule can drain them, an accepted wart under the
+   conventional-commits-everywhere assumption — they should not occur.)*
+4. **Needs Human Review** — the existing queue (matched a Review Rule, or an
+   Approve Rule blocked by the breaking-change Invariant). Unchanged.
+5. **Approval Feed** — the existing today-scoped, persisted feed (`approvals.jsonl`,
+   PR State bars). Reused **unchanged**.
+
+**Cadence seam (accepted, documented):** stages 1–4 are a **live per-cycle
+snapshot** (recomputed each cycle from Incoming, never persisted — like the queue
+today). Stage 5 is **today-scoped and persisted** — a deliberately *wider* scope
+than the single cycle. So the funnel does not strictly sum across stage 5: a PR
+approved earlier today and since merged is in the feed but gone from this cycle's
+Incoming. This seam already exists today (the live queue sits beside the
+today-scoped feed); the funnel extends it, it does not introduce it.
+
+### Approved elsewhere (funnel sub-state)
+An Incoming PR that GitHub reports as **already approved by someone other than
+tm3k** — a human, or (increasingly) a **teammate's tm3k instance**. Detected by
+adding **`reviewDecision`** to the cycle fetch (rides the same single `gh pr list`
+call, no N+1): a PR with `reviewDecision == APPROVED` whose number is **absent
+from `approvals.jsonl`** was approved elsewhere.
+- **Behavior — existing approval is a soft dedup.** When GitHub already says
+  `APPROVED`, the toil is already gone, so tm3k **does not add a redundant
+  approval** and **records nothing to `approvals.jsonl`** (the feed stays the
+  robot's *own* ledger). The PR shows as a **highlighted "approved elsewhere" row**
+  in the funnel's approved stage — a PR tm3k **deliberately left alone**, not one
+  it actioned.
+- **Analytics consequence (correct).** Approved-elsewhere PRs never enter
+  `approvals.jsonl`, so they are **invisible to Analytics** — right, they were not
+  *your* saved switches. This prevents double-counting now that multiple tm3k
+  instances run on the team.
+
+### Staging actions (drain a PR with a rule)
+Each Staging row carries two buttons — **[+ Approval rule]** and **[+ Human-review
+rule]** — that open the **full shipped rule editor** (see Rule Draft) with `Class`
+preset by the button and a draft **pre-filled broad, from the PR's parsed title**:
+- **`TypeInclude` = `^<type>$`** (anchored — `type` is a single `\w+` token).
+- **`ScopeInclude` = `<first scope>`, UN-anchored** (a substring regex against the
+  raw `c.Scope` string — anchoring would break matching on multi-scope titles like
+  `team/service-b`; this mirrors the seed `service-a — teammate_a`).
+- **Author, Diff, all Excludes left blank.** Deliberately **broad** (type+scope,
+  no author) so one rule drains the **whole type+scope cohort** at once — staging
+  thins faster and rules don't proliferate one-author-at-a-time. The user narrows
+  (add author/diff) before saving if they want.
+- An auto-generated **name** (`<scope|type> auto-approve` / `… review`) and a
+  back-reference to the originating PR, both editable.
+
+The buttons are a **shortcut into the normal Rules CRUD**, not a new code path:
+they reuse `POST /rules` and the same editor/validation. The PR leaves Staging
+**next cycle**, when the new rule matches it (into approve or human-review). The
+editor keeps the **complete predicate vocabulary** (all six title-part
+include/exclude + `DiffMin`/`DiffMax`); the design mockup's thinner modal is **not**
+adopted.
+
 ### UI layout (tabs)
 The app is **three tabs** under a persistent heartbeat strip (see Cycle status):
-- **Review** — the Needs-Human-Review queue and the Approval Feed, side by side
-  (the daily-glance surface). The Review tab carries a **queue-count badge** so
-  the actionable count stays visible even from the Rules tab.
+- **Pipeline** — the **Cycle Funnel** (see above): the daily-glance surface,
+  rendered as a **vertical top-down funnel** of five numbered stations on a
+  connecting spine. Replaces and subsumes the former **Review** tab (the
+  Needs-Human-Review queue and Approval Feed are now stations 4 and 5 of the
+  funnel). Carries a **staging-count badge** (the new actionable signal — uncovered
+  PRs awaiting a rule) so it stays visible from the Rules tab.
 - **Rules** — the Rules section (the occasional-config surface).
 - **Analytics** — the approval-history dashboard (the look-back surface; see
   Analytics).
 
-The three surfaces have different cadences (Review watched constantly, Rules and
+**Pipeline station layout** (vertical, top→bottom, anti-clutter by design):
+1. **Incoming** — a single **stacked distribution bar** (not a PR list): the raw
+   pull partitioned into its terminal stages as colored segments + a legend with
+   counts. The actual PRs live in their terminal stations below, so Incoming stays
+   a one-glance summary. Shows the configured filter expression as a code chip.
+2. **Dropped** — **two side-by-side cards**, pipeline-red and draft.
+3. **Staging** — amber-themed; each row carries the two rule-creation buttons.
+4. **Needs Human Review** — the existing queue (Approve button + Diff pill retained).
+5. **Approval ledger** — the existing today-scoped feed (PR State bars retained;
+   approved-elsewhere rows highlighted — see Cycle Funnel).
+
+The design mockup (`toilmaster3000.dc.html` in the Claude Design project) is
+**orientation, not authority**: where it simplified away Q1-agreed behavior
+(it hid already-approved/approved-elsewhere PRs and omitted PR State bars), the
+agreed model wins.
+
+The three surfaces have different cadences (Pipeline watched constantly, Rules and
 Analytics touched rarely), so they are not co-scrolled. The active tab lives in the
-**URL hash** (`#review` / `#rules` / `#analytics`, default Review) — a reload keeps
-your place and each tab is linkable, with no router dependency.
+**URL hash** (`#pipeline` / `#rules` / `#analytics`, default Pipeline) — a reload
+keeps your place and each tab is linkable, with no router dependency. *(`#review`
+should redirect to `#pipeline` so old links survive the rename.)*
 
 ### Rules section (UI)
 The actionable config surface (the Rules tab): lists rules, lets the user
@@ -416,8 +540,13 @@ Empty range → all zeros, deltas render "—".
 - **GitHub access:** shell out to the `gh` CLI (reuses existing auth; no PAT).
   - Fetch (once/cycle): `gh pr list --repo example/repo --search
     "is:open team-review-requested:example/team"
-    --json number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup`
-    (author from `author.login`). `additions`/`deletions`/`changedFiles` come back
+    --json number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision`
+    (author from `author.login`). **`reviewDecision`** rides the **same single
+    call** (no N+1): `PR` carries `ReviewDecision string`
+    (`APPROVED`/`CHANGES_REQUESTED`/`REVIEW_REQUIRED`/empty), feeding the
+    **approved-elsewhere** funnel sub-state (a PR `APPROVED` but absent from
+    `approvals.jsonl` was approved by someone other than tm3k — soft-dedup, see
+    Cycle Funnel). `additions`/`deletions`/`changedFiles` come back
     in the **same single call** (no per-PR N+1); `PR` carries them **separately**
     and the matcher sums `additions + deletions` for the diff-size predicate.
     `additions`/`deletions`/`changedFiles` are also surfaced on `QueueItem` for
@@ -461,12 +590,25 @@ Empty range → all zeros, deltas render "—".
   success (failed approvals retry next cycle). One PR's failure is logged and
   skipped, never aborts the cycle. A failed candidate fetch skips the whole
   cycle (approves nothing).
+- **Funnel snapshot (live, never persisted):** each cycle, alongside rebuilding
+  `queue`, the engine retains what it used to discard — the **dropped-red**,
+  **dropped-draft**, **staging**, and **approved-elsewhere** lists, plus the
+  **distribution counts** and **approvedThisCycle** (see Cycle Funnel). Held in
+  one in-memory snapshot replaced under lock at cycle end (same lifecycle as
+  `queue`: empty after restart until the first cycle, current as of the last
+  completed cycle). **Incoming PR objects are not hoarded** — Incoming renders as
+  the distribution bar (counts), so only the four terminal lists + counts are
+  kept. A failed fetch clears the snapshot (nothing evaluated). Exposed at
+  `GET /pipeline`; the dropped-red items carry a **count of non-passing checks**
+  ("N checks failing"), folded cheaply from the `statusCheckRollup` already in hand.
 
 ### Cycle status (UI)
-A small status line (the persistent **heartbeat strip** atop both tabs) showing
+A small status line (the persistent **heartbeat strip** atop all tabs) showing
 the last cycle's time, outcome (`OK` / `gh error: …`), and counts (e.g.
-`approved 3, queue 2, dropped 5`), so a glance confirms the robot is alive — not
-just that it approved things. The heartbeat's **`approved` count is the last
+`approved 3, staging 6, review 2, dropped 5`), so a glance confirms the robot is
+alive — not just that it approved things. **`staging`** joins the strip as the new
+actionable signal (uncovered PRs awaiting a rule), beside `approved`/`review`
+(queue)/`dropped`. The heartbeat's **`approved` count is the last
 cycle's** (the live pulse) — deliberately a different scope from the
 **today-scoped** Approval Feed, so "approved 3" in the strip and N rows in the
 feed are the same word at two scopes (cycle vs day), disambiguated by labels
@@ -523,10 +665,11 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 
 | method | path | purpose |
 |---|---|---|
-| `GET` | `/api/toilmaster3000/v1/status` | cycle status: `last_run`, `outcome`, counts (approved / in queue / dropped) |
+| `GET` | `/api/toilmaster3000/v1/status` | cycle status: `last_run`, `outcome`, counts (approved / staging / in queue / dropped) — `staging` rides `/status` so the always-polled heartbeat strip shows it from every tab without fetching `/pipeline` |
 | `GET` | `/api/toilmaster3000/v1/approvals` | feed, newest-first, **today only** (`approved_at ≥ local midnight`; reads `approvals.jsonl`) |
 | `GET` | `/api/toilmaster3000/v1/queue` | Needs-Human-Review items (derived live) |
 | `POST` | `/api/toilmaster3000/v1/queue/{number}/approve` | manual override approve |
+| `GET` | `/api/toilmaster3000/v1/pipeline` | live **Cycle Funnel** snapshot: `dropped_red[]`, `dropped_draft[]`, `staging[]`, `approved_elsewhere[]`, distribution counts, `approved_this_cycle`. Derived live each cycle, never persisted (stations 4–5 reuse `/queue` + `/approvals`) |
 | `GET` | `/api/toilmaster3000/v1/analytics` | approval-history aggregates for a range (+ scope filter): totals, shares, switches-saved, by-type cohort, elapsed-aligned deltas, all-time scope list. Query: `range=today\|week\|month\|days`, `days=N` (for `days`), `scope=a,b` (repeatable/CSV) |
 | `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `cost_low`, `cost_high` (CHF per saved switch), `currency` |
 | `PUT` | `/api/toilmaster3000/v1/settings` | update the constants (full replace) |
