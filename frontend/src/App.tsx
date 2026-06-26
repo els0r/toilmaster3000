@@ -13,14 +13,6 @@ import { SettingsPanel } from "./Settings";
 import { StatusLine } from "./StatusLine";
 import { usePollingClearable, usePollingRefetchable } from "./usePolling";
 
-// FILTER_EXPR is the configured candidate `--search` query, shown on the Incoming
-// station as a code chip so an operator can confirm WHICH search produced the
-// cycle's set. It is operator config (the backend's TM3K_SEARCH), not a wire DTO
-// field — no /pipeline change exposes it — so the funnel renders it from this
-// build-time constant rather than re-deriving it. Surfacing the live runtime value
-// is a follow-up that needs a backend endpoint (out of this change's scope).
-const FILTER_EXPR = "is:open draft:false";
-
 // POLL_MS: the frontend polls status + approvals + queue every 10s; the backend
 // cycles every 60s, so counts, the feed, and the queue update within a poll of a
 // cycle.
@@ -132,7 +124,6 @@ export function App() {
               queue={queue}
               approvals={approvals}
               freshNumbers={freshNumbers}
-              filterExpr={FILTER_EXPR}
               onApproved={onApproved}
             />
           </div>

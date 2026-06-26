@@ -373,6 +373,7 @@ export interface components {
             incoming: number;
             /** Format: int64 */
             needs_human_review: number;
+            search: string;
             staging: components["schemas"]["FunnelItem"][] | null;
         };
         QueueItem: {

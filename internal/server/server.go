@@ -422,11 +422,12 @@ func ruleHTTPError(err error) error {
 // production it is the go:embed'd frontend/dist. The engine is the only
 // injected dependency tests substitute (via its fake GitHubClient and a
 // temp-dir state path), so all backend behaviour is asserted through this HTTP
-// surface.
-func New(spa fs.FS, eng *engine.Engine, rules *rule.Store, set *settings.Store) (http.Handler, error) {
+// surface. search is the operator's configured candidate query, surfaced on the
+// /pipeline snapshot for the Incoming filter chip (it is config, not engine state).
+func New(spa fs.FS, eng *engine.Engine, rules *rule.Store, set *settings.Store, search string) (http.Handler, error) {
 	mux := http.NewServeMux()
 	api := humago.New(mux, Config())
-	RegisterAPI(api, eng, rules, set)
+	RegisterAPI(api, eng, rules, set, search)
 
 	spaHandler, err := newSPAHandler(spa)
 	if err != nil {
@@ -450,8 +451,9 @@ func Config() huma.Config {
 // RegisterAPI registers every typed operation on api. Both New and
 // cmd/openapigen call it, so the generated spec stays in sync with the served
 // one by construction. The handler closures capture eng/rules but are never
-// invoked during spec generation, so passing a nil engine/rules is safe there.
-func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *settings.Store) {
+// invoked during spec generation, so passing a nil engine/rules and an empty
+// search is safe there.
+func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *settings.Store, search string) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-status",
 		Method:      http.MethodGet,
@@ -559,7 +561,12 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		// A locked read of the live snapshot, mapped to the wire DTO with parse-on-read
 		// title parts (ADR 0006). It is the zero value before the first cycle and after
 		// a failed fetch, which renders as empty lists + zero counts.
-		return &pipelineOutput{Body: pipelineToBody(eng.Funnel())}, nil
+		body := pipelineToBody(eng.Funnel())
+		// The configured search rides the snapshot so the Incoming station can show
+		// WHICH search produced this set (issue #12). It is server config, not funnel
+		// data, so it is set here rather than in pipelineToBody.
+		body.Search = search
+		return &pipelineOutput{Body: body}, nil
 	})
 
 	huma.Register(api, huma.Operation{

@@ -82,6 +82,7 @@ const emptyPipeline: Pipeline = {
   needs_human_review: 0,
   approved_by_tm3k: 0,
   approved_this_cycle: 0,
+  search: "",
 };
 
 const funnelItem = (n: number): FunnelItem => ({
@@ -227,6 +228,24 @@ describe("App polling", () => {
 
     expect(mockPipeline).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId("incoming-total")).toHaveTextContent("4");
+  });
+
+  // Issue #12: the Incoming filter chip shows the live configured search supplied
+  // by the /pipeline endpoint (its `search` field), not a frontend constant.
+  it("shows the configured search from /pipeline on the Incoming filter chip", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockPipeline.mockResolvedValueOnce({
+      ...emptyPipeline,
+      incoming: 2,
+      search: "is:open team-review-requested:o/team",
+    });
+
+    render(<App />);
+    await flush();
+
+    const chip = screen.getByTestId("filter-chip");
+    expect(chip).toHaveTextContent("is:open team-review-requested:o/team");
   });
 
   // F-funnel-clear: a failed candidate fetch CLEARS the funnel — the prior
