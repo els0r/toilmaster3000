@@ -94,6 +94,13 @@ type FunnelItem struct {
 	Author        string
 	URL           string
 	FailingChecks int
+	// Additions, Deletions, and ChangedFiles are the PR's diff magnitude, threaded
+	// from the github.PR's same fields (the single list fetch — no extra call). The
+	// Staging area renders them; they are populated on every bucket, harmless where
+	// unused.
+	Additions    int
+	Deletions    int
+	ChangedFiles int
 }
 
 // Funnel is the live Cycle Funnel snapshot: what each cycle saw, retained
@@ -474,6 +481,9 @@ func funnelItem(pr github.PR, failingChecks int) FunnelItem {
 		Author:        pr.Author,
 		URL:           pr.URL,
 		FailingChecks: failingChecks,
+		Additions:     pr.Additions,
+		Deletions:     pr.Deletions,
+		ChangedFiles:  pr.ChangedFiles,
 	}
 }
 

@@ -19,6 +19,13 @@ type FunnelItem struct {
 	// FailingChecks is the count of non-passing checks on a dropped_red row (its
 	// "N checks failing" station signal); 0 on every other bucket.
 	FailingChecks int `json:"failing_checks"`
+	// Additions, Deletions, and ChangedFiles are the PR's diff magnitude, mirroring
+	// QueueItem's. The Staging area renders them so an operator sees a change's size
+	// before minting a rule; populated on every bucket (free — from the same list
+	// fetch), rendered only on staging rows.
+	Additions    int `json:"additions"`
+	Deletions    int `json:"deletions"`
+	ChangedFiles int `json:"changed_files"`
 }
 
 // Pipeline is the wire shape of the live Cycle Funnel snapshot served at
@@ -57,6 +64,9 @@ func funnelItemToBody(it engine.FunnelItem) FunnelItem {
 		Author:        it.Author,
 		URL:           it.URL,
 		FailingChecks: it.FailingChecks,
+		Additions:     it.Additions,
+		Deletions:     it.Deletions,
+		ChangedFiles:  it.ChangedFiles,
 	}
 }
 

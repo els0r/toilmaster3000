@@ -318,7 +318,13 @@ export interface components {
             status: string;
         };
         FunnelItem: {
+            /** Format: int64 */
+            additions: number;
             author: string;
+            /** Format: int64 */
+            changed_files: number;
+            /** Format: int64 */
+            deletions: number;
             /** Format: int64 */
             failing_checks: number;
             /** Format: int64 */
