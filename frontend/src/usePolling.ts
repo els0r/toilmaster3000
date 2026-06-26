@@ -35,6 +35,44 @@ export function usePolling<T>(
   return value;
 }
 
+// usePollingClearable is usePolling whose failure policy is the OPPOSITE: a
+// failed fetch CLEARS the value back to null rather than keeping the last known
+// one. The Cycle Funnel uses it so a failed candidate fetch renders an empty
+// funnel (loading/empty stations) instead of stale buckets from a prior cycle —
+// showing a wrong partition would be worse than showing none.
+export function usePollingClearable<T>(
+  fetcher: () => Promise<T>,
+  intervalMs: number,
+): T | null {
+  const [value, setValue] = useState<T | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const tick = () => {
+      fetcher()
+        .then((v) => {
+          if (!cancelled) setValue(v);
+        })
+        .catch(() => {
+          // Clear: a failed fetch must not leave a stale snapshot on screen.
+          if (!cancelled) setValue(null);
+        });
+    };
+
+    tick();
+    const id = setInterval(tick, intervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+    // fetcher is treated as stable; intervalMs drives re-subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intervalMs]);
+
+  return value;
+}
+
 // usePollingRefetchable is usePolling that also returns a refetch() callback, so
 // an action (e.g. approving a queue item) can pull the latest value immediately
 // rather than waiting for the next interval. The polling cadence is unchanged.

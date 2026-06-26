@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import { App } from "./App";
-import type { Approval, CycleStatus, QueueItem } from "./api";
+import type {
+  Approval,
+  CycleStatus,
+  FunnelItem,
+  Pipeline,
+  QueueItem,
+} from "./api";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -10,6 +16,7 @@ vi.mock("./api", async (importOriginal) => {
     fetchStatus: vi.fn(),
     fetchApprovals: vi.fn(),
     fetchQueue: vi.fn(),
+    fetchPipeline: vi.fn(),
     fetchRules: vi.fn(),
     fetchAnalytics: vi.fn(),
     fetchSettings: vi.fn(),
@@ -20,6 +27,7 @@ import {
   fetchStatus,
   fetchApprovals,
   fetchQueue,
+  fetchPipeline,
   fetchRules,
   fetchAnalytics,
   fetchSettings,
@@ -27,6 +35,7 @@ import {
 const mockStatus = vi.mocked(fetchStatus);
 const mockApprovals = vi.mocked(fetchApprovals);
 const mockQueue = vi.mocked(fetchQueue);
+const mockPipeline = vi.mocked(fetchPipeline);
 const mockRules = vi.mocked(fetchRules);
 const mockAnalytics = vi.mocked(fetchAnalytics);
 const mockSettings = vi.mocked(fetchSettings);
@@ -64,15 +73,37 @@ const queueItem = (n: number): QueueItem => ({
   reasons: ["breaking_change"],
 });
 
+const emptyPipeline: Pipeline = {
+  incoming: 0,
+  dropped_red: [],
+  dropped_draft: [],
+  staging: [],
+  approved_elsewhere: [],
+  needs_human_review: 0,
+  approved_by_tm3k: 0,
+  approved_this_cycle: 0,
+};
+
+const funnelItem = (n: number): FunnelItem => ({
+  number: n,
+  title: `feat: thing ${n}`,
+  title_parts: { type: "feat", scopes: [], breaking: false, description: `thing ${n}` },
+  author: "dana",
+  url: `https://github.com/o/r/pull/${n}`,
+  failing_checks: 0,
+});
+
 beforeEach(() => {
   vi.useFakeTimers();
   mockStatus.mockReset();
   mockApprovals.mockReset();
   mockQueue.mockReset();
+  mockPipeline.mockReset();
   mockRules.mockReset();
   mockAnalytics.mockReset();
   mockSettings.mockReset();
   mockQueue.mockResolvedValue([]);
+  mockPipeline.mockResolvedValue(emptyPipeline);
   mockRules.mockResolvedValue([]);
   mockSettings.mockResolvedValue({ cost_low: 10, cost_high: 26, currency: "CHF" });
   mockAnalytics.mockResolvedValue({
@@ -166,6 +197,62 @@ describe("App polling", () => {
     expect(screen.getByRole("link", { name: /#2/ })).toBeInTheDocument();
   });
 
+  // F-funnel-poll: the Incoming distribution bar reflects the polled /pipeline
+  // snapshot and updates with the next cycle's counts.
+  it("polls /pipeline and updates the Incoming bar on the next cycle", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockPipeline.mockResolvedValueOnce({
+      ...emptyPipeline,
+      incoming: 1,
+      approved_by_tm3k: 1,
+    });
+
+    render(<App />);
+    await flush();
+    expect(mockPipeline).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("incoming-total")).toHaveTextContent("1");
+
+    mockPipeline.mockResolvedValueOnce({
+      ...emptyPipeline,
+      incoming: 4,
+      approved_by_tm3k: 4,
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await flush();
+
+    expect(mockPipeline).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("incoming-total")).toHaveTextContent("4");
+  });
+
+  // F-funnel-clear: a failed candidate fetch CLEARS the funnel — the prior
+  // cycle's buckets do not linger; Incoming falls back to its loading state.
+  it("clears the funnel when the candidate fetch fails", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockPipeline.mockResolvedValueOnce({
+      ...emptyPipeline,
+      incoming: 3,
+      approved_by_tm3k: 3,
+    });
+
+    render(<App />);
+    await flush();
+    expect(screen.getByTestId("incoming-total")).toHaveTextContent("3");
+
+    // Next poll fails — the funnel must not keep showing "3".
+    mockPipeline.mockRejectedValueOnce(new Error("pipeline request failed: 500"));
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await flush();
+
+    expect(screen.queryByTestId("incoming-total")).not.toBeInTheDocument();
+    expect(screen.getByText(/loading funnel/i)).toBeInTheDocument();
+  });
+
   // F6: no extra polls fire before the 10s interval elapses.
   it("does not poll again before 10s elapse", async () => {
     mockStatus.mockResolvedValue(status(1));
@@ -185,10 +272,10 @@ describe("App polling", () => {
 });
 
 describe("App tabbed shell", () => {
-  // F-tab-default: with no hash, the Review tab is active — its panel (queue +
-  // feed) shows and the Rules panel does not. The heartbeat strip and tab bar
-  // are always present.
-  it("defaults to the Review tab with the heartbeat strip and tab bar persistent", async () => {
+  // F-tab-default: with no hash, the Pipeline tab is active — its funnel (with
+  // the Needs-Human-Review station) shows and the Rules panel does not. The
+  // heartbeat strip and tab bar are always present.
+  it("defaults to the Pipeline tab with the heartbeat strip and tab bar persistent", async () => {
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([approval(1)]);
     mockQueue.mockResolvedValue([queueItem(41)]);
@@ -198,11 +285,11 @@ describe("App tabbed shell", () => {
 
     // Heartbeat strip + tab bar are always rendered.
     expect(screen.getByText(/last cycle/i)).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /review/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /pipeline/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /rules/i })).toBeInTheDocument();
 
-    // Review tab is selected; its panel is visible, Rules' is not.
-    expect(screen.getByRole("tab", { name: /review/i })).toHaveAttribute(
+    // Pipeline tab is selected; its funnel is visible, Rules' is not.
+    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -210,8 +297,27 @@ describe("App tabbed shell", () => {
     expect(screen.queryByText("Approve Rules")).not.toBeInTheDocument();
   });
 
+  // F-tab-review-redirect: an old #review bookmark redirects to #pipeline so
+  // links survive the rename, landing on the Pipeline tab.
+  it("redirects #review to the Pipeline tab", async () => {
+    window.location.hash = "#review";
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+
+    render(<App />);
+    await flush();
+
+    expect(window.location.hash).toBe("#pipeline");
+    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("Needs Human Review")).toBeInTheDocument();
+  });
+
   // F-tab-switch: clicking the Rules tab shows the Rules panel and hides the
-  // Review panel, and writes the hash.
+  // Pipeline funnel, and writes the hash.
   it("switches to the Rules tab on click and updates the hash", async () => {
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
@@ -252,8 +358,8 @@ describe("App tabbed shell", () => {
     expect(screen.getByText("Approve Rules")).toBeInTheDocument();
   });
 
-  // F-tab-unknown-hash: an unknown hash falls back to the default Review tab.
-  it("falls back to Review for an unknown hash", async () => {
+  // F-tab-unknown-hash: an unknown hash falls back to the default Pipeline tab.
+  it("falls back to Pipeline for an unknown hash", async () => {
     window.location.hash = "#bogus";
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
@@ -262,7 +368,7 @@ describe("App tabbed shell", () => {
     render(<App />);
     await flush();
 
-    expect(screen.getByRole("tab", { name: /review/i })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -289,40 +395,47 @@ describe("App tabbed shell", () => {
     expect(screen.getByText("Approve Rules")).toBeInTheDocument();
   });
 
-  // F-tab-badge: the Review tab carries a queue-count badge that stays visible
-  // from the Rules tab (the actionable count is never hidden).
-  it("shows the live queue-count badge on the Review tab, visible from Rules", async () => {
+  // F-tab-badge: the Pipeline tab carries a staging-count badge (the actionable
+  // "uncovered PRs awaiting a rule" signal) that stays visible from the Rules
+  // tab (the count is never hidden).
+  it("shows the live staging-count badge on the Pipeline tab, visible from Rules", async () => {
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
-    mockQueue.mockResolvedValue([queueItem(41), queueItem(42)]);
+    mockPipeline.mockResolvedValue({
+      ...emptyPipeline,
+      incoming: 2,
+      staging: [funnelItem(70), funnelItem(71)],
+    });
 
     render(<App />);
     await flush();
 
-    const reviewTab = screen.getByRole("tab", { name: /review/i });
-    expect(reviewTab).toHaveTextContent("2");
+    const pipelineTab = screen.getByRole("tab", { name: /pipeline/i });
+    expect(pipelineTab).toHaveTextContent("2");
 
-    // Move to Rules — the badge on the Review tab control stays visible.
+    // Move to Rules — the badge on the Pipeline tab control stays visible.
     await act(async () => {
       fireEvent.click(screen.getByRole("tab", { name: /rules/i }));
     });
     await flush();
 
-    expect(screen.getByRole("tab", { name: /review/i })).toHaveTextContent("2");
+    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveTextContent(
+      "2",
+    );
   });
 
-  // F-tab-badge-zero: with an empty queue the Review tab shows no count badge
+  // F-tab-badge-zero: with empty staging the Pipeline tab shows no count badge
   // (zero is presented as the absence of a badge).
-  it("hides the queue-count badge when the queue is empty", async () => {
+  it("hides the staging-count badge when staging is empty", async () => {
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
-    mockQueue.mockResolvedValue([]);
+    mockPipeline.mockResolvedValue(emptyPipeline);
 
     render(<App />);
     await flush();
 
     expect(
-      screen.queryByTestId("review-tab-badge"),
+      screen.queryByTestId("pipeline-tab-badge"),
     ).not.toBeInTheDocument();
   });
 

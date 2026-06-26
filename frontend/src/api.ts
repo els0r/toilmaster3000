@@ -118,6 +118,24 @@ export async function updateSettings(settings: Settings): Promise<Settings> {
   return resp.json();
 }
 
+// Pipeline is the live Cycle Funnel snapshot (generated from the backend's
+// Pipeline DTO): the cycle's `incoming` total plus its partition into terminal
+// stages — the four itemized lists (dropped_red, dropped_draft, staging,
+// approved_elsewhere) and the standing counts (needs_human_review,
+// approved_by_tm3k) — so the funnel reconciles for the cycle. approved_this_cycle
+// is the heartbeat's per-cycle figure (distinct from the bar's standing
+// approved_by_tm3k). FunnelItem rows carry title_parts and failing_checks.
+export type Pipeline = components["schemas"]["Pipeline"];
+export type FunnelItem = components["schemas"]["FunnelItem"];
+
+export async function fetchPipeline(): Promise<Pipeline> {
+  const resp = await fetch(`${API_BASE}/pipeline`);
+  if (!resp.ok) {
+    throw new Error(`pipeline request failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
 // QueueItem is a Needs-Human-Review entry (generated from the backend's
 // QueueItem DTO): a PR routed here for one or more `reasons` (MVP today:
 // `["breaking_change"]`). Each carries a GitHub url and is approvable only via

@@ -1740,3 +1740,136 @@ textarea:focus {
   font-weight: var(--weight-medium);
   color: var(--success);
 }
+
+/* ---------- Pipeline funnel (Cycle Funnel) ----------
+   The funnel is a vertical, top→bottom stack of full-width stations on a single
+   column so pills/buttons are never squeezed (the lean-back daily-glance surface).
+   Each station is a .card; Dropped is the one internally-split station (two
+   side-by-side sub-cards). */
+.funnel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Incoming — a single stacked distribution bar + legend, not a PR list. */
+.station-incoming .filter-chip {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--text-xs);
+  color: var(--fg-2);
+  background: var(--panel-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.dist-bar {
+  display: flex;
+  width: 100%;
+  height: 14px;
+  margin: var(--space-3) 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--panel-3);
+}
+.dist-seg {
+  min-width: 3px;
+}
+/* Segment palette — one stable hue per terminal stage, shared by the bar and the
+   legend swatch. */
+.dist-seg-red {
+  background: var(--error);
+}
+.dist-seg-draft {
+  background: var(--fg-3);
+}
+.dist-seg-staging {
+  background: var(--attn-solid);
+}
+.dist-seg-human-review {
+  background: var(--action-solid);
+}
+.dist-seg-approved-tm3k {
+  background: var(--success-dot);
+}
+.dist-seg-approved-elsewhere {
+  background: var(--pr-merged);
+}
+.dist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--fg-2);
+}
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-xs);
+  flex: 0 0 auto;
+}
+.legend-label {
+  color: var(--fg-2);
+}
+.legend-count {
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+}
+
+/* Dropped — two side-by-side sub-cards (pipeline-red, draft); stack on narrow. */
+.station-dropped {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 920px) {
+  .station-dropped {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Itemized funnel rows (Dropped + approved-elsewhere) reuse the queue/feed row
+   anatomy: a type gutter, a parsed title line, a meta line. */
+.funnel-row {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+}
+.funnel-row:first-child {
+  border-top: none;
+}
+.funnel-body {
+  min-width: 0;
+  flex: 1;
+}
+.funnel-titleline {
+  margin-bottom: 2px;
+}
+.failing-checks {
+  color: var(--error);
+  font-weight: var(--weight-medium);
+}
+
+/* Staging placeholder — the interactive station ships next; reserve its spot. */
+.station-staging-placeholder {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--fg-3);
+  font-size: var(--text-sm, var(--text-xs));
+  background: var(--attn-bg);
+}
+
+/* Approved-elsewhere — highlighted rows above the ledger (soft dedup, left alone). */
+.station-approved-elsewhere {
+  border-left: 3px solid var(--pr-merged);
+  background: var(--panel-2);
+}
