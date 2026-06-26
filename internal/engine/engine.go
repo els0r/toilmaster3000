@@ -79,6 +79,51 @@ type QueueItem struct {
 	Reasons      []string `json:"reasons"`
 }
 
+// FunnelItem is one PR itemized in a terminal funnel bucket (dropped_red,
+// dropped_draft, staging, approved_elsewhere) of the Cycle Funnel snapshot. It
+// is the engine's internal read-model — derived live each cycle, never persisted
+// — carrying just enough to render a row; the wire DTO is server.FunnelItem,
+// mapped via funnelItemToBody (ADR 0002). FailingChecks is meaningful only on
+// the dropped_red bucket (the "N checks failing" signal, folded from the rollup
+// already in hand); it is 0 on every other bucket. It carries no json tags: the
+// funnel is never persisted (unlike Approval/QueueItem, whose tags serve a disk
+// format), so it is a pure in-memory read-model like Status.
+type FunnelItem struct {
+	Number        int
+	Title         string
+	Author        string
+	URL           string
+	FailingChecks int
+}
+
+// Funnel is the live Cycle Funnel snapshot: what each cycle saw, retained
+// instead of discarded. It holds the FOUR terminal item lists the cycle used to
+// drop plus the distribution counts that partition Incoming, and is swapped
+// under lock at cycle end (same lifecycle as the queue: empty after restart
+// until the first cycle, current as of the last completed cycle; a failed fetch
+// clears it). The raw Incoming PR set is NOT hoarded — Incoming renders as the
+// distribution bar (counts), so only the four lists + counts are kept.
+//
+// Partition invariant (CONTEXT "Cycle Funnel"): every Incoming PR lands in
+// EXACTLY one terminal stage, so
+//
+//	Incoming = len(DroppedRed) + len(DroppedDraft) + len(Staging)
+//	         + NeedsHumanReview + ApprovedByTm3k + len(ApprovedElsewhere)
+//
+// ApprovedByTm3k is the STANDING segment — every dedup-set member still in this
+// cycle's pull (any day) — distinct from ApprovedThisCycle (newly approved this
+// cycle); both are counts, only the four lists are itemized.
+type Funnel struct {
+	Incoming          int
+	DroppedRed        []FunnelItem
+	DroppedDraft      []FunnelItem
+	Staging           []FunnelItem
+	ApprovedElsewhere []FunnelItem
+	NeedsHumanReview  int
+	ApprovedByTm3k    int
+	ApprovedThisCycle int
+}
+
 // reasonBreakingChange is the queue reason for a PR blocked because its
 // conventional-commit title carries the breaking "!" marker.
 const reasonBreakingChange = "breaking_change"
@@ -97,10 +142,11 @@ type Engine struct {
 	rules     *rule.Store
 	logger    *slog.Logger
 
-	mu    sync.Mutex
-	dedup map[int]bool
-	feed  []Approval  // newest-first
-	queue []QueueItem // live Needs-Human-Review snapshot, recomputed each cycle
+	mu     sync.Mutex
+	dedup  map[int]bool
+	feed   []Approval  // newest-first
+	queue  []QueueItem // live Needs-Human-Review snapshot, recomputed each cycle
+	funnel Funnel      // live Cycle Funnel snapshot, recomputed each cycle
 	// prStates is the live GitHub lifecycle of feed PRs, keyed by number. It is
 	// volatile and NEVER persisted (the approvals.jsonl record is the frozen
 	// approval moment): refreshed out-of-band at the tail of every cycle, empty
@@ -168,6 +214,22 @@ func (e *Engine) Queue() []QueueItem {
 	out := make([]QueueItem, len(e.queue))
 	copy(out, e.queue)
 	return out
+}
+
+// Funnel returns the live Cycle Funnel snapshot (locked read). It is recomputed
+// each cycle, so this reflects the current truth as of the last completed cycle;
+// it is the zero value after a restart until the first cycle, and a failed
+// candidate fetch clears it. The slices are copied so a caller cannot mutate the
+// engine's snapshot.
+func (e *Engine) Funnel() Funnel {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	f := e.funnel
+	f.DroppedRed = append([]FunnelItem(nil), e.funnel.DroppedRed...)
+	f.DroppedDraft = append([]FunnelItem(nil), e.funnel.DroppedDraft...)
+	f.Staging = append([]FunnelItem(nil), e.funnel.Staging...)
+	f.ApprovedElsewhere = append([]FunnelItem(nil), e.funnel.ApprovedElsewhere...)
+	return f
 }
 
 // ErrNotInQueue is returned by ApproveManually when the given PR number is not
@@ -259,7 +321,9 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 	candidates, err := e.client.ListCandidates(ctx)
 	if err != nil {
 		e.logger.Warn("cycle: list candidates failed, skipping cycle", "error", err)
-		e.recordCycle(now, fmt.Sprintf("gh error: %v", err), 0, 0, nil)
+		// A failed fetch evaluated nothing: clear the queue AND the funnel snapshot
+		// (the zero Funnel) so neither shows stale buckets.
+		e.recordCycle(now, fmt.Sprintf("gh error: %v", err), 0, 0, nil, Funnel{})
 		return
 	}
 
@@ -268,6 +332,13 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 
 	approved := 0
 	dropped := 0
+	// funnel retains what the cycle sees and used to discard: the four terminal
+	// item lists + the distribution counts that partition Incoming. It is built in
+	// this single pass — every Incoming PR is recorded into EXACTLY one bucket at
+	// the first terminal branch it reaches, so the precedence here IS the partition
+	// (dedup-approved -> approved-elsewhere -> draft -> not-all-green -> queue ->
+	// staging/approve), and the six segment counts sum to Incoming by construction.
+	funnel := Funnel{Incoming: len(candidates)}
 	// queue is rebuilt FRESH each cycle: it is current state, never persisted.
 	// An item leaves the queue naturally when its PR is no longer a candidate
 	// (merged/closed), stops matching, or has been manually approved (it then
@@ -275,7 +346,14 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 	queue := []QueueItem{}
 	for _, pr := range candidates {
 		if e.alreadyApproved(pr.Number) {
-			// Already approved (auto or manual): never re-approve, never queue.
+			// Already approved (auto or manual): never re-approve, never queue. It is
+			// the STANDING Approved-by-tm3k segment — every dedup-set member still in
+			// the pull, any day (distinct from approvedThisCycle). Counted, not
+			// itemized: it is done (in the ledger if today, history otherwise), and
+			// counting it keeps Incoming an honest "everything we saw". This precedence
+			// sits ABOVE the draft/red gates (US#29), so an already-approved PR folds
+			// into its approved segment even when also draft/red.
+			funnel.ApprovedByTm3k++
 			continue
 		}
 		if approvedElsewhere(pr) {
@@ -289,6 +367,7 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 			e.logger.Info("cycle: PR left alone, approved elsewhere",
 				"pr", pr.Number,
 			)
+			funnel.ApprovedElsewhere = append(funnel.ApprovedElsewhere, funnelItem(pr, 0))
 			continue
 		}
 		if pr.IsDraft {
@@ -300,6 +379,7 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 				"gate", "draft",
 			)
 			dropped++
+			funnel.DroppedDraft = append(funnel.DroppedDraft, funnelItem(pr, 0))
 			continue
 		}
 		if !github.AllGreen(pr.Checks) {
@@ -314,6 +394,9 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 				"gate", "not_all_green",
 			)
 			dropped++
+			// dropped_red carries the count of non-passing checks, folded cheaply from
+			// the rollup already in hand (same taxonomy as AllGreen).
+			funnel.DroppedRed = append(funnel.DroppedRed, funnelItem(pr, github.FailingChecks(pr.Checks)))
 			continue
 		}
 		c, parsedOK := conventionalcommit.Parse(pr.Title)
@@ -341,7 +424,10 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 		}
 		if !approveMatched {
 			// No reason to queue and no Approve Rule matched (or the title did not
-			// parse): never approve, never queue.
+			// parse): never approve, never queue — this is the Staging fall-through
+			// (eligible, but matched no Rule; an unparseable eligible title lands here
+			// too, an accepted wart). Itemized so the user can drain it with a rule.
+			funnel.Staging = append(funnel.Staging, funnelItem(pr, 0))
 			continue
 		}
 		// An Approve Rule matched, no Review Rule gated it, and the title is not
@@ -349,20 +435,46 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 		ok, err := e.approve(ctx, pr, approveRuleName)
 		if err != nil {
 			e.logger.Warn("cycle: approve PR failed, skipping (retry next cycle)", "pr", pr.Number, "error", err)
+			// A failed approval is a transient error retried next cycle: the PR is not
+			// in the dedup set and reached no terminal stage, so it is the one case that
+			// sits outside this cycle's partition (it reappears next cycle).
 			continue
 		}
 		if ok {
+			// Approved this cycle: the PR is now a dedup member, so it joins the
+			// STANDING Approved-by-tm3k segment (keeping the partition whole) AND the
+			// narrower ApprovedThisCycle count (the heartbeat's this-cycle pulse).
 			approved++
+			funnel.ApprovedByTm3k++
+			funnel.ApprovedThisCycle++
 		}
 	}
+
+	// NeedsHumanReview is a count-only segment of the partition: the queue is
+	// itemized via /queue (station 4 reuses it), so the funnel keeps only its size.
+	funnel.NeedsHumanReview = len(queue)
 
 	e.logger.Info("cycle: complete",
 		"candidates", len(candidates),
 		"approved", approved,
 		"queued", len(queue),
 		"dropped", dropped,
+		"staging", len(funnel.Staging),
 	)
-	e.recordCycle(now, "ok", approved, dropped, queue)
+	e.recordCycle(now, "ok", approved, dropped, queue, funnel)
+}
+
+// funnelItem projects a candidate PR into a terminal-bucket FunnelItem,
+// carrying the count of non-passing checks (meaningful only on dropped_red; 0
+// elsewhere).
+func funnelItem(pr github.PR, failingChecks int) FunnelItem {
+	return FunnelItem{
+		Number:        pr.Number,
+		Title:         pr.Title,
+		Author:        pr.Author,
+		URL:           pr.URL,
+		FailingChecks: failingChecks,
+	}
 }
 
 // reviewDecisionApproved is gh's reviewDecision value for a PR an approving
@@ -487,15 +599,17 @@ func (e *Engine) approve(ctx context.Context, pr github.PR, matchedRule string) 
 }
 
 // recordCycle stores the last cycle's outcome and counts under lock, and
-// replaces the live queue snapshot with the freshly-recomputed queue. A failed
-// fetch passes a nil queue: nothing was evaluated, so the queue is cleared
-// (current truth is "unknown"; we approve and queue nothing). queue_count in
-// the status reflects len(queue).
-func (e *Engine) recordCycle(at time.Time, outcome string, approved, dropped int, queue []QueueItem) {
+// replaces the live queue AND funnel snapshots with the freshly-recomputed ones,
+// swapped together at cycle end (one lock). A failed fetch passes a nil queue and
+// the zero Funnel: nothing was evaluated, so both are cleared (current truth is
+// "unknown"; we approve and queue nothing, and the funnel shows no stale
+// buckets). queue_count in the status reflects len(queue).
+func (e *Engine) recordCycle(at time.Time, outcome string, approved, dropped int, queue []QueueItem, funnel Funnel) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	t := at
 	e.queue = queue
+	e.funnel = funnel
 	e.status = Status{
 		LastRun:       &t,
 		Outcome:       outcome,

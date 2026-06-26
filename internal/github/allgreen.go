@@ -50,6 +50,22 @@ func AllGreen(checks []Check) bool {
 	return true
 }
 
+// FailingChecks counts a rollup's non-passing entries — the dropped-red
+// station's "N checks failing" signal. It reuses the SAME classification as
+// AllGreen (a non-pass entry is any fail OR pending), so the two never drift: an
+// all-green rollup folds to 0, and an empty rollup folds to 0 too (a pipeline
+// that never ran has nothing failing — emptiness is AllGreen's concern, not a
+// failing check). It is a pure fold — no I/O.
+func FailingChecks(checks []Check) int {
+	n := 0
+	for _, c := range checks {
+		if !isPass(c) {
+			n++
+		}
+	}
+	return n
+}
+
 // isPass reports whether one rollup entry is in the pass bucket.
 func isPass(c Check) bool {
 	switch c.Typename {
