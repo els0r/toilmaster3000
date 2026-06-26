@@ -7,8 +7,9 @@ import {
   type QueueItem,
 } from "./api";
 import { ApprovalFeed } from "./ApprovalFeed";
-import { CommitTitle, TypeIcon } from "./CommitTitle";
+import { DiffMag } from "./DiffMag";
 import { NeedsReview } from "./NeedsReview";
+import { PrRow } from "./PrRow";
 import { RuleModal } from "./RulesEditor";
 import {
   draftToRule,
@@ -116,51 +117,23 @@ function IncomingStation({ pipeline }: { pipeline: PipelineSnapshot }) {
   );
 }
 
-// FunnelRow renders one itemized PR row shared by the Dropped sub-queues: a type
-// glyph in the gutter, the server-parsed title with its GitHub link, the author,
-// and an optional trailing slot (e.g. the red card's failing-check count). The
-// title is rendered from parts (never re-parsed on the client; ADR 0006).
-function FunnelRow({ item, trailing }: { item: FunnelItem; trailing?: ReactNode }) {
-  return (
-    <div className="funnel-row">
-      <span className="type-gutter" title={item.title}>
-        <TypeIcon type={item.title_parts.type} />
-      </span>
-      <div className="funnel-body">
-        <div className="funnel-titleline">
-          <CommitTitle
-            parts={item.title_parts}
-            rawTitle={item.title}
-            number={item.number}
-            url={item.url}
-            linkClassName="funnel-link"
-          />
-        </div>
-        <div className="entry-meta">
-          <span>{item.author}</span>
-          {trailing}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // DroppedCard is one of the two side-by-side Dropped sub-queues. It carries a
-// title, a count, its rows, and an empty state when its Eligibility Gate removed
-// nothing. `renderTrailing` lets the red card append its per-row failing-check
-// count while the draft card stays a bare title/author row.
+// title, a count, its rows (the shared PrRow), and an empty state when its
+// Eligibility Gate removed nothing. `renderMeta` lets the red card append its
+// per-row failing-check count after the author while the draft card stays a bare
+// title/author row.
 function DroppedCard({
   testid,
   title,
   items,
   emptyNote,
-  renderTrailing,
+  renderMeta,
 }: {
   testid: string;
   title: string;
   items: FunnelItem[];
   emptyNote: string;
-  renderTrailing?: (item: FunnelItem) => ReactNode;
+  renderMeta?: (item: FunnelItem) => ReactNode;
 }) {
   return (
     <section className="card station-dropped-card" data-testid={testid}>
@@ -171,13 +144,9 @@ function DroppedCard({
       {items.length === 0 ? (
         <div className="card-empty">{emptyNote}</div>
       ) : (
-        <div>
+        <div className="pr-list">
           {items.map((item) => (
-            <FunnelRow
-              key={item.number}
-              item={item}
-              trailing={renderTrailing?.(item)}
-            />
+            <PrRow key={item.number} item={item} meta={renderMeta?.(item)} />
           ))}
         </div>
       )}
@@ -196,13 +165,10 @@ function DroppedStation({ pipeline }: { pipeline: PipelineSnapshot }) {
         title="Pipeline red"
         items={pipeline.dropped_red ?? []}
         emptyNote="None — nothing failed checks."
-        renderTrailing={(item) => (
-          <>
-            <span className="sep">·</span>
-            <span className="failing-checks tnum">
-              {item.failing_checks} failing
-            </span>
-          </>
+        renderMeta={(item) => (
+          <span className="failing-checks tnum">
+            {item.failing_checks} failing
+          </span>
         )}
       />
       <DroppedCard
@@ -233,23 +199,20 @@ function ApprovedElsewhere({ items }: { items: FunnelItem[] }) {
         <div className="spacer" />
         <span className="card-note">left alone · soft dedup</span>
       </div>
-      <div>
+      <div className="pr-list">
         {items.map((item) => (
-          <div key={item.number} className="elsewhere-row">
-            <FunnelRow item={item} />
-          </div>
+          <PrRow key={item.number} item={item} />
         ))}
       </div>
     </section>
   );
 }
 
-// StagingRow renders one eligible-but-uncovered PR: the type glyph in the
-// gutter, the server-parsed title (icon + scope pills + clean description), the
-// author and diff magnitude (the change's size at a glance), and the two
-// rule-minting buttons. Each button opens the FULL Rules editor pre-filled from
-// this PR's parsed title — the shortcut that lets an operator drain the cohort in
-// seconds. The diff magnitude reuses NeedsReview's +add/−del/files convention.
+// StagingRow renders one eligible-but-uncovered PR through the shared PrRow: the
+// server-parsed title, the author + diff magnitude (the DiffMag leaf — the
+// change's size at a glance), and the two rule-minting buttons in the row's
+// action slot. Each button opens the FULL Rules editor pre-filled from this PR's
+// parsed title — the shortcut that lets an operator drain the cohort in seconds.
 function StagingRow({
   item,
   onMint,
@@ -258,51 +221,34 @@ function StagingRow({
   onMint: (cls: RuleClass) => void;
 }) {
   return (
-    <div className="funnel-row staging-row">
-      <span className="type-gutter" title={item.title}>
-        <TypeIcon type={item.title_parts.type} />
-      </span>
-      <div className="funnel-body">
-        <div className="funnel-titleline">
-          <CommitTitle
-            parts={item.title_parts}
-            rawTitle={item.title}
-            number={item.number}
-            url={item.url}
-            linkClassName="funnel-link"
-          />
+    <PrRow
+      item={item}
+      meta={
+        <span className="diff-mag tnum">
+          <DiffMag item={item} />
+        </span>
+      }
+      action={
+        <div className="staging-actions">
+          <button
+            type="button"
+            className="btn-ghost"
+            aria-label={`add approval rule for #${item.number}`}
+            onClick={() => onMint("approve")}
+          >
+            + Approval rule
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            aria-label={`add human-review rule for #${item.number}`}
+            onClick={() => onMint("review")}
+          >
+            + Human-review rule
+          </button>
         </div>
-        <div className="entry-meta">
-          <span>{item.author}</span>
-          <span className="sep">·</span>
-          <span className="diff-mag tnum">
-            <span className="diff-add">+{item.additions}</span>
-            <span className="diff-del">−{item.deletions}</span>
-            {item.changed_files > 0 && (
-              <span className="diff-files">{item.changed_files} files</span>
-            )}
-          </span>
-        </div>
-      </div>
-      <div className="staging-actions">
-        <button
-          type="button"
-          className="btn-ghost"
-          aria-label={`add approval rule for #${item.number}`}
-          onClick={() => onMint("approve")}
-        >
-          + Approval rule
-        </button>
-        <button
-          type="button"
-          className="btn-ghost"
-          aria-label={`add human-review rule for #${item.number}`}
-          onClick={() => onMint("review")}
-        >
-          + Human-review rule
-        </button>
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -348,7 +294,7 @@ function StagingStation({ items }: { items: FunnelItem[] }) {
           Every eligible PR is covered — nothing staged.
         </div>
       ) : (
-        <div>
+        <div className="pr-list">
           {items.map((item) => (
             <StagingRow
               key={item.number}

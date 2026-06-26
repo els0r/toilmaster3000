@@ -1,5 +1,5 @@
 import type { Approval } from "./api";
-import { CommitTitle, TypeIcon } from "./CommitTitle";
+import { PrRow } from "./PrRow";
 import { clock, timeAgo, useNow } from "./time";
 
 // MANUAL_PREFIX is the matched_rule prefix the backend stamps on a manual queue
@@ -44,11 +44,15 @@ export function ApprovalFeed({
       ) : approvals.length === 0 ? (
         <div className="card-empty">No approvals yet today.</div>
       ) : (
-        <div className="feed-scroll">
+        <div className="feed-scroll pr-list">
           {approvals.map((a) => {
             const at = Date.parse(a.approved_at);
+            // The feed wraps the shared PrRow (ADR 0014): the PR-State stripe and
+            // fresh-approval flash are feed-only lifecycle overlays, kept local to
+            // this module rather than leaked into PrRow. The wrapper is the
+            // positioned ancestor the absolute overlays resolve against.
             return (
-              <div key={a.number} className="feed-row">
+              <div key={a.number} className="feed-row-wrap">
                 {/* PR State: a thin stripe down the row's left edge in GitHub's
                     palette marks the PR's live lifecycle. "unknown" (not yet
                     refreshed) shows no bar — the neutral default, never guessed. */}
@@ -56,44 +60,34 @@ export function ApprovalFeed({
                   <div className={`feed-state-bar feed-state-${a.state}`} />
                 )}
                 {freshNumbers?.has(a.number) && <div className="feed-flash" />}
-                <span className="type-gutter" title={a.title}>
-                  <TypeIcon type={a.title_parts.type} />
-                </span>
-                <div className="feed-body">
-                  <div className="feed-titleline">
-                    <CommitTitle
-                      parts={a.title_parts}
-                      rawTitle={a.title}
-                      number={a.number}
-                      url={a.url}
-                      linkClassName="feed-link"
-                    />
-                  </div>
-                  <div className="feed-meta">
-                    <span>{a.author}</span>
-                    <span className="sep">·</span>
-                    {a.manual ? (
-                      <>
-                        <span className="badge-manual">manual override</span>
-                        <span className="feed-rule">
-                          {manualReasons(a.matched_rule)}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="feed-rule-label">rule</span>
-                        <span className="feed-rule">{a.matched_rule}</span>
-                      </>
-                    )}
-                    <span className="sep">·</span>
-                    <span
-                      className="feed-time tnum"
-                      title={Number.isNaN(at) ? a.approved_at : clock(at)}
-                    >
-                      {Number.isNaN(at) ? a.approved_at : timeAgo(now, at)}
-                    </span>
-                  </div>
-                </div>
+                <PrRow
+                  item={a}
+                  density="compact"
+                  meta={
+                    <>
+                      {a.manual ? (
+                        <>
+                          <span className="badge-manual">manual override</span>
+                          <span className="feed-rule">
+                            {manualReasons(a.matched_rule)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="feed-rule-label">rule</span>
+                          <span className="feed-rule">{a.matched_rule}</span>
+                        </>
+                      )}
+                      <span className="sep">·</span>
+                      <span
+                        className="feed-time tnum"
+                        title={Number.isNaN(at) ? a.approved_at : clock(at)}
+                      >
+                        {Number.isNaN(at) ? a.approved_at : timeAgo(now, at)}
+                      </span>
+                    </>
+                  }
+                />
               </div>
             );
           })}

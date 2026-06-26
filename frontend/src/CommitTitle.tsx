@@ -103,26 +103,26 @@ export function TypeIcon({ type }: { type: string }) {
 // capitalized clean description as the primary link, a SEPARATE muted "#num ↗"
 // link, then the scope pills. The type icon is rendered by the row (in its left
 // gutter), not here. A non-conventional title (empty parsed type) falls back to
-// the capitalized raw title — the frontend never parses (ADR 0006).
+// the capitalized raw title — the frontend never parses (ADR 0006). The title
+// scale is set by the enclosing PrRow's density, not a per-caller class
+// (ADR 0014), so this renderer carries no size prop.
 export function CommitTitle({
   parts,
   rawTitle,
   number,
   url,
-  linkClassName,
 }: {
   parts: TitleParts;
   rawTitle: string;
   number: number;
   url: string;
-  linkClassName?: string;
 }) {
   const parsed = parts.type !== "";
   const scopes = parts.scopes ?? [];
   return (
     <span className="commit-title">
       <a
-        className={`entry-link${linkClassName ? ` ${linkClassName}` : ""}`}
+        className="entry-link"
         href={url}
         target="_blank"
         rel="noreferrer"

@@ -56,16 +56,12 @@ beforeEach(() => {
 });
 
 describe("NeedsReview", () => {
-  // F-queue-1: renders an item with its GitHub link, parsed title, author, and
-  // an Approve button. The breaking PR shows the breaking badge.
-  it("renders a queue item with its link and parsed title", () => {
+  // F-queue-1: the queue composes a row with its two distinguishing pieces — the
+  // breaking badge and the per-item Approve action. The shared row skeleton
+  // (title, #num link, author) is specified once in PrRow.test (ADR 0014).
+  it("composes a row with the breaking badge and an Approve action", () => {
     render(<NeedsReview queue={[item()]} />);
 
-    const link = screen.getByRole("link", { name: /#41/ });
-    expect(link).toHaveAttribute("href", "https://github.com/o/r/pull/41");
-    // The parsed, capitalized clean description is shown (prefix stripped).
-    expect(screen.getByText("Drop legacy flag")).toBeInTheDocument();
-    expect(screen.getByText("bob", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("breaking change")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "approve #41" }),
