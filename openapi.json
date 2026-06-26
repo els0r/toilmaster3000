@@ -353,8 +353,20 @@
       "FunnelItem": {
         "additionalProperties": false,
         "properties": {
+          "additions": {
+            "format": "int64",
+            "type": "integer"
+          },
           "author": {
             "type": "string"
+          },
+          "changed_files": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deletions": {
+            "format": "int64",
+            "type": "integer"
           },
           "failing_checks": {
             "format": "int64",
@@ -380,7 +392,10 @@
           "title_parts",
           "author",
           "url",
-          "failing_checks"
+          "failing_checks",
+          "additions",
+          "deletions",
+          "changed_files"
         ],
         "type": "object"
       },

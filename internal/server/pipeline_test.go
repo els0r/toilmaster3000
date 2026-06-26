@@ -26,7 +26,7 @@ func pipelineServer(t *testing.T) string {
 	fake := github.NewFake(
 		github.PR{Number: 1, Title: "chore(api): bump", Author: "al", URL: "u1", Checks: greenChecks()},
 		github.PR{Number: 2, Title: "docs(team/web): readme", Author: "bo", URL: "u2", Checks: greenChecks()},
-		github.PR{Number: 3, Title: "feat(ui): panel", Author: "ca", URL: "u3", Checks: greenChecks()},
+		github.PR{Number: 3, Title: "feat(ui): panel", Author: "ca", URL: "u3", Checks: greenChecks(), Additions: 120, Deletions: 8, ChangedFiles: 5},
 		github.PR{Number: 4, Title: "chore: wip", Author: "de", URL: "u4", IsDraft: true, Checks: greenChecks()},
 		github.PR{Number: 5, Title: "chore: flaky", Author: "ed", URL: "u5", Checks: red},
 		github.PR{Number: 6, Title: "chore: theirs", Author: "fa", URL: "u6", Checks: greenChecks(), ReviewDecision: "APPROVED"},
@@ -65,6 +65,11 @@ func TestPipelineSnapshotMapping(t *testing.T) {
 	// Parse-on-read title parts ride each row.
 	require.Equal(t, "feat", body.Staging[0].TitleParts.Type)
 	require.Equal(t, []string{"ui"}, body.Staging[0].TitleParts.Scopes)
+	// Diff magnitude rides each row from the single list fetch (the Staging area
+	// renders it; threaded from github.PR's Additions/Deletions/ChangedFiles).
+	require.Equal(t, 120, body.Staging[0].Additions)
+	require.Equal(t, 8, body.Staging[0].Deletions)
+	require.Equal(t, 5, body.Staging[0].ChangedFiles)
 
 	require.Len(t, body.ApprovedElsewhere, 1)
 	require.Equal(t, 6, body.ApprovedElsewhere[0].Number)
