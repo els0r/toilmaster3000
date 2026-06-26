@@ -538,6 +538,18 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 	})
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-pipeline",
+		Method:      http.MethodGet,
+		Path:        APIPrefix + "/pipeline",
+		Summary:     "Live Cycle Funnel snapshot (the four terminal lists + distribution counts)",
+	}, func(_ context.Context, _ *struct{}) (*pipelineOutput, error) {
+		// A locked read of the live snapshot, mapped to the wire DTO with parse-on-read
+		// title parts (ADR 0006). It is the zero value before the first cycle and after
+		// a failed fetch, which renders as empty lists + zero counts.
+		return &pipelineOutput{Body: pipelineToBody(eng.Funnel())}, nil
+	})
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-analytics",
 		Method:      http.MethodGet,
 		Path:        APIPrefix + "/analytics",
