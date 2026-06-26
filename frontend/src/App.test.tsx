@@ -149,7 +149,7 @@ describe("App polling", () => {
     render(<App />);
     await flush();
 
-    expect(screen.getByText(/approved 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/next sync/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /#1/ })).toBeInTheDocument();
     expect(mockStatus).toHaveBeenCalledTimes(1);
     expect(mockApprovals).toHaveBeenCalledTimes(1);
@@ -196,7 +196,6 @@ describe("App polling", () => {
 
     expect(mockStatus).toHaveBeenCalledTimes(2);
     expect(mockApprovals).toHaveBeenCalledTimes(2);
-    expect(screen.getByText(/approved 2/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /#2/ })).toBeInTheDocument();
   });
 

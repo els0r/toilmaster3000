@@ -345,27 +345,6 @@ textarea:focus {
 .spacer {
   flex: 1;
 }
-.hb-counts {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-sm);
-}
-.hb-counts .approved {
-  font-weight: var(--weight-semibold);
-  color: var(--success);
-}
-.hb-counts .queue {
-  font-weight: var(--weight-semibold);
-  color: var(--action);
-}
-.hb-counts .muted {
-  color: var(--fg-3);
-}
-.hb-counts .sep {
-  color: var(--border-strong);
-  margin: 0 2px;
-}
 .hb-sync {
   display: flex;
   align-items: center;

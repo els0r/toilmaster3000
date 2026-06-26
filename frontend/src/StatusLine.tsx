@@ -47,8 +47,6 @@ export function StatusLine({
       <header className="hb-strip">
         <Brand idle />
         <span className="hb-ago">Cycle has never run</span>
-        <div className="spacer" />
-        <Counts status={status} />
       </header>
     );
   }
@@ -89,8 +87,6 @@ export function StatusLine({
 
       <div className="spacer" />
 
-      <Counts status={status} />
-
       <div className="hb-sync">
         <span className="hb-spinner" />
         <span className="text tnum">next sync {nextSyncText}</span>
@@ -112,24 +108,6 @@ function Brand({ idle = false }: { idle?: boolean }) {
       <span className="hb-title">
         toilmaster<span className="hb-title-dim">3000</span>
       </span>
-    </div>
-  );
-}
-
-// Counts renders the approved/queue/dropped tallies plus the live funnel's
-// staging count — the new actionable signal surfaced on the always-polled
-// heartbeat so it shows from every tab. Each label+number stays in a single
-// element so "approved N" / "staging N" read as one phrase.
-function Counts({ status }: { status: CycleStatus }) {
-  return (
-    <div className="hb-counts tnum">
-      <span className="approved">approved {status.approved_count}</span>
-      <span className="sep">·</span>
-      <span className="queue">queue {status.queue_count}</span>
-      <span className="sep">·</span>
-      <span className="dropped">dropped {status.dropped_count}</span>
-      <span className="sep">·</span>
-      <span className="staging">staging {status.staging_count}</span>
     </div>
   );
 }

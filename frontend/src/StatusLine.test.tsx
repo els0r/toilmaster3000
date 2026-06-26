@@ -15,9 +15,10 @@ beforeEach(() => {
   mockFetchStatus.mockReset();
 });
 
-// F1 (tracer): the status line renders outcome and counts from GET /status.
+// F1 (tracer): the status line renders the heartbeat (outcome + sync) from
+// GET /status. Per-stage counts live on the Incoming card, not the strip.
 describe("StatusLine", () => {
-  it("renders outcome and counts from the status payload", async () => {
+  it("renders the heartbeat outcome from the status payload", async () => {
     const status: CycleStatus = {
       last_run: "2026-06-18T10:00:00Z",
       outcome: "ok",
@@ -30,11 +31,10 @@ describe("StatusLine", () => {
 
     render(<StatusLine />);
 
-    expect(await screen.findByText(/approved 3/i)).toBeInTheDocument();
-    expect(screen.getByText(/queue 2/i)).toBeInTheDocument();
-    expect(screen.getByText(/dropped 5/i)).toBeInTheDocument();
-    expect(screen.getByText(/staging 4/i)).toBeInTheDocument();
-    expect(screen.getByText(/ok/i)).toBeInTheDocument();
+    expect(await screen.findByText(/ok/i)).toBeInTheDocument();
+    expect(screen.getByText(/next sync/i)).toBeInTheDocument();
+    // The redundant per-stage tallies are no longer on the strip.
+    expect(screen.queryByText(/approved 3/i)).not.toBeInTheDocument();
   });
 
   // F2: a never-run cycle renders a coherent "never run" line.
