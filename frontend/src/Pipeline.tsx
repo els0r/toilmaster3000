@@ -83,35 +83,37 @@ function IncomingStation({
         )}
       </div>
 
-      <div
-        className="dist-bar"
-        role="img"
-        aria-label={`Incoming distribution of ${total} PRs`}
-      >
-        {segments
-          .filter((s) => s.n > 0)
-          .map((s) => (
-            <div
-              key={s.key}
-              className={`dist-seg dist-seg-${s.key}`}
-              style={{ flexGrow: s.n }}
-              title={`${s.label}: ${s.n}`}
-            />
-          ))}
-      </div>
+      <div className="station-incoming-body">
+        <div
+          className="dist-bar"
+          role="img"
+          aria-label={`Incoming distribution of ${total} PRs`}
+        >
+          {segments
+            .filter((s) => s.n > 0)
+            .map((s) => (
+              <div
+                key={s.key}
+                className={`dist-seg dist-seg-${s.key}`}
+                style={{ flexGrow: s.n }}
+                title={`${s.label}: ${s.n}`}
+              />
+            ))}
+        </div>
 
-      <div className="dist-legend">
-        {segments.map((s) => (
-          <span
-            key={s.key}
-            className="legend-item"
-            data-testid={`legend-${s.key}`}
-          >
-            <span className={`legend-swatch dist-seg-${s.key}`} />
-            <span className="legend-label">{s.label}</span>
-            <span className="legend-count tnum">{s.n}</span>
-          </span>
-        ))}
+        <div className="dist-legend">
+          {segments.map((s) => (
+            <span
+              key={s.key}
+              className="legend-item"
+              data-testid={`legend-${s.key}`}
+            >
+              <span className={`legend-swatch dist-seg-${s.key}`} />
+              <span className="legend-label">{s.label}</span>
+              <span className="legend-count tnum">{s.n}</span>
+            </span>
+          ))}
+        </div>
       </div>
     </section>
   );
