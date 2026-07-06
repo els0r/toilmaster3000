@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/toilmaster3000/v1/pipeline/{number}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch a tracked PR's diff on demand (the Diff card) — the queue or Staging */
+        get: operations["get-pipeline-diff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/toilmaster3000/v1/queue": {
         parameters: {
             query?: never;
@@ -83,23 +100,6 @@ export interface paths {
         put?: never;
         /** Manual override approve (the only path to approve a breaking change) */
         post: operations["approve-queue-item"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/toilmaster3000/v1/queue/{number}/diff": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Fetch a queued PR's diff on demand (the Diff card) */
-        get: operations["get-queue-diff"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -557,6 +557,38 @@ export interface operations {
             };
         };
     };
+    "get-pipeline-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PR number whose diff to fetch, from the queue or Staging */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PRDiffBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "list-queue": {
         parameters: {
             query?: never;
@@ -605,38 +637,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ManualApproveOutputBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    "get-queue-diff": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description PR number whose diff to fetch from the queue */
-                number: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PRDiffBody"];
                 };
             };
             /** @description Error */

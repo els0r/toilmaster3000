@@ -1182,11 +1182,11 @@ func TestNoRuleCanAutoApproveBreaking(t *testing.T) {
 	require.Len(t, queue, 2, "both breaking PRs routed to the queue")
 }
 
-// S6-Diff-A: GET /queue/{number}/diff returns the queued PR's changed files
+// S6-Diff-A: GET /pipeline/{number}/diff returns the queued PR's changed files
 // (filename/status/+N/−M/patch) plus total_files — the queue item's
 // changed_files — so the Diff card can render per-file and show "first N of M".
 // A file GitHub omits the patch for (binary) crosses the wire with an empty patch.
-func TestQueueDiffReturnsFilesAndTotal(t *testing.T) {
+func TestPipelineDiffReturnsFilesAndTotalForAQueuedPR(t *testing.T) {
 	store := storeWith(t, matchAllChores())
 	fake := github.NewFake(
 		github.PR{Number: 60, Title: "chore!: breaking chore", Author: "alice", URL: "u60",
@@ -1202,7 +1202,7 @@ func TestQueueDiffReturnsFilesAndTotal(t *testing.T) {
 	eng.RunCycleOnce(context.Background())
 
 	var body server.PRDiffBody
-	getJSON(t, srv.URL+apiPrefix+"/queue/60/diff", &body)
+	getJSON(t, srv.URL+apiPrefix+"/pipeline/60/diff", &body)
 	require.Equal(t, 142, body.TotalFiles, "total_files is the PR's changed_files (banner: first 2 of 142)")
 	require.Equal(t, []server.FileDiff{
 		{Filename: "main.go", Status: "modified", Additions: 2, Deletions: 1, Patch: "@@ -1 +1 @@\n+a\n-b"},
@@ -1210,13 +1210,38 @@ func TestQueueDiffReturnsFilesAndTotal(t *testing.T) {
 	}, body.Files)
 }
 
-// S6-Diff-B: GET /queue/{number}/diff for a number not in the queue is a 404 —
-// the Diff pill is queue-only, so the endpoint never fetches a diff for a PR
-// the human isn't looking at.
-func TestQueueDiffUnqueuedIs404(t *testing.T) {
+// S6-Diff-C: GET /pipeline/{number}/diff also resolves a Staging PR (eligible,
+// matched no rule) — the route widened from queue-only to queue-or-Staging
+// (ADR 0015) so Staging's diff pill works exactly like the queue's.
+func TestPipelineDiffReturnsFilesAndTotalForAStagedPR(t *testing.T) {
+	store := storeWith(t) // no rules: an eligible PR matching nothing falls into Staging
+	fake := github.NewFake(
+		github.PR{Number: 70, Title: "feat: a new panel", Author: "camille", URL: "u70",
+			Additions: 120, Deletions: 8, ChangedFiles: 5, Checks: greenChecks()},
+	)
+	fake.SetDiff(70, []github.FileDiff{
+		{Filename: "panel.go", Status: "added", Additions: 118, Deletions: 0, Patch: "@@ -0,0 +1 @@"},
+	})
+	eng := newEngineWith(t, fake, store)
+	srv := newTestServerFor(t, eng, store)
+
+	eng.RunCycleOnce(context.Background())
+
+	var body server.PRDiffBody
+	getJSON(t, srv.URL+apiPrefix+"/pipeline/70/diff", &body)
+	require.Equal(t, 5, body.TotalFiles)
+	require.Equal(t, []server.FileDiff{
+		{Filename: "panel.go", Status: "added", Additions: 118, Deletions: 0, Patch: "@@ -0,0 +1 @@"},
+	}, body.Files)
+}
+
+// S6-Diff-B: GET /pipeline/{number}/diff for a number tracked in neither the
+// queue nor Staging is a 404 — the endpoint never fetches a diff for a PR the
+// human isn't looking at.
+func TestPipelineDiffUntrackedIs404(t *testing.T) {
 	srv := newTestServer(t)
 
-	resp, err := http.Get(srv.URL + apiPrefix + "/queue/999/diff")
+	resp, err := http.Get(srv.URL + apiPrefix + "/pipeline/999/diff")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)

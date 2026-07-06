@@ -1823,17 +1823,12 @@ textarea:focus {
 }
 
 /* Staging — the interactive funnel bucket. Each PrRow carries the two
-   rule-minting shortcut buttons in its action slot; the meta line carries the
-   diff magnitude (the DiffMag leaf, sharing the +add/−del/files colors). */
+   rule-minting shortcut buttons in its action slot; the meta line carries a
+   DiffPill (.diff-pill, below), same as the Needs-Human-Review queue. */
 .staging-actions {
   display: flex;
   gap: var(--space-2);
   flex-shrink: 0;
-}
-.diff-mag {
-  display: inline-flex;
-  gap: var(--space-2);
-  align-items: baseline;
 }
 
 /* Approved-elsewhere — highlighted rows above the ledger (soft dedup, left alone). */

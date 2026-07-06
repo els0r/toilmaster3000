@@ -239,7 +239,7 @@ type queueOutput struct {
 	Body []QueueItem
 }
 
-type queueDiffOutput struct {
+type pipelineDiffOutput struct {
 	Body PRDiffBody
 }
 
@@ -531,16 +531,16 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "get-queue-diff",
+		OperationID: "get-pipeline-diff",
 		Method:      http.MethodGet,
-		Path:        APIPrefix + "/queue/{number}/diff",
-		Summary:     "Fetch a queued PR's diff on demand (the Diff card)",
+		Path:        APIPrefix + "/pipeline/{number}/diff",
+		Summary:     "Fetch a tracked PR's diff on demand (the Diff card) — the queue or Staging",
 	}, func(ctx context.Context, in *struct {
-		Number int `path:"number" doc:"PR number whose diff to fetch from the queue"`
-	}) (*queueDiffOutput, error) {
+		Number int `path:"number" doc:"PR number whose diff to fetch, from the queue or Staging"`
+	}) (*pipelineDiffOutput, error) {
 		files, total, err := eng.Diff(ctx, in.Number)
 		if err != nil {
-			if errors.Is(err, engine.ErrNotInQueue) {
+			if errors.Is(err, engine.ErrPRNotTracked) {
 				return nil, huma.Error404NotFound(err.Error())
 			}
 			return nil, huma.Error500InternalServerError(err.Error())
@@ -549,7 +549,7 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		for _, f := range files {
 			out = append(out, fileDiffToBody(f))
 		}
-		return &queueDiffOutput{Body: PRDiffBody{Files: out, TotalFiles: total}}, nil
+		return &pipelineDiffOutput{Body: PRDiffBody{Files: out, TotalFiles: total}}, nil
 	})
 
 	huma.Register(api, huma.Operation{

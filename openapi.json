@@ -925,6 +925,47 @@
         "summary": "Live Cycle Funnel snapshot (the four terminal lists + distribution counts)"
       }
     },
+    "/api/toilmaster3000/v1/pipeline/{number}/diff": {
+      "get": {
+        "operationId": "get-pipeline-diff",
+        "parameters": [
+          {
+            "description": "PR number whose diff to fetch, from the queue or Staging",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "PR number whose diff to fetch, from the queue or Staging",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PRDiffBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fetch a tracked PR's diff on demand (the Diff card) — the queue or Staging"
+      }
+    },
     "/api/toilmaster3000/v1/queue": {
       "get": {
         "operationId": "list-queue",
@@ -998,47 +1039,6 @@
           }
         },
         "summary": "Manual override approve (the only path to approve a breaking change)"
-      }
-    },
-    "/api/toilmaster3000/v1/queue/{number}/diff": {
-      "get": {
-        "operationId": "get-queue-diff",
-        "parameters": [
-          {
-            "description": "PR number whose diff to fetch from the queue",
-            "in": "path",
-            "name": "number",
-            "required": true,
-            "schema": {
-              "description": "PR number whose diff to fetch from the queue",
-              "format": "int64",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PRDiffBody"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Fetch a queued PR's diff on demand (the Diff card)"
       }
     },
     "/api/toilmaster3000/v1/rules": {

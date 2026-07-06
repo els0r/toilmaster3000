@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { approveQueueItem, type QueueItem } from "./api";
-import { DiffCard } from "./DiffCard";
-import { DiffMag } from "./DiffMag";
+import { DiffPill } from "./DiffPill";
 import { PrRow } from "./PrRow";
 
 // REASON_BREAKING is the engine's breaking-change queue reason. When
@@ -9,23 +8,6 @@ import { PrRow } from "./PrRow";
 // this reason is filtered from the reason chips — an Approve-tied breaking PR
 // shows the badge without an orphan breaking_change chip (ADR 0006).
 const REASON_BREAKING = "breaking_change";
-
-// DiffPill wraps the shared DiffMag leaf in a clickable pill: the same green-bold
-// +add / red-bold −del / muted K-files magnitude, made a button that opens the
-// Diff card for that PR — a skim of the change without leaving tm3k. The
-// magnitude convention lives in DiffMag; clickability is this caller's concern.
-function DiffPill({ q, onOpen }: { q: QueueItem; onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      className="diff-pill tnum"
-      aria-label={`view diff for #${q.number}`}
-      onClick={onOpen}
-    >
-      <DiffMag item={q} />
-    </button>
-  );
-}
 
 // NeedsReview is the actionable Needs-Human-Review panel: PRs routed here for
 // one or more reasons. Each entry has a GitHub link, one badge per reason, and
@@ -40,9 +22,6 @@ export function NeedsReview({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<number | null>(null);
-  // diffFor is the PR number whose Diff card is open (null = none). The pill sets
-  // it; the card clears it on close.
-  const [diffFor, setDiffFor] = useState<number | null>(null);
 
   async function approve(number: number) {
     setError(null);
@@ -93,7 +72,7 @@ export function NeedsReview({
                 item={q}
                 meta={
                   <>
-                    <DiffPill q={q} onOpen={() => setDiffFor(q.number)} />
+                    <DiffPill item={q} />
                     {(q.title_parts.breaking || reasonChips.length > 0) && (
                       <span className="sep">·</span>
                     )}
@@ -127,14 +106,6 @@ export function NeedsReview({
           })}
         </div>
       )}
-
-      {diffFor !== null &&
-        (() => {
-          const q = queue?.find((x) => x.number === diffFor);
-          return q ? (
-            <DiffCard q={q} onClose={() => setDiffFor(null)} />
-          ) : null;
-        })()}
     </section>
   );
 }

@@ -187,11 +187,11 @@ export async function fetchRules(): Promise<Rule[]> {
 export type PRDiff = components["schemas"]["PRDiffBody"];
 export type FileDiff = components["schemas"]["FileDiff"];
 
-// fetchDiff fetches a queued PR's diff on demand (the Diff pill click). The
-// endpoint is queue-only: a number not in the queue is a 404, surfaced as the
-// server's message so the card can show why.
+// fetchDiff fetches a tracked PR's diff on demand (the Diff pill click) — a PR
+// currently in the queue or Staging. A number tracked in neither is a 404,
+// surfaced as the server's message so the card can show why.
 export async function fetchDiff(number: number): Promise<PRDiff> {
-  const resp = await fetch(`${API_BASE}/queue/${number}/diff`);
+  const resp = await fetch(`${API_BASE}/pipeline/${number}/diff`);
   if (!resp.ok) {
     throw new Error(await extractError(resp, "diff request failed"));
   }

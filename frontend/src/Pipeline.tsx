@@ -7,7 +7,7 @@ import {
   type QueueItem,
 } from "./api";
 import { ApprovalFeed } from "./ApprovalFeed";
-import { DiffMag } from "./DiffMag";
+import { DiffPill } from "./DiffPill";
 import { NeedsReview } from "./NeedsReview";
 import { PrRow } from "./PrRow";
 import { RuleModal } from "./RulesEditor";
@@ -209,10 +209,11 @@ function ApprovedElsewhere({ items }: { items: FunnelItem[] }) {
 }
 
 // StagingRow renders one eligible-but-uncovered PR through the shared PrRow: the
-// server-parsed title, the author + diff magnitude (the DiffMag leaf — the
-// change's size at a glance), and the two rule-minting buttons in the row's
-// action slot. Each button opens the FULL Rules editor pre-filled from this PR's
-// parsed title — the shortcut that lets an operator drain the cohort in seconds.
+// server-parsed title, the author + a clickable DiffPill (the change's size at
+// a glance, opening the same in-app diff modal Needs-Human-Review uses — ADR
+// 0015), and the two rule-minting buttons in the row's action slot. Each button
+// opens the FULL Rules editor pre-filled from this PR's parsed title — the
+// shortcut that lets an operator drain the cohort in seconds.
 function StagingRow({
   item,
   onMint,
@@ -223,11 +224,7 @@ function StagingRow({
   return (
     <PrRow
       item={item}
-      meta={
-        <span className="diff-mag tnum">
-          <DiffMag item={item} />
-        </span>
-      }
+      meta={<DiffPill item={item} />}
       action={
         <div className="staging-actions">
           <button

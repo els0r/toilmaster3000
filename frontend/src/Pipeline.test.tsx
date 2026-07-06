@@ -5,15 +5,32 @@ import type { Approval, FunnelItem, Pipeline, QueueItem } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
-  return { ...actual, createRule: vi.fn() };
+  return { ...actual, createRule: vi.fn(), fetchDiff: vi.fn() };
 });
 
-import { createRule } from "./api";
+import { createRule, fetchDiff, type PRDiff } from "./api";
 const mockCreate = vi.mocked(createRule);
+const mockFetchDiff = vi.mocked(fetchDiff);
+
+const diff = (over: Partial<PRDiff> = {}): PRDiff => ({
+  files: [
+    {
+      filename: "panel.go",
+      status: "added",
+      additions: 118,
+      deletions: 0,
+      patch: "@@ -0,0 +1 @@\n+new panel",
+    },
+  ],
+  total_files: 1,
+  ...over,
+});
 
 beforeEach(() => {
   mockCreate.mockReset();
   mockCreate.mockResolvedValue({ name: "x", enabled: true });
+  mockFetchDiff.mockReset();
+  mockFetchDiff.mockResolvedValue(diff());
 });
 
 const funnelItem = (over: Partial<FunnelItem> = {}): FunnelItem => ({
@@ -325,6 +342,21 @@ describe("Pipeline funnel — Staging", () => {
     expect(within(card).getByText(/5 files/)).toBeInTheDocument();
     const link = within(card).getByRole("link", { name: /#70/ });
     expect(link).toHaveAttribute("href", "https://github.com/o/r/pull/70");
+  });
+
+  // The Staging diff is a DiffPill like every other station that renders one —
+  // clicking it opens the same in-app diff modal Needs-Human-Review uses (the
+  // reported inconsistency: Staging's diff used to be a bare, non-interactive
+  // span). The pill's own render/open/close behavior is specified once in
+  // DiffPill.test.tsx; this just proves Staging wires it up.
+  it("opens the diff modal when the staging row's diff pill is clicked", async () => {
+    renderFunnel({ incoming: 1, staging: [staged()] });
+
+    const card = screen.getByTestId("staging");
+    fireEvent.click(within(card).getByRole("button", { name: "view diff for #70" }));
+
+    expect(await screen.findByText("panel.go")).toBeInTheDocument();
+    expect(mockFetchDiff).toHaveBeenCalledWith(70);
   });
 
   // The "+ Approval rule" button opens the FULL Rules editor pre-filled: the

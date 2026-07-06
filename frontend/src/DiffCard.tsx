@@ -1,18 +1,26 @@
 import { useEffect, useState } from "react";
-import { fetchDiff, type FileDiff, type PRDiff, type QueueItem } from "./api";
+import { fetchDiff, type FileDiff, type PRDiff } from "./api";
 
 // EXPAND_THRESHOLD is the changed-line count (additions + deletions) at or below
 // which a file starts expanded; larger files start collapsed so a giant file
 // doesn't blow out the card (CONTEXT "Diff card").
 const EXPAND_THRESHOLD = 40;
 
-// DiffCard is the pop-up that opens when a queued PR's Diff pill is clicked. It
+// DiffCard is the pop-up that opens when a PR's Diff pill is clicked. It
 // fetches the PR's changed files on demand and renders them per-file so a human
 // can skim the change without leaving tm3k. It is a skim aid, NOT a GitHub
 // mirror: it shows at most one page of files (a "first N of M" banner past the
 // cap), renders no preview for binary/over-large files, and always carries an
-// Open-on-GitHub escape hatch (CONTEXT "Diff card"; ADR 0008).
-export function DiffCard({ q, onClose }: { q: QueueItem; onClose: () => void }) {
+// Open-on-GitHub escape hatch (CONTEXT "Diff card"; ADR 0008). Only `number`
+// (the fetch key) and `url` (the escape hatch) are needed, so any station's
+// item satisfies this structurally — DiffPill is the only caller.
+export function DiffCard({
+  q,
+  onClose,
+}: {
+  q: { number: number; url: string };
+  onClose: () => void;
+}) {
   const [diff, setDiff] = useState<PRDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   // reload is bumped by Retry to re-run the fetch effect after a failure.

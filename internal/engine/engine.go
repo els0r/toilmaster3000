@@ -275,27 +275,57 @@ func (e *Engine) ApproveManually(ctx context.Context, number int) error {
 	return nil
 }
 
-// Diff fetches one queued PR's changed files on demand (the queue's Diff pill).
-// It is scoped to the CURRENT queue snapshot — a number absent from it is
-// ErrNotInQueue and never reaches gh (the pill is queue-only). The returned
-// totalFiles is the queue item's changed_files, the authoritative count for the
-// caller's "first N of M files" banner; the fetched files may be fewer (the gh
-// seam returns one page — ADR 0008). The on-demand gh call is the sanctioned
-// exception to the no-per-PR-call rule (ADR 0007), as it never rides the cycle.
+// ErrPRNotTracked is returned by Diff when the given PR number is not
+// currently tracked in the Needs-Human-Review queue or Staging — the two
+// buckets the on-demand Diff pill may be opened from (ADR 0015).
+var ErrPRNotTracked = errors.New("pr not tracked in queue or staging")
+
+// Diff fetches one tracked PR's changed files on demand (the Diff pill, opened
+// from the queue or Staging). It is scoped to the CURRENT queue-or-Staging
+// snapshot — a number absent from both is ErrPRNotTracked and never reaches gh.
+// The returned totalFiles is the tracked item's changed_files, the
+// authoritative count for the caller's "first N of M files" banner; the
+// fetched files may be fewer (the gh seam returns one page — ADR 0008). The
+// on-demand gh call is the sanctioned exception to the no-per-PR-call rule
+// (ADR 0007), as it never rides the cycle — widening it from the queue alone to
+// also cover Staging (ADR 0015) does not reintroduce that per-cycle N+1, since
+// it stays bounded by human click-rate, not cycle cadence.
 func (e *Engine) Diff(ctx context.Context, number int) (files []github.FileDiff, totalFiles int, err error) {
-	item, ok := e.queueItem(number)
+	changedFiles, ok := e.trackedChangedFiles(number)
 	if !ok {
-		return nil, 0, fmt.Errorf("%w: #%d", ErrNotInQueue, number)
+		return nil, 0, fmt.Errorf("%w: #%d", ErrPRNotTracked, number)
 	}
 	files, err = e.client.Diff(ctx, number)
 	if err != nil {
 		return nil, 0, fmt.Errorf("diff #%d: %w", number, err)
 	}
-	return files, item.ChangedFiles, nil
+	return files, changedFiles, nil
+}
+
+// trackedChangedFiles returns the authoritative changed_files count for a PR
+// number currently tracked in the queue or Staging (locked read) — the two
+// buckets Diff resolves from.
+func (e *Engine) trackedChangedFiles(number int) (int, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, q := range e.queue {
+		if q.Number == number {
+			return q.ChangedFiles, true
+		}
+	}
+	for _, s := range e.funnel.Staging {
+		if s.Number == number {
+			return s.ChangedFiles, true
+		}
+	}
+	return 0, false
 }
 
 // queueItem returns the queue entry for the given PR number from the current
-// snapshot (locked read).
+// snapshot (locked read). Used only by ApproveManually — the manual-override
+// approve path must stay queue-only even though Diff (above) also resolves
+// Staging: a Staging PR has matched no rule yet, so it must never become
+// manually-approvable.
 func (e *Engine) queueItem(number int) (QueueItem, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
