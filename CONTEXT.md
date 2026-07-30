@@ -158,6 +158,104 @@ scopes can be comma/slash-separated and mixed-case
 A PR whose title does not parse as a conventional commit is treated as a
 non-match (cannot be auto-approved).
 
+### Outbound (direction)
+The second direction: PRs **you author**, flowing toward merge — as opposed to
+the **Inbound** direction (PRs others author, flowing toward your approval).
+Where inbound's verb is `approve` and its autonomy is rule-driven, outbound's
+verb is **`merge`** and its autonomy is **consent-driven**: no rules, no
+matching — a per-PR human decision (the **Arm**) is the only thing that
+authorizes the robot. See ADR 0016 for why tm3k merges itself rather than
+delegating to GitHub native auto-merge.
+- **"Staging" is inbound-only.** It keeps its existing meaning (eligible, matched
+  no rule — the rules-gap bucket). Outbound never uses the word.
+- The outbound green-pipeline state splits into **two stages by what blocks the
+  merge**: **Awaiting Approval** — pipeline green but no approval yet (waiting on
+  a reviewer); **Ready** — pipeline green *and* approved (waiting only on you /
+  the merge).
+- **Candidate set**: a **second `gh pr list` call per cycle** against the same
+  global `--repo`, with a fixed derived search `is:open author:@me` — **drafts
+  included** (unlike inbound, "In draft" is an outbound stage, not a gate).
+  No new required config.
+- **Overlap eliminated at the search**: tm3k appends **`-author:@me`** to the
+  configured *inbound* search at startup, so your own PRs never enter the inbound
+  funnel (they previously sat in inbound Staging as unmatchable noise — the seed
+  rule's `AuthorsExclude: ["@me"]` guard becomes redundant but harmless). Each PR
+  lives on exactly one tab; the Incoming = raw-pull doctrine and the funnel
+  partition survive unchanged.
+- **Outbound funnel partition** (every authored PR in exactly one bucket; the
+  partition doctrine carries over from the inbound Cycle Funnel). Precedence
+  top-down: **draft > not-green > changes-requested > awaiting-approval > ready**:
+  1. **Outgoing** — the raw authored pull, rendered as a distribution bar
+     (counts only), parallel to inbound Incoming.
+  2. **Draft** — action: finish it.
+  3. **Not green** — split into two side-by-side cards, **pipeline red** (≥1
+     check failed) and **checks running** (none failed, ≥1 pending) — an author
+     must distinguish "go fix CI" from "wait". (Outbound cannot *drop* pending
+     PRs the way the inbound All-Green Gate does — they are yours, they must be
+     shown.)
+  4. **Changes Requested** — green pipeline but `reviewDecision ==
+     CHANGES_REQUESTED`; action: address the feedback. Its own stage, not a
+     badge — the wait is on you, not a reviewer.
+  5. **Awaiting Approval / Ready** — the green stages (see above).
+- **Merge mechanism — tm3k's own loop, not GitHub native auto-merge**: each
+  cycle, an **Armed** PR that is green + approved (`reviewDecision == APPROVED`)
+  + mergeable is merged via `gh pr merge`. tm3k enforces *its* conditions exactly
+  (native auto-merge enforces branch protection's, which may not require review)
+  and records the merge in its own ledger at the moment it happens. (ADR to
+  follow.)
+- **Armed / Withheld (canonical terms; verbs Arm / Disarm)**: a per-PR flag
+  **orthogonal to the funnel partition** — a badge riding the row, never a
+  stage. **Default: Withheld** — tm3k never merges a PR you didn't explicitly
+  arm (the gentleman's-agreement approval — "approved, but please address X" —
+  must never merge on its own). The Arm/Disarm toggle is available on **every**
+  outbound row regardless of stage: arm a red or draft PR and it merges
+  automatically the first cycle it satisfies all conditions.
+- **Arm lifecycle**: the armed set is **persisted** in `.state/` (the first
+  mutable per-PR state in tm3k) and survives restarts; new pushes do **not**
+  clear it (arm-while-red is the core use case). One event disarms:
+  **Changes Requested, level-triggered** — an armed PR observed with
+  `reviewDecision == CHANGES_REQUESTED` is disarmed that cycle, and the Arm
+  button is absent on the Changes Requested stage, so **Armed ∧
+  Changes-Requested is an impossible state**. "Arm anywhere" thus narrows to
+  "anywhere except Changes Requested": an open objection always requires fresh
+  consent (re-arm) after re-approval. No transition memory needed
+  (level-triggered, not edge-triggered). Entries are cleaned up when the PR
+  leaves the pull as merged/closed.
+- **Merge mechanics — mirror `gh land`** (the org's landing extension at
+  `panta/tools/gh-extensions/gh-land`), which tm3k **replicates rather than
+  invokes** (gh-land is interactive and operates on the locally checked-out
+  branch; tm3k has neither — the Arm is the confirm prompt, given in advance):
+  - `gh pr merge <number> --repo … -s -d -t "<PR title>" -b "<PR body>\nApproved
+    by: <reviewers>"` — squash; delete branch; commit subject = PR title; commit
+    body = PR description + an `Approved by:` trailer listing every reviewer
+    with an APPROVED review (deduped, `_osag`/`app/` prefixes stripped).
+  - Preconditions (gh-land parity): not draft, `reviewDecision == APPROVED`,
+    `mergeable == MERGEABLE` (UNKNOWN = GitHub still computing → simply not
+    Ready this cycle, retried naturally); one retry on a failed merge call.
+  - **Data sourcing by cadence**: `mergeable` rides the once-per-cycle outbound
+    list call (needed to compute Ready). `body` + `reviews` are fetched in one
+    `gh pr view` **at the moment of merge** — a per-PR call sanctioned like the
+    ADR 0008 on-demand diff fetch (rare, consented), which also guarantees the
+    commit message uses the live PR description, not a stale copy from arm time.
+- **Ready (sharpened)** — the *stage* is pipeline green + `reviewDecision ==
+  APPROVED` (waiting only on you). The *merge* has one further precondition:
+  `mergeable == MERGEABLE`. A conflicted Ready row stays in Ready with a
+  **conflict marker** and never auto-merges until resolved — fixing the conflict
+  is on you, which is exactly what Ready means. This keeps the stage partition
+  total (no bucket-less PRs) while the merge stays gh-land-strict.
+- **Breaking `!` on outbound**: the Arm **is** the human decision the inbound
+  Invariant exists to guarantee — per-PR, explicit, yours. A breaking outbound
+  row carries the existing breaking badge (arm with open eyes) but once armed
+  merges like any other. The inbound Invariant is unchanged (it guards
+  pattern-matched rules — a different risk profile from per-PR consent).
+- **Merge ledger**: append-only **`.state/merges.jsonl`** (number, title, url,
+  merged_at, approved-by reviewers), written **only on successful merge** — the
+  exact analog of `approvals.jsonl` (merge first, append on success; failures
+  retry next cycle). Required for any Merged display at all: a merged PR leaves
+  the `is:open` pull immediately, so live data can never show it. The outbound
+  funnel ends in a **today-scoped, read-only Merged station** (same cadence seam
+  as the Approval Feed). Analytics integration: deferred, its own decision.
+
 ## Invariants
 
 ### Breaking changes are NEVER auto-approved
@@ -360,13 +458,17 @@ include/exclude + `DiffMin`/`DiffMax`); the design mockup's thinner modal is **n
 adopted.
 
 ### UI layout (tabs)
-The app is **three tabs** under a persistent heartbeat strip (see Cycle status):
-- **Pipeline** — the **Cycle Funnel** (see above): the daily-glance surface,
-  rendered as a **vertical top-down funnel** of five numbered stations on a
-  connecting spine. Replaces and subsumes the former **Review** tab (the
-  Needs-Human-Review queue and Approval Feed are now stations 4 and 5 of the
-  funnel). Carries a **staging-count badge** (the new actionable signal — uncovered
-  PRs awaiting a rule) so it stays visible from the Rules tab.
+The app is **four tabs** under a persistent heartbeat strip (see Cycle status):
+- **Inbound** *(renamed from Pipeline)* — the **Cycle Funnel** (see above): the
+  daily-glance surface, rendered as a **vertical top-down funnel** of five
+  numbered stations on a connecting spine. Replaces and subsumes the former
+  **Review** tab (the Needs-Human-Review queue and Approval Feed are now
+  stations 4 and 5 of the funnel). Carries a **staging-count badge** (the
+  actionable signal — uncovered PRs awaiting a rule) so it stays visible from
+  the other tabs.
+- **Outbound** — the authored-PR funnel (see Outbound). Same vertical-funnel
+  idiom; carries a **ready-count badge** (PRs waiting only on you), mirroring
+  Inbound's staging badge.
 - **Rules** — the Rules section (the occasional-config surface).
 - **Analytics** — the approval-history dashboard (the look-back surface; see
   Analytics).
@@ -387,11 +489,30 @@ The design mockup (`toilmaster3000.dc.html` in the Claude Design project) is
 (it hid already-approved/approved-elsewhere PRs and omitted PR State bars), the
 agreed model wins.
 
-The three surfaces have different cadences (Pipeline watched constantly, Rules and
-Analytics touched rarely), so they are not co-scrolled. The active tab lives in the
-**URL hash** (`#pipeline` / `#rules` / `#analytics`, default Pipeline) — a reload
-keeps your place and each tab is linkable, with no router dependency. *(`#review`
-should redirect to `#pipeline` so old links survive the rename.)*
+The surfaces have different cadences (Inbound and Outbound watched constantly,
+Rules and Analytics touched rarely), so they are not co-scrolled. The active tab
+lives in the **URL hash** (`#inbound` / `#outbound` / `#rules` / `#analytics`,
+default Inbound) — a reload keeps your place and each tab is linkable, with no
+router dependency. *(`#review` and `#pipeline` both redirect to `#inbound` so
+old links survive both renames.)*
+
+**Outbound station layout** (vertical, top→bottom, mirroring Inbound; every
+authored PR in exactly one station, precedence draft > not-green >
+changes-requested > awaiting/ready — see Outbound):
+1. **Outgoing** — the raw authored pull as a **distribution bar** + legend
+   (counts only), parallel to Incoming. Shows the derived `author:@me` search as
+   a code chip.
+2. **Draft** — finish it.
+3. **Not green** — **two side-by-side cards**: pipeline red / checks running.
+4. **Changes Requested** — address the feedback. Never shows an Arm toggle
+   (Armed ∧ Changes-Requested is impossible — see Outbound).
+5. **Awaiting Approval / Ready** — the green stages; Ready rows carry a
+   conflict marker when not `MERGEABLE`.
+6. **Merged** — the today-scoped, read-only ledger station (from
+   `merges.jsonl`), parallel to the Approval Feed.
+
+Every station-2–5 row carries the **Arm/Disarm toggle** (except Changes
+Requested) and the armed state as a badge riding the row.
 
 ### Rules section (UI)
 The actionable config surface (the Rules tab): lists rules, lets the user
@@ -584,6 +705,20 @@ Empty range → all zeros, deltas render "—".
   `{state, mergedAt}` per number); the engine intersects against today's feed, and
   the pure, table-tested **`github.CollapsePRState(state, mergedAt)`** does the
   judging into `open|merged|closed` — same decode-vs-judge split as `AllGreen`.
+- **Outbound fetch (second call per cycle):** `gh pr list --repo … --search
+  "is:open author:@me" --json …,mergeable,reviewDecision,…` — drafts included
+  (no `draft:false` filter; Draft is an outbound *stage*, not a gate). The
+  inbound search gets **`-author:@me`** appended at startup so the two pulls
+  are disjoint. `mergeable` rides this call to compute Ready's conflict marker
+  and the merge precondition.
+- **Merge step (tail of the cycle):** for each **Armed** PR that is green +
+  `reviewDecision == APPROVED` + `mergeable == MERGEABLE`: fetch `title, body,
+  reviews` via one `gh pr view` (the per-merge call, ADR 0008-style), construct
+  the gh-land commit message, `gh pr merge -s -d -t … -b …` (one retry), and
+  append to `merges.jsonl` **only on success**. An armed PR observed with
+  `CHANGES_REQUESTED` is **disarmed** instead (level-triggered — see Outbound).
+  A failed *outbound fetch* clears the outbound snapshot and **skips all
+  merging that cycle** — the robot never merges on stale data.
 - **Loop:** single goroutine, `runCycle(); sleep(60s); repeat` (sleep *after* —
   a slow cycle can never overlap itself). Not a Ticker.
 - **Failure semantics:** approve first, append to `approvals.jsonl` only on
@@ -605,10 +740,14 @@ Empty range → all zeros, deltas render "—".
 ### Cycle status (UI)
 A small status line (the persistent **heartbeat strip** atop all tabs) showing
 the last cycle's time, outcome (`OK` / `gh error: …`), and counts (e.g.
-`approved 3, staging 6, review 2, dropped 5`), so a glance confirms the robot is
-alive — not just that it approved things. **`staging`** joins the strip as the new
-actionable signal (uncovered PRs awaiting a rule), beside `approved`/`review`
-(queue)/`dropped`. The heartbeat's **`approved` count is the last
+`approved 3, staging 6, review 2, dropped 5, ready 2, merged 1`), so a glance
+confirms the robot is alive — not just that it approved things. **`staging`**
+joins the strip as the new actionable signal (uncovered PRs awaiting a rule),
+beside `approved`/`review` (queue)/`dropped`. The **outbound pair** rides the
+same strip: **`ready`** (PRs waiting only on you — the outbound actionable
+signal, parallel to `staging`) and **`merged`** (last cycle's merges — the
+outbound pulse, parallel to `approved`); both ride `/status` so every tab shows
+them. The heartbeat's **`approved` count is the last
 cycle's** (the live pulse) — deliberately a different scope from the
 **today-scoped** Approval Feed, so "approved 3" in the strip and N rows in the
 feed are the same word at two scopes (cycle vs day), disambiguated by labels
@@ -665,7 +804,7 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 
 | method | path | purpose |
 |---|---|---|
-| `GET` | `/api/toilmaster3000/v1/status` | cycle status: `last_run`, `outcome`, counts (approved / staging / in queue / dropped) — `staging` rides `/status` so the always-polled heartbeat strip shows it from every tab without fetching `/pipeline` |
+| `GET` | `/api/toilmaster3000/v1/status` | cycle status: `last_run`, `outcome`, counts (approved / staging / in queue / dropped / **ready / merged**) — `staging` and the outbound pair ride `/status` so the always-polled heartbeat strip shows them from every tab without fetching `/pipeline` or `/outbound` |
 | `GET` | `/api/toilmaster3000/v1/approvals` | feed, newest-first, **today only** (`approved_at ≥ local midnight`; reads `approvals.jsonl`) |
 | `GET` | `/api/toilmaster3000/v1/queue` | Needs-Human-Review items (derived live) |
 | `POST` | `/api/toilmaster3000/v1/queue/{number}/approve` | manual override approve |
@@ -673,6 +812,10 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 | `GET` | `/api/toilmaster3000/v1/analytics` | approval-history aggregates for a range (+ scope filter): totals, shares, switches-saved, by-type cohort, elapsed-aligned deltas, all-time scope list. Query: `range=today\|week\|month\|days`, `days=N` (for `days`), `scope=a,b` (repeatable/CSV) |
 | `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `cost_low`, `cost_high` (CHF per saved switch), `currency` |
 | `PUT` | `/api/toilmaster3000/v1/settings` | update the constants (full replace) |
+| `GET` | `/api/toilmaster3000/v1/outbound` | live **outbound funnel** snapshot: per-stage lists (draft, red, running, changes-requested, awaiting, ready incl. conflict/mergeable state), distribution counts, `armed` flag per row, `merged_this_cycle`. Derived live each cycle like `/pipeline` |
+| `POST` | `/api/toilmaster3000/v1/outbound/{number}/arm` | arm a PR (rejected while `reviewDecision == CHANGES_REQUESTED`) |
+| `DELETE` | `/api/toilmaster3000/v1/outbound/{number}/arm` | disarm a PR |
+| `GET` | `/api/toilmaster3000/v1/merges` | merge ledger, newest-first, **today only** (reads `merges.jsonl`; feeds the Merged station) |
 | `GET` | `/api/toilmaster3000/v1/rules` | list rules |
 | `POST` | `/api/toilmaster3000/v1/rules` | create a rule |
 | `PUT` | `/api/toilmaster3000/v1/rules/{id}` | update / enable / disable (full replace) |
@@ -701,6 +844,14 @@ Repo is self-contained (will be relocated later). Layout:
   both the dedup set (numbers loaded into memory at startup) and the Approval
   Feed's data source. Record shape (**snake_case**):
   `{ number, title, author, url, matched_rule, approved_at }`.
+- **`.state/merges.jsonl`** — append-only merge ledger, **one merge per line**,
+  written only on successful merge (the outbound analog of `approvals.jsonl`).
+  Record shape (snake_case): `{ number, title, url, merged_at, approved_by[] }`.
+  Feeds the Merged station (today-scoped).
+- **`.state/armed.json`** — the persisted **armed set** (PR numbers), the first
+  mutable per-PR state in tm3k. Rewritten on every Arm/Disarm toggle and on
+  cleanup (a PR leaving the pull as merged/closed, or a level-triggered
+  disarm). Loaded at startup so arms survive restarts.
 - **`.config/settings.yaml`** — the analytics assumption constants, the **first
   non-rule persisted state** in tm3k. PascalCase YAML (matching `rules.yaml`):
   `CostLow: 10`, `CostHigh: 26`, `Currency: "CHF"` — the low/high CHF cost of one
@@ -761,6 +912,11 @@ Repo is self-contained (will be relocated later). Layout:
   Always" cards) — MVP requires delete + recreate; `Class` is card-implied.
 - **`BREAKING CHANGE:` body-footer detection** — needs fetching PR bodies.
 - **Dismiss action** on queue items — needs persistent hidden-state.
+- **Outbound analytics** — merges saved-switches integration (`merges.jsonl` is
+  the durable signal; whether/how a merge counts as a saved switch is undecided).
+- **Commit-message preview at arm time** — gh-land shows the constructed message
+  before its confirm; tm3k's arm predates the merge, and the body is fetched
+  live at merge time, so a preview at arm time could mislead. Skipped for now.
 - **Next-day PR-State reversal visibility** — PR State is **same-day-only** (it
   inherits the feed's today-scope): a PR approved today but merged/closed
   *tomorrow* is already off the feed, so its `merged`/`closed` bar (notably the
