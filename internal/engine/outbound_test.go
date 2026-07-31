@@ -23,7 +23,7 @@ func outboundEngine(t *testing.T, authored ...github.PR) (*engine.Engine, *githu
 
 	fake := github.NewFake()
 	fake.Authored = authored
-	eng, err := engine.New(fake, statePath, store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	return eng, fake
 }

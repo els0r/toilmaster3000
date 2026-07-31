@@ -36,7 +36,7 @@ func armedEngine(t *testing.T, armedPath string, authored ...github.PR) (*engine
 
 	fake := github.NewFake()
 	fake.Authored = authored
-	eng, err := engine.New(fake, statePath, store, arms)
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, arms)
 	require.NoError(t, err)
 	return eng, fake
 }
