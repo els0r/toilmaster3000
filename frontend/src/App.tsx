@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   fetchApprovals,
+  fetchMerges,
   fetchOutbound,
   fetchPipeline,
   fetchQueue,
@@ -41,6 +42,12 @@ export function App() {
     fetchOutbound,
     POLL_MS,
   );
+
+  // Today's merge ledger polls on the same cadence for the Merged station at
+  // the outbound funnel's bottom. Like the approvals feed (its inbound analog)
+  // it is a persisted ledger, so a failed poll keeps the last known value
+  // rather than clearing — stale ledger beats a vanishing history.
+  const [merges] = usePollingRefetchable(fetchMerges, POLL_MS);
 
   // Numbers that first appeared in the most recent poll — the feed flashes them
   // once so a fresh approval is visible without the user hunting for it.
@@ -162,7 +169,11 @@ export function App() {
             role="tabpanel"
             aria-labelledby="tab-outbound"
           >
-            <OutboundFunnel outbound={outbound} onArmChanged={refetchOutbound} />
+            <OutboundFunnel
+              outbound={outbound}
+              onArmChanged={refetchOutbound}
+              merges={merges}
+            />
           </div>
         )}
         {tab === "rules" && (

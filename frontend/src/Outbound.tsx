@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { armOutbound, disarmOutbound } from "./api";
-import type { Outbound, OutboundItem } from "./api";
+import type { MergeRecord, Outbound, OutboundItem } from "./api";
 import { ArmedBadge, BreakingBadge, ConflictBadge } from "./Badges";
 import { DiffMag } from "./DiffMag";
 import { DistributionStation, StationCard } from "./Station";
+import { clock, timeAgo, useNow } from "./time";
 
 // SEGMENTS are the six terminal stages that partition Outgoing, in funnel order
 // (precedence draft > not-green > changes-requested > awaiting/ready). Each has
@@ -42,13 +43,17 @@ const SEGMENTS: {
 // (the robot never shows stale data), so null renders a loading state.
 // `onArmChanged` is called after a successful Arm/Disarm toggle so the caller
 // can refetch the snapshot immediately (the toggle reflects on the next
-// fetch, not the next cycle).
+// fetch, not the next cycle). `merges` is today's ledger from GET /merges —
+// the read-only Merged station at the funnel bottom (null while loading
+// renders the station empty; the ledger poll keeps its last known value).
 export function OutboundFunnel({
   outbound,
   onArmChanged,
+  merges,
 }: {
   outbound: Outbound | null;
   onArmChanged?: () => void;
+  merges?: MergeRecord[] | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<number | null>(null);
@@ -179,7 +184,50 @@ export function OutboundFunnel({
         renderMeta={readyMeta}
         renderAction={armToggle}
       />
+
+      <MergedStation merges={merges ?? []} />
     </div>
+  );
+}
+
+// MergedRow is a ledger entry shaped for the shared PrRow: every merged PR is
+// the operator's own, so the author slot stays empty (PrRow omits it) and the
+// row leads with the approvers instead.
+type MergedRow = MergeRecord & { author: string };
+
+// MergedStation is the funnel's read-only bottom station: today's merge
+// ledger (GET /merges, the merges.jsonl analog of the Approval Feed). It
+// answers "what did the robot land today" — each row names the approvers the
+// commit's "Approved by:" trailer carried and links to the PR; there are no
+// actions, matching the feed's observational stance.
+function MergedStation({ merges }: { merges: MergeRecord[] }) {
+  const now = useNow(1000);
+  const rows: MergedRow[] = merges.map((m) => ({ ...m, author: "" }));
+
+  return (
+    <StationCard
+      testid="outbound-merged"
+      title="Merged"
+      note="today · read-only"
+      items={rows}
+      emptyNote="No merges yet today."
+      renderMeta={(m) => {
+        const at = Date.parse(m.merged_at);
+        return (
+          <>
+            <span className="feed-rule-label">approved by</span>
+            <span className="feed-rule">{(m.approved_by ?? []).join(", ")}</span>
+            <span className="sep">·</span>
+            <span
+              className="feed-time tnum"
+              title={Number.isNaN(at) ? m.merged_at : clock(at)}
+            >
+              {Number.isNaN(at) ? m.merged_at : timeAgo(now, at)}
+            </span>
+          </>
+        );
+      }}
+    />
   );
 }
 
