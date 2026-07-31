@@ -55,6 +55,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/toilmaster3000/v1/outbound/{number}/arm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Arm an outbound PR — the per-PR consent that will authorize its auto-merge (rejected while changes are requested) */
+        post: operations["arm-outbound-item"];
+        /** Disarm an outbound PR — withdraw the merge consent (idempotent) */
+        delete: operations["disarm-outbound-item"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/toilmaster3000/v1/pipeline": {
         parameters: {
             query?: never;
@@ -234,6 +252,18 @@ export interface components {
             title_parts: components["schemas"]["TitleParts"];
             url: string;
         };
+        ArmOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/ArmOutputBody.json
+             */
+            readonly $schema?: string;
+            armed: boolean;
+            /** Format: int64 */
+            number: number;
+            ok: boolean;
+        };
         Assumptions: {
             /**
              * Format: uri
@@ -396,6 +426,7 @@ export interface components {
         OutboundItem: {
             /** Format: int64 */
             additions: number;
+            armed: boolean;
             author: string;
             /** Format: int64 */
             changed_files: number;
@@ -608,6 +639,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Outbound"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "arm-outbound-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PR number to arm, from the outbound snapshot */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArmOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "disarm-outbound-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PR number to disarm */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArmOutputBody"];
                 };
             };
             /** @description Error */
