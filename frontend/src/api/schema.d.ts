@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/toilmaster3000/v1/merges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Merge ledger, newest-first, today only (the Merged station) */
+        get: operations["list-merges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/toilmaster3000/v1/outbound": {
         parameters: {
             query?: never;
@@ -297,9 +314,13 @@ export interface components {
             dropped_count: number;
             /** Format: date-time */
             last_run: string | null;
+            /** Format: int64 */
+            merged_count: number;
             outcome: string;
             /** Format: int64 */
             queue_count: number;
+            /** Format: int64 */
+            ready_count: number;
             /** Format: int64 */
             staging_count: number;
         };
@@ -390,6 +411,16 @@ export interface components {
             /** Format: int64 */
             number: number;
             ok: boolean;
+        };
+        Merge: {
+            approved_by: string[] | null;
+            /** Format: date-time */
+            merged_at: string;
+            /** Format: int64 */
+            number: number;
+            title: string;
+            title_parts: components["schemas"]["TitleParts"];
+            url: string;
         };
         Outbound: {
             /**
@@ -610,6 +641,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Approval"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-merges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Merge"][] | null;
                 };
             };
             /** @description Error */

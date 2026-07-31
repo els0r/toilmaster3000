@@ -42,6 +42,17 @@ type CycleStatus struct {
 	// recomputed, and is 0 before the first cycle / after a cleared fetch (the
 	// snapshot is zero-valued then).
 	StagingCount int `json:"staging_count"`
+	// ReadyCount is how many authored PRs sit in the outbound Ready stage —
+	// waiting only on you, the outbound actionable signal (parallel to
+	// StagingCount). Drawn from the same live snapshot /outbound serves, conflict
+	// rows included (a conflicted Ready PR is still yours to act on); 0 before
+	// the first cycle / after a failed outbound fetch.
+	ReadyCount int `json:"ready_count"`
+	// MergedCount is how many PRs the robot merged TODAY (merged_at >= local
+	// midnight), read from the merge ledger — the outbound pulse. Today-scoped
+	// rather than per-cycle because a merged PR leaves the is:open pull
+	// immediately: the ledger is the only durable signal (see /merges).
+	MergedCount int `json:"merged_count"`
 }
 
 // TitleParts is the server-parsed conventional-commit title, computed once on
@@ -466,7 +477,30 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		// truth), not recomputed. Zero-valued before the first cycle / after a
 		// cleared fetch, when Staging is empty.
 		body.StagingCount = len(eng.Funnel().Staging)
+		// The outbound pair rides the same strip: ready from the live outbound
+		// snapshot (the /outbound source of truth, zero after a failed fetch),
+		// merged from today's ledger via the same filter /merges serves — so the
+		// heartbeat needs no extra fetch and can never disagree with either tab.
+		body.ReadyCount = len(eng.Outbound().Ready)
+		body.MergedCount = len(todaysMerges(eng.Merges()))
 		return &statusOutput{Body: body}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-merges",
+		Method:      http.MethodGet,
+		Path:        APIPrefix + "/merges",
+		Summary:     "Merge ledger, newest-first, today only (the Merged station)",
+	}, func(_ context.Context, _ *struct{}) (*mergesOutput, error) {
+		// Today-scoped at the read boundary like the approvals feed: the station
+		// answers "what did the robot land today"; the engine keeps the full
+		// ledger as its restart truth.
+		merges := todaysMerges(eng.Merges())
+		out := make([]Merge, 0, len(merges))
+		for _, m := range merges {
+			out = append(out, mergeToBody(m))
+		}
+		return &mergesOutput{Body: out}, nil
 	})
 
 	huma.Register(api, huma.Operation{
