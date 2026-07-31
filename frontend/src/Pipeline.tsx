@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import {
   createRule,
   type Approval,
@@ -10,6 +10,7 @@ import { ApprovalFeed } from "./ApprovalFeed";
 import { DiffPill } from "./DiffPill";
 import { NeedsReview } from "./NeedsReview";
 import { PrRow } from "./PrRow";
+import { DistributionStation, StationCard } from "./Station";
 import { RuleModal } from "./RulesEditor";
 import {
   draftToRule,
@@ -53,114 +54,34 @@ function len(list: FunnelItem[] | null): number {
   return list?.length ?? 0;
 }
 
-// IncomingStation renders the cycle's Incoming total as a single stacked
-// distribution bar (NOT a PR list — the PRs live in the stations below), with a
-// legend of exact per-stage counts and the configured filter expression as a code
-// chip. The bar partitions Incoming into its six terminal stages; already-approved
+// IncomingStation renders the cycle's Incoming total through the shared
+// DistributionStation shell (NOT a PR list — the PRs live in the stations
+// below): the stacked bar, a legend of exact per-stage counts, and the live
+// configured search as a code chip (issue #12; empty search shows no chip).
+// The bar partitions Incoming into its six terminal stages; already-approved
 // PRs fold into the approved-by-tm3k segment, keeping Incoming an honest
 // "everything we saw."
 function IncomingStation({ pipeline }: { pipeline: PipelineSnapshot }) {
-  const total = pipeline.incoming;
-  const segments = SEGMENTS.map((s) => ({ ...s, n: s.count(pipeline) }));
-  // The chip's value is the live configured search from the snapshot itself
-  // (issue #12) — empty when no search is configured, in which case no chip shows.
-  const filterExpr = pipeline.search;
-
   return (
-    <section className="card station-incoming">
-      <div className="card-head">
-        <h2 className="card-title">Incoming</h2>
-        <span className="card-count tnum" data-testid="incoming-total">
-          {total}
-        </span>
-        <div className="spacer" />
-        {filterExpr && (
-          <code className="filter-chip" data-testid="filter-chip">
-            {filterExpr}
-          </code>
-        )}
-      </div>
-
-      <div className="station-incoming-body">
-        <div
-          className="dist-bar"
-          role="img"
-          aria-label={`Incoming distribution of ${total} PRs`}
-        >
-          {segments
-            .filter((s) => s.n > 0)
-            .map((s) => (
-              <div
-                key={s.key}
-                className={`dist-seg dist-seg-${s.key}`}
-                style={{ flexGrow: s.n }}
-                title={`${s.label}: ${s.n}`}
-              />
-            ))}
-        </div>
-
-        <div className="dist-legend">
-          {segments.map((s) => (
-            <span
-              key={s.key}
-              className="legend-item"
-              data-testid={`legend-${s.key}`}
-            >
-              <span className={`legend-swatch dist-seg-${s.key}`} />
-              <span className="legend-label">{s.label}</span>
-              <span className="legend-count tnum">{s.n}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-    </section>
+    <DistributionStation
+      title="Incoming"
+      total={pipeline.incoming}
+      totalTestId="incoming-total"
+      search={pipeline.search}
+      segments={SEGMENTS.map((s) => ({ ...s, n: s.count(pipeline) }))}
+      className="station-incoming"
+    />
   );
 }
 
-// DroppedCard is one of the two side-by-side Dropped sub-queues. It carries a
-// title, a count, its rows (the shared PrRow), and an empty state when its
-// Eligibility Gate removed nothing. `renderMeta` lets the red card append its
-// per-row failing-check count after the author while the draft card stays a bare
-// title/author row.
-function DroppedCard({
-  testid,
-  title,
-  items,
-  emptyNote,
-  renderMeta,
-}: {
-  testid: string;
-  title: string;
-  items: FunnelItem[];
-  emptyNote: string;
-  renderMeta?: (item: FunnelItem) => ReactNode;
-}) {
-  return (
-    <section className="card station-dropped-card" data-testid={testid}>
-      <div className="card-head">
-        <h2 className="card-title">{title}</h2>
-        <span className="card-count tnum">{items.length}</span>
-      </div>
-      {items.length === 0 ? (
-        <div className="card-empty">{emptyNote}</div>
-      ) : (
-        <div className="pr-list">
-          {items.map((item) => (
-            <PrRow key={item.number} item={item} meta={renderMeta?.(item)} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-// DroppedStation renders the two side-by-side Dropped sub-queues: pipeline-red
-// (PRs the All-Green Gate removed — each row shows its failing-check count) and
-// draft (PRs the Ready-for-Review Gate removed — a bare title/author row).
+// DroppedStation renders the two side-by-side Dropped sub-queues through the
+// shared StationCard: pipeline-red (PRs the All-Green Gate removed — each row
+// shows its failing-check count) and draft (PRs the Ready-for-Review Gate
+// removed — a bare title/author row).
 function DroppedStation({ pipeline }: { pipeline: PipelineSnapshot }) {
   return (
-    <div className="station-dropped">
-      <DroppedCard
+    <div className="station-pair">
+      <StationCard
         testid="dropped-red"
         title="Pipeline red"
         items={pipeline.dropped_red ?? []}
@@ -171,7 +92,7 @@ function DroppedStation({ pipeline }: { pipeline: PipelineSnapshot }) {
           </span>
         )}
       />
-      <DroppedCard
+      <StationCard
         testid="dropped-draft"
         title="Draft"
         items={pipeline.dropped_draft ?? []}

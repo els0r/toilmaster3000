@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { approveQueueItem, type QueueItem } from "./api";
+import { BreakingBadge } from "./Badges";
 import { DiffPill } from "./DiffPill";
 import { PrRow } from "./PrRow";
 
@@ -76,12 +77,7 @@ export function NeedsReview({
                     {(q.title_parts.breaking || reasonChips.length > 0) && (
                       <span className="sep">·</span>
                     )}
-                    {q.title_parts.breaking && (
-                      <span className="badge-breaking">
-                        <span className="dot" />
-                        breaking change
-                      </span>
-                    )}
+                    {q.title_parts.breaking && <BreakingBadge />}
                     {reasonChips.map((reason) => (
                       <span key={reason} className="badge-breaking">
                         <span className="dot" />

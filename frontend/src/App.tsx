@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   fetchApprovals,
+  fetchOutbound,
   fetchPipeline,
   fetchQueue,
   fetchStatus,
   type Approval,
 } from "./api";
 import { AnalyticsPanel } from "./Analytics";
+import { OutboundFunnel } from "./Outbound";
 import { PipelineFunnel } from "./Pipeline";
 import { RulesSection } from "./RulesEditor";
 import { SettingsPanel } from "./Settings";
@@ -31,6 +33,11 @@ export function App() {
   // empty funnel rather than a stale partition.
   const pipeline = usePollingClearable(fetchPipeline, POLL_MS);
 
+  // The outbound snapshot polls alongside it (the tab badge needs it from every
+  // tab) with the same clear-on-failure policy: a failed authored fetch shows a
+  // loading funnel, never stale stages.
+  const outbound = usePollingClearable(fetchOutbound, POLL_MS);
+
   // Numbers that first appeared in the most recent poll — the feed flashes them
   // once so a fresh approval is visible without the user hunting for it.
   const freshNumbers = useFreshApprovals(approvals);
@@ -44,14 +51,19 @@ export function App() {
     refetchApprovals();
   }
 
-  // The active tab lives in the URL hash (#pipeline / #rules) so a reload keeps
-  // your place and each tab is linkable — no router dependency.
+  // The active tab lives in the URL hash (#inbound / #outbound / #rules /
+  // #analytics) so a reload keeps your place and each tab is linkable — no
+  // router dependency.
   const [tab, setTab] = useHashTab();
 
   // Staging-count badge: the actionable "uncovered PRs awaiting a rule" count
-  // stays on the Pipeline tab control so it's visible even from the Rules tab.
+  // stays on the Inbound tab control so it's visible even from the Rules tab.
   // Zero (or a not-yet-loaded funnel) is shown as no badge.
   const stagingCount = pipeline?.staging?.length ?? 0;
+
+  // Ready-count badge: the outbound actionable signal (PRs waiting only on
+  // you), mirroring Inbound's staging badge. Zero shows no badge.
+  const readyCount = outbound?.ready?.length ?? 0;
 
   return (
     <div className="app-shell">
@@ -62,16 +74,32 @@ export function App() {
           <button
             type="button"
             role="tab"
-            id="tab-pipeline"
-            aria-selected={tab === "pipeline"}
-            aria-controls="panel-pipeline"
-            className={`tab${tab === "pipeline" ? " is-active" : ""}`}
-            onClick={() => setTab("pipeline")}
+            id="tab-inbound"
+            aria-selected={tab === "inbound"}
+            aria-controls="panel-inbound"
+            className={`tab${tab === "inbound" ? " is-active" : ""}`}
+            onClick={() => setTab("inbound")}
           >
-            Pipeline
+            Inbound
             {stagingCount > 0 && (
-              <span className="tab-badge tnum" data-testid="pipeline-tab-badge">
+              <span className="tab-badge tnum" data-testid="inbound-tab-badge">
                 {stagingCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-outbound"
+            aria-selected={tab === "outbound"}
+            aria-controls="panel-outbound"
+            className={`tab${tab === "outbound" ? " is-active" : ""}`}
+            onClick={() => setTab("outbound")}
+          >
+            Outbound
+            {readyCount > 0 && (
+              <span className="tab-badge tnum" data-testid="outbound-tab-badge">
+                {readyCount}
               </span>
             )}
           </button>
@@ -113,12 +141,8 @@ export function App() {
           </button>
         </div>
 
-        {tab === "pipeline" && (
-          <div
-            id="panel-pipeline"
-            role="tabpanel"
-            aria-labelledby="tab-pipeline"
-          >
+        {tab === "inbound" && (
+          <div id="panel-inbound" role="tabpanel" aria-labelledby="tab-inbound">
             <PipelineFunnel
               pipeline={pipeline}
               queue={queue}
@@ -126,6 +150,15 @@ export function App() {
               freshNumbers={freshNumbers}
               onApproved={onApproved}
             />
+          </div>
+        )}
+        {tab === "outbound" && (
+          <div
+            id="panel-outbound"
+            role="tabpanel"
+            aria-labelledby="tab-outbound"
+          >
+            <OutboundFunnel outbound={outbound} />
           </div>
         )}
         {tab === "rules" && (
@@ -156,16 +189,21 @@ export function App() {
   );
 }
 
-// Tab is the set of selectable tabs; the hash names map 1:1 (#pipeline / #rules /
-// #analytics / #settings).
-type Tab = "pipeline" | "rules" | "analytics" | "settings";
-const DEFAULT_TAB: Tab = "pipeline";
+// Tab is the set of selectable tabs; the hash names map 1:1 (#inbound /
+// #outbound / #rules / #analytics / #settings).
+type Tab = "inbound" | "outbound" | "rules" | "analytics" | "settings";
+const DEFAULT_TAB: Tab = "inbound";
+
+// LEGACY_HASHES are the retired hash names, redirected to #inbound so old
+// bookmarks survive both renames (Review → Pipeline → Inbound).
+const LEGACY_HASHES = ["#review", "#pipeline"];
 
 // tabFromHash reads the active tab from a location hash, falling back to the
-// default (Pipeline) for an empty or unknown hash. The legacy #review hash maps
-// to Pipeline so old bookmarks resolve to the renamed tab (the hash itself is
-// rewritten to #pipeline by the redirect in useHashTab).
+// default (Inbound) for an empty or unknown hash. The legacy #review and
+// #pipeline hashes map to Inbound so old bookmarks resolve to the renamed tab
+// (the hash itself is rewritten to #inbound by the redirect in useHashTab).
 function tabFromHash(hash: string): Tab {
+  if (hash === "#outbound") return "outbound";
   if (hash === "#rules") return "rules";
   if (hash === "#analytics") return "analytics";
   if (hash === "#settings") return "settings";
@@ -174,22 +212,24 @@ function tabFromHash(hash: string): Tab {
 
 // useHashTab keeps the active tab in sync with location.hash with no router:
 // it seeds from the current hash, follows external hashchange events
-// (back/forward, links), and writes the hash when a tab is selected. A legacy
-// #review hash is redirected to #pipeline so old links survive the rename.
+// (back/forward, links), and writes the hash when a tab is selected. Legacy
+// #review / #pipeline hashes are redirected to #inbound so old links survive
+// the renames.
 function useHashTab(): [Tab, (t: Tab) => void] {
   const [tab, setTabState] = useState<Tab>(() =>
     tabFromHash(window.location.hash),
   );
 
   useEffect(() => {
-    // Redirect old #review bookmarks to the renamed Pipeline tab. Done here (not
-    // in the seed) so the visible hash is rewritten, not just the active tab.
-    if (window.location.hash === "#review") {
-      window.location.hash = "pipeline";
+    // Redirect old #review / #pipeline bookmarks to the renamed Inbound tab.
+    // Done here (not in the seed) so the visible hash is rewritten, not just
+    // the active tab.
+    if (LEGACY_HASHES.includes(window.location.hash)) {
+      window.location.hash = "inbound";
     }
     const onHashChange = () => {
-      if (window.location.hash === "#review") {
-        window.location.hash = "pipeline";
+      if (LEGACY_HASHES.includes(window.location.hash)) {
+        window.location.hash = "inbound";
         return;
       }
       setTabState(tabFromHash(window.location.hash));

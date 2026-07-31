@@ -1,0 +1,297 @@
+import { describe, it, expect } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { OutboundFunnel } from "./Outbound";
+import type { Outbound, OutboundItem } from "./api";
+
+const outboundItem = (over: Partial<OutboundItem> = {}): OutboundItem => ({
+  number: 200,
+  title: "feat: an authored thing",
+  title_parts: {
+    type: "feat",
+    scopes: [],
+    breaking: false,
+    description: "an authored thing",
+  },
+  author: "lennart",
+  url: "https://github.com/o/r/pull/200",
+  additions: 10,
+  deletions: 2,
+  changed_files: 1,
+  conflict: false,
+  ...over,
+});
+
+const outbound = (over: Partial<Outbound> = {}): Outbound => {
+  const base: Outbound = {
+    outgoing: 0,
+    draft: [],
+    red: [],
+    running: [],
+    changes_requested: [],
+    awaiting_approval: [],
+    ready: [],
+    distribution: {
+      draft: 0,
+      red: 0,
+      running: 0,
+      changes_requested: 0,
+      awaiting_approval: 0,
+      ready: 0,
+    },
+    search: "is:open author:@me",
+    ...over,
+  };
+  // Keep the distribution honest with the itemized lists unless a test
+  // overrides it explicitly — the counts are the list lengths by construction.
+  if (!over.distribution) {
+    base.distribution = {
+      draft: base.draft?.length ?? 0,
+      red: base.red?.length ?? 0,
+      running: base.running?.length ?? 0,
+      changes_requested: base.changes_requested?.length ?? 0,
+      awaiting_approval: base.awaiting_approval?.length ?? 0,
+      ready: base.ready?.length ?? 0,
+    };
+  }
+  return base;
+};
+
+describe("Outbound funnel — Outgoing", () => {
+  // The Outgoing station summarizes the raw authored pull as a distribution bar
+  // (counts + legend), NOT a PR list — parallel to Inbound's Incoming station.
+  it("renders Outgoing as a distribution bar with the total and per-stage legend counts", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 8,
+          draft: [outboundItem({ number: 1 })],
+          red: [outboundItem({ number: 2 }), outboundItem({ number: 3 })],
+          running: [outboundItem({ number: 4 })],
+          changes_requested: [outboundItem({ number: 5 })],
+          awaiting_approval: [outboundItem({ number: 6 })],
+          ready: [outboundItem({ number: 7 }), outboundItem({ number: 8 })],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Outgoing")).toBeInTheDocument();
+    expect(screen.getByTestId("outgoing-total")).toHaveTextContent("8");
+    expect(
+      screen.getByRole("img", { name: /outgoing distribution/i }),
+    ).toBeInTheDocument();
+
+    expect(
+      within(screen.getByTestId("legend-draft")).getByText("1"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("legend-red")).getByText("2"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("legend-running")).getByText("1"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("legend-changes-requested")).getByText("1"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("legend-awaiting")).getByText("1"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("legend-ready")).getByText("2"),
+    ).toBeInTheDocument();
+  });
+
+  // The derived authored search rides the snapshot's `search` field and shows as
+  // a code chip so the operator can confirm which search produced the set.
+  it("shows the snapshot's authored search as a code chip", () => {
+    render(<OutboundFunnel outbound={outbound()} />);
+
+    const chip = screen.getByTestId("filter-chip");
+    expect(chip.tagName).toBe("CODE");
+    expect(chip).toHaveTextContent("is:open author:@me");
+  });
+});
+
+describe("Outbound funnel — itemized stations", () => {
+  // Every stage list renders through the shared PrRow: parsed title, author,
+  // diff magnitude, and a GitHub link on each row. Draft is the first itemized
+  // station (an outbound stage, not a gate — finish it).
+  it("renders a draft station whose rows show title, author, diff magnitude, and link", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 1,
+          draft: [
+            outboundItem({
+              number: 210,
+              title: "feat(ui): wip outbound tab",
+              title_parts: {
+                type: "feat",
+                scopes: ["ui"],
+                breaking: false,
+                description: "wip outbound tab",
+              },
+              author: "lennart",
+              url: "https://github.com/o/r/pull/210",
+              additions: 120,
+              deletions: 8,
+              changed_files: 5,
+            }),
+          ],
+        })}
+      />,
+    );
+
+    const card = screen.getByTestId("outbound-draft");
+    expect(within(card).getByText("Draft")).toBeInTheDocument();
+    expect(within(card).getByText("Wip outbound tab")).toBeInTheDocument();
+    expect(
+      within(card).getByText("lennart", { exact: false }),
+    ).toBeInTheDocument();
+    expect(within(card).getByText("+120")).toBeInTheDocument();
+    expect(within(card).getByText("−8")).toBeInTheDocument();
+    expect(within(card).getByText(/5 files/)).toBeInTheDocument();
+    const link = within(card).getByRole("link", { name: /#210/ });
+    expect(link).toHaveAttribute("href", "https://github.com/o/r/pull/210");
+  });
+
+  // "Not green" splits into two side-by-side sub-cards — pipeline red (go fix
+  // CI) and checks running (wait) — an author must distinguish the two.
+  it("renders pipeline-red and checks-running as side-by-side sub-cards", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 2,
+          red: [outboundItem({ number: 220 })],
+          running: [outboundItem({ number: 221 })],
+        })}
+      />,
+    );
+
+    const red = screen.getByTestId("outbound-red");
+    const running = screen.getByTestId("outbound-running");
+    expect(within(red).getByText(/pipeline red/i)).toBeInTheDocument();
+    expect(within(red).getByRole("link", { name: /#220/ })).toBeInTheDocument();
+    expect(within(running).getByText(/checks running/i)).toBeInTheDocument();
+    expect(
+      within(running).getByRole("link", { name: /#221/ }),
+    ).toBeInTheDocument();
+    // The two sub-cards share one side-by-side pair container.
+    expect(red.parentElement).toBe(running.parentElement);
+    expect(red.parentElement).toHaveClass("station-pair");
+  });
+
+  // Changes Requested, Awaiting Approval, and Ready are distinct stations, each
+  // itemizing its rows with a GitHub link.
+  it("renders Changes Requested, Awaiting Approval, and Ready as distinct stations", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 3,
+          changes_requested: [outboundItem({ number: 230 })],
+          awaiting_approval: [outboundItem({ number: 231 })],
+          ready: [outboundItem({ number: 232 })],
+        })}
+      />,
+    );
+
+    const changes = screen.getByTestId("outbound-changes-requested");
+    expect(within(changes).getByText("Changes Requested")).toBeInTheDocument();
+    expect(
+      within(changes).getByRole("link", { name: /#230/ }),
+    ).toBeInTheDocument();
+
+    const awaiting = screen.getByTestId("outbound-awaiting");
+    expect(within(awaiting).getByText("Awaiting Approval")).toBeInTheDocument();
+    expect(
+      within(awaiting).getByRole("link", { name: /#231/ }),
+    ).toBeInTheDocument();
+
+    const ready = screen.getByTestId("outbound-ready");
+    expect(within(ready).getByText("Ready")).toBeInTheDocument();
+    expect(
+      within(ready).getByRole("link", { name: /#232/ }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("Outbound funnel — row markers", () => {
+  // A conflicted Ready row stays in Ready (the stage partition is total) but
+  // carries a visible conflict marker — it never auto-merges until resolved,
+  // and fixing the conflict is on you, which is exactly what Ready means.
+  it("shows a conflict marker on a conflicted Ready row and none on a mergeable one", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 2,
+          ready: [
+            outboundItem({ number: 240, conflict: true }),
+            outboundItem({ number: 241, conflict: false }),
+          ],
+        })}
+      />,
+    );
+
+    const ready = screen.getByTestId("outbound-ready");
+    const markers = within(ready).getAllByText(/merge conflict/i);
+    expect(markers).toHaveLength(1);
+  });
+
+  // A breaking (`!`) PR shows the breaking badge on its row — arm with open
+  // eyes; the badge is the standing display fact, same as the inbound queue.
+  it("shows the breaking badge on a breaking row", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 2,
+          awaiting_approval: [
+            outboundItem({
+              number: 250,
+              title: "feat!: drop the old wire",
+              title_parts: {
+                type: "feat",
+                scopes: [],
+                breaking: true,
+                description: "drop the old wire",
+              },
+            }),
+            outboundItem({ number: 251 }),
+          ],
+        })}
+      />,
+    );
+
+    const awaiting = screen.getByTestId("outbound-awaiting");
+    expect(within(awaiting).getAllByText("breaking change")).toHaveLength(1);
+  });
+});
+
+describe("Outbound funnel — loading and empty states", () => {
+  // A null snapshot (first load, or a failed authored fetch that cleared it)
+  // shows a loading state and none of the stations — never stale buckets.
+  it("shows a loading state and no stations when the snapshot is null", () => {
+    render(<OutboundFunnel outbound={null} />);
+
+    expect(screen.getByText(/loading outbound/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("outgoing-total")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("outbound-ready")).not.toBeInTheDocument();
+  });
+
+  // Every station renders its own empty note when its stage holds nothing —
+  // the funnel's shape stays visible even with an empty pull.
+  it("renders an empty note per station on an empty snapshot", () => {
+    render(<OutboundFunnel outbound={outbound()} />);
+
+    for (const testid of [
+      "outbound-draft",
+      "outbound-red",
+      "outbound-running",
+      "outbound-changes-requested",
+      "outbound-awaiting",
+      "outbound-ready",
+    ]) {
+      expect(
+        within(screen.getByTestId(testid)).getByText(/none/i),
+      ).toBeInTheDocument();
+    }
+  });
+});
