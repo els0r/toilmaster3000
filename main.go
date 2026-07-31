@@ -129,7 +129,13 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("locate embedded frontend: %w", err)
 	}
 
-	client := github.NewCLI(cfg.repo, cfg.search)
+	// The effective inbound search appends -author:@me at startup so the two
+	// per-cycle pulls (inbound candidates, outbound authored) are disjoint:
+	// each PR lives on exactly one tab. The client and the /pipeline search
+	// chip both see this effective search, never the bare configured one.
+	inboundSearch := github.InboundSearch(cfg.search)
+
+	client := github.NewCLI(cfg.repo, inboundSearch)
 
 	// Load (or seed on first run) the rule set the engine matches each cycle.
 	rules, err := rule.NewStore(rulesPath)
@@ -171,7 +177,7 @@ func run(ctx context.Context, cfg config) error {
 
 	go eng.Run(ctx)
 
-	handler, err := server.New(spa, eng, rules, set, cfg.search)
+	handler, err := server.New(spa, eng, rules, set, inboundSearch)
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
