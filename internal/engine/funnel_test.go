@@ -26,7 +26,7 @@ func funnelEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *githu
 	require.NoError(t, err)
 
 	fake := github.NewFake(candidates...)
-	eng, err := engine.New(fake, statePath, store)
+	eng, err := engine.New(fake, statePath, store, testArms(t))
 	require.NoError(t, err)
 	return eng, fake
 }
@@ -126,7 +126,7 @@ func TestFunnelPartitionSumsToIncoming(t *testing.T) {
 		{Number: 6, Title: "chore: elsewhere", Author: "f", URL: "u6", Checks: green(), ReviewDecision: "APPROVED"}, // approved elsewhere
 	}
 	fake := github.NewFake(candidates...)
-	eng, err := engine.New(fake, statePath, store)
+	eng, err := engine.New(fake, statePath, store, testArms(t))
 	require.NoError(t, err)
 
 	// First cycle approves #1 (it becomes a dedup member); run a second cycle with

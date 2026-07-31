@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/conventionalcommit"
 	"github.com/els0r/toilmaster3000/internal/github"
 	"github.com/els0r/toilmaster3000/internal/rule"
@@ -147,7 +148,11 @@ type Engine struct {
 	client    github.GitHubClient
 	statePath string
 	rules     *rule.Store
-	logger    *slog.Logger
+	// armed is the persisted Armed/Withheld consent set of the outbound
+	// direction (ADR 0016) — see armed.go for the arm lifecycle the engine
+	// enforces (snapshot-validated arming, level-triggered disarm, cleanup).
+	armed  *armed.Store
+	logger *slog.Logger
 
 	mu     sync.Mutex
 	dedup  map[int]bool
@@ -168,15 +173,18 @@ type Engine struct {
 	pollInterval time.Duration // wait between cycles; default DefaultPollInterval
 }
 
-// New constructs an Engine over the given client, approvals.jsonl path, and
-// rule store. It loads any existing approvals into the dedup set and feed so
-// approvals survive restart and are not re-approved. The rule store supplies
-// the enabled rules each cycle consults to decide which candidates to approve.
-func New(client github.GitHubClient, statePath string, rules *rule.Store) (*Engine, error) {
+// New constructs an Engine over the given client, approvals.jsonl path, rule
+// store, and armed store. It loads any existing approvals into the dedup set
+// and feed so approvals survive restart and are not re-approved. The rule
+// store supplies the enabled rules each cycle consults to decide which
+// candidates to approve; the armed store carries the outbound consent set the
+// cycle reconciles (see armed.go).
+func New(client github.GitHubClient, statePath string, rules *rule.Store, arms *armed.Store) (*Engine, error) {
 	e := &Engine{
 		client:       client,
 		statePath:    statePath,
 		rules:        rules,
+		armed:        arms,
 		logger:       slog.Default(),
 		dedup:        map[int]bool{},
 		prStates:     map[int]github.PRState{},
