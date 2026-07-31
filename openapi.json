@@ -136,6 +136,36 @@
         ],
         "type": "object"
       },
+      "ArmOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/ArmOutputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "armed": {
+            "type": "boolean"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "number",
+          "armed"
+        ],
+        "type": "object"
+      },
       "Assumptions": {
         "additionalProperties": false,
         "properties": {
@@ -560,6 +590,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "armed": {
+            "type": "boolean"
+          },
           "author": {
             "type": "string"
           },
@@ -597,7 +630,8 @@
           "additions",
           "deletions",
           "changed_files",
-          "conflict"
+          "conflict",
+          "armed"
         ],
         "type": "object"
       },
@@ -1099,6 +1133,86 @@
           }
         },
         "summary": "Live outbound funnel snapshot (the six stage lists + distribution counts)"
+      }
+    },
+    "/api/toilmaster3000/v1/outbound/{number}/arm": {
+      "delete": {
+        "operationId": "disarm-outbound-item",
+        "parameters": [
+          {
+            "description": "PR number to disarm",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "PR number to disarm",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArmOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Disarm an outbound PR — withdraw the merge consent (idempotent)"
+      },
+      "post": {
+        "operationId": "arm-outbound-item",
+        "parameters": [
+          {
+            "description": "PR number to arm, from the outbound snapshot",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "PR number to arm, from the outbound snapshot",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArmOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Arm an outbound PR — the per-PR consent that will authorize its auto-merge (rejected while changes are requested)"
       }
     },
     "/api/toilmaster3000/v1/pipeline": {

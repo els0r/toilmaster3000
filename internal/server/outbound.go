@@ -26,6 +26,12 @@ type OutboundItem struct {
 	// stage boundary, so a conflicted Ready row stays in Ready carrying this
 	// flag. UNKNOWN (GitHub still computing) derives false, not a conflict.
 	Conflict bool `json:"conflict"`
+	// Armed is the row's Armed/Withheld consent state (ADR 0016) — the badge
+	// riding the row in whatever stage it is in, orthogonal to the partition.
+	// Like PR State on the feed it is NOT snapshot data: the handler zips it in
+	// from the engine's live armed set at response time, so a toggle reflects
+	// on the very next fetch, not the next cycle. Default false — Withheld.
+	Armed bool `json:"armed"`
 }
 
 // OutboundDistribution is the per-stage count set of the outbound partition —
@@ -63,10 +69,11 @@ type Outbound struct {
 }
 
 // outboundItemToBody converts an engine OutboundItem to its wire DTO,
-// computing the TitleParts parse-on-read (ADR 0006) and deriving the Conflict
-// flag from the raw mergeable signal. See ADR 0002 for why the engine type
-// does not cross the boundary directly.
-func outboundItemToBody(it engine.OutboundItem) OutboundItem {
+// computing the TitleParts parse-on-read (ADR 0006), deriving the Conflict
+// flag from the raw mergeable signal, and zipping in the row's live armed
+// state. See ADR 0002 for why the engine type does not cross the boundary
+// directly.
+func outboundItemToBody(it engine.OutboundItem, armed bool) OutboundItem {
 	return OutboundItem{
 		Number:       it.Number,
 		Title:        it.Title,
@@ -77,15 +84,16 @@ func outboundItemToBody(it engine.OutboundItem) OutboundItem {
 		Deletions:    it.Deletions,
 		ChangedFiles: it.ChangedFiles,
 		Conflict:     it.Mergeable == github.MergeableConflicting,
+		Armed:        armed,
 	}
 }
 
 // outboundItemsToBody maps a stage list to wire DTOs, returning a non-nil
 // empty slice for an empty list so the JSON renders [] not null.
-func outboundItemsToBody(items []engine.OutboundItem) []OutboundItem {
+func outboundItemsToBody(items []engine.OutboundItem, armed map[int]bool) []OutboundItem {
 	out := make([]OutboundItem, 0, len(items))
 	for _, it := range items {
-		out = append(out, outboundItemToBody(it))
+		out = append(out, outboundItemToBody(it, armed[it.Number]))
 	}
 	return out
 }
@@ -93,16 +101,17 @@ func outboundItemsToBody(items []engine.OutboundItem) []OutboundItem {
 // outboundToBody converts the engine's live outbound snapshot to its wire DTO
 // (ADR 0002). The six lists are itemized with parse-on-read title parts; the
 // distribution counts are the list lengths, so they sum to Outgoing by
-// construction.
-func outboundToBody(ob engine.Outbound) Outbound {
+// construction. armed is the engine's LIVE armed set, zipped onto each row
+// (the PR-State precedent) so a fresh toggle shows without waiting a cycle.
+func outboundToBody(ob engine.Outbound, armed map[int]bool) Outbound {
 	return Outbound{
 		Outgoing:         ob.Outgoing,
-		Draft:            outboundItemsToBody(ob.Draft),
-		Red:              outboundItemsToBody(ob.Red),
-		Running:          outboundItemsToBody(ob.Running),
-		ChangesRequested: outboundItemsToBody(ob.ChangesRequested),
-		AwaitingApproval: outboundItemsToBody(ob.AwaitingApproval),
-		Ready:            outboundItemsToBody(ob.Ready),
+		Draft:            outboundItemsToBody(ob.Draft, armed),
+		Red:              outboundItemsToBody(ob.Red, armed),
+		Running:          outboundItemsToBody(ob.Running, armed),
+		ChangesRequested: outboundItemsToBody(ob.ChangesRequested, armed),
+		AwaitingApproval: outboundItemsToBody(ob.AwaitingApproval, armed),
+		Ready:            outboundItemsToBody(ob.Ready, armed),
 		Distribution: OutboundDistribution{
 			Draft:            len(ob.Draft),
 			Red:              len(ob.Red),
@@ -116,4 +125,15 @@ func outboundToBody(ob engine.Outbound) Outbound {
 
 type outboundOutput struct {
 	Body Outbound
+}
+
+// armOutput is the success body of an arm/disarm toggle: an ok marker, the PR
+// number, and the resulting consent state (true after POST, false after
+// DELETE) so the client can update the toggle without a second fetch.
+type armOutput struct {
+	Body struct {
+		OK     bool `json:"ok"`
+		Number int  `json:"number"`
+		Armed  bool `json:"armed"`
+	}
 }

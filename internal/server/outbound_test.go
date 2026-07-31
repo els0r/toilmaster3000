@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"testing"
 
+	"github.com/els0r/toilmaster3000/internal/armed"
+	"github.com/els0r/toilmaster3000/internal/engine"
 	"github.com/els0r/toilmaster3000/internal/github"
 	"github.com/els0r/toilmaster3000/internal/server"
 	"github.com/stretchr/testify/require"
@@ -83,6 +86,123 @@ func TestOutboundSnapshotMapping(t *testing.T) {
 
 	// The Outgoing station shows the fixed derived search as a code chip.
 	require.Equal(t, github.AuthoredSearch, body.Search)
+}
+
+// armedAuthored is a minimal authored pull spanning the armable stages plus a
+// Changes-Requested PR, for the arm/disarm endpoint tests.
+func armedAuthored() []github.PR {
+	return []github.PR{
+		{Number: 21, Title: "feat(a): red", Author: "me", URL: "u21",
+			Checks: []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}},
+		{Number: 22, Title: "feat(b): objected", Author: "me", URL: "u22", Checks: greenChecks(), ReviewDecision: "CHANGES_REQUESTED"},
+		{Number: 23, Title: "feat(c): pending", Author: "me", URL: "u23", Checks: greenChecks(), ReviewDecision: "REVIEW_REQUIRED"},
+	}
+}
+
+// newArmedOutboundServer builds a server whose engine has run one cycle over
+// the given authored pull, with the armed store over an explicit armed.json
+// path so a restart test can rebuild everything over the same file. It returns
+// the server URL.
+func newArmedOutboundServer(t *testing.T, armedPath string, authored []github.PR) string {
+	t.Helper()
+	fake := github.NewFake()
+	fake.Authored = authored
+	store := storeWith(t, matchAllChores())
+	arms, err := armed.NewStore(armedPath)
+	require.NoError(t, err)
+	eng, err := engine.New(fake, filepath.Join(t.TempDir(), "approvals.jsonl"), store, arms)
+	require.NoError(t, err)
+	eng.RunCycleOnce(context.Background())
+	srv := newTestServerFor(t, eng, store)
+	return srv.URL
+}
+
+// armedFlags returns each row's armed flag keyed by PR number across every
+// stage list of an /outbound body.
+func armedFlags(body server.Outbound) map[int]bool {
+	out := map[int]bool{}
+	for _, stage := range [][]server.OutboundItem{
+		body.Draft, body.Red, body.Running,
+		body.ChangesRequested, body.AwaitingApproval, body.Ready,
+	} {
+		for _, it := range stage {
+			out[it.Number] = it.Armed
+		}
+	}
+	return out
+}
+
+// OB-A1 (tracer): POST /outbound/{number}/arm arms a PR, and every /outbound
+// row carries an armed flag — true on the armed row (whatever its stage: here
+// a RED one, arm-while-red being the core use case), false elsewhere (the
+// Withheld default).
+func TestArmEndpointArmsAndOutboundCarriesFlag(t *testing.T) {
+	url := newArmedOutboundServer(t, filepath.Join(t.TempDir(), "armed.json"), armedAuthored())
+
+	var before server.Outbound
+	getJSON(t, url+apiPrefix+"/outbound", &before)
+	require.Equal(t, map[int]bool{21: false, 22: false, 23: false}, armedFlags(before),
+		"every authored PR defaults to Withheld")
+
+	code := doJSON(t, http.MethodPost, url+apiPrefix+"/outbound/21/arm", nil, nil)
+	require.Equal(t, http.StatusOK, code)
+
+	var after server.Outbound
+	getJSON(t, url+apiPrefix+"/outbound", &after)
+	require.Equal(t, map[int]bool{21: true, 22: false, 23: false}, armedFlags(after),
+		"the armed flag rides the row immediately (no cycle needed), others stay Withheld")
+}
+
+// OB-A2: arming a Changes-Requested PR is a 4xx — Armed ∧ Changes-Requested is
+// an impossible state, and the endpoint is one of its two guards (the
+// level-triggered disarm is the other).
+func TestArmEndpointRejectsChangesRequested(t *testing.T) {
+	url := newArmedOutboundServer(t, filepath.Join(t.TempDir(), "armed.json"), armedAuthored())
+
+	code, msg := errorMessage(t, http.MethodPost, url+apiPrefix+"/outbound/22/arm", nil)
+	require.Equal(t, http.StatusConflict, code)
+	require.Contains(t, msg, "changes requested")
+
+	var body server.Outbound
+	getJSON(t, url+apiPrefix+"/outbound", &body)
+	require.False(t, armedFlags(body)[22], "the rejected PR stays Withheld")
+}
+
+// OB-A3: arming a PR absent from the outbound snapshot is a 404 — consent is
+// only ever given over a PR the operator can see.
+func TestArmEndpointUnknownPRIs404(t *testing.T) {
+	url := newArmedOutboundServer(t, filepath.Join(t.TempDir(), "armed.json"), armedAuthored())
+
+	code, _ := errorMessage(t, http.MethodPost, url+apiPrefix+"/outbound/999/arm", nil)
+	require.Equal(t, http.StatusNotFound, code)
+}
+
+// OB-A4: DELETE /outbound/{number}/arm disarms — the toggle's other half —
+// and the row reads Withheld again on the next fetch.
+func TestDisarmEndpointDisarms(t *testing.T) {
+	url := newArmedOutboundServer(t, filepath.Join(t.TempDir(), "armed.json"), armedAuthored())
+
+	require.Equal(t, http.StatusOK, doJSON(t, http.MethodPost, url+apiPrefix+"/outbound/23/arm", nil, nil))
+	require.Equal(t, http.StatusOK, doJSON(t, http.MethodDelete, url+apiPrefix+"/outbound/23/arm", nil, nil))
+
+	var body server.Outbound
+	getJSON(t, url+apiPrefix+"/outbound", &body)
+	require.False(t, armedFlags(body)[23], "the disarmed PR is Withheld again")
+}
+
+// OB-A5: the armed set survives a tm3k restart — a fresh engine + server over
+// the same armed.json still reports the row armed after its first cycle.
+func TestArmedSurvivesRestart(t *testing.T) {
+	armedPath := filepath.Join(t.TempDir(), "armed.json")
+
+	url1 := newArmedOutboundServer(t, armedPath, armedAuthored())
+	require.Equal(t, http.StatusOK, doJSON(t, http.MethodPost, url1+apiPrefix+"/outbound/21/arm", nil, nil))
+
+	// Restart: everything rebuilt over the same armed.json.
+	url2 := newArmedOutboundServer(t, armedPath, armedAuthored())
+	var body server.Outbound
+	getJSON(t, url2+apiPrefix+"/outbound", &body)
+	require.True(t, armedFlags(body)[21], "the arm survives the restart")
 }
 
 // OB2: before any cycle (a fresh restart), /outbound renders the empty

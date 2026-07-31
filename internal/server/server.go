@@ -576,15 +576,65 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		Summary:     "Live outbound funnel snapshot (the six stage lists + distribution counts)",
 	}, func(_ context.Context, _ *struct{}) (*outboundOutput, error) {
 		// A locked read of the live snapshot, mapped to the wire DTO with
-		// parse-on-read title parts (ADR 0006). It is the zero value before the
-		// first cycle and after a failed outbound fetch, which renders as empty
-		// lists + zero counts.
-		body := outboundToBody(eng.Outbound())
+		// parse-on-read title parts (ADR 0006) and the LIVE armed set zipped onto
+		// each row (a toggle shows on the next fetch, not the next cycle). It is
+		// the zero value before the first cycle and after a failed outbound
+		// fetch, which renders as empty lists + zero counts.
+		body := outboundToBody(eng.Outbound(), eng.ArmedSet())
 		// The fixed derived authored search rides the snapshot so the Outgoing
 		// station can show WHICH search produced this set — seam config, not
 		// snapshot data, so it is set here rather than in outboundToBody.
 		body.Search = github.AuthoredSearch
 		return &outboundOutput{Body: body}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "arm-outbound-item",
+		Method:      http.MethodPost,
+		Path:        APIPrefix + "/outbound/{number}/arm",
+		Summary:     "Arm an outbound PR — the per-PR consent that will authorize its auto-merge (rejected while changes are requested)",
+	}, func(_ context.Context, in *struct {
+		Number int `path:"number" doc:"PR number to arm, from the outbound snapshot"`
+	}) (*armOutput, error) {
+		if err := eng.Arm(in.Number); err != nil {
+			switch {
+			case errors.Is(err, engine.ErrNotInOutbound):
+				return nil, huma.Error404NotFound(err.Error())
+			case errors.Is(err, engine.ErrChangesRequested):
+				// Armed ∧ Changes-Requested is an impossible state: an open
+				// objection requires fresh consent after re-approval — a conflict
+				// with the PR's current review state, not a malformed request.
+				return nil, huma.Error409Conflict(err.Error())
+			default:
+				return nil, huma.Error500InternalServerError(err.Error())
+			}
+		}
+		out := &armOutput{}
+		out.Body.OK = true
+		out.Body.Number = in.Number
+		out.Body.Armed = true
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "disarm-outbound-item",
+		Method:      http.MethodDelete,
+		Path:        APIPrefix + "/outbound/{number}/arm",
+		Summary:     "Disarm an outbound PR — withdraw the merge consent (idempotent)",
+	}, func(_ context.Context, in *struct {
+		Number int `path:"number" doc:"PR number to disarm"`
+	}) (*armOutput, error) {
+		// Withdrawing consent is always safe, so unlike Arm there is no snapshot
+		// check: disarming an unknown or already-Withheld number is a quiet no-op
+		// (only a persist failure errors).
+		if err := eng.Disarm(in.Number); err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		out := &armOutput{}
+		out.Body.OK = true
+		out.Body.Number = in.Number
+		out.Body.Armed = false
+		return out, nil
 	})
 
 	huma.Register(api, huma.Operation{
