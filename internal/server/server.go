@@ -570,6 +570,24 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 	})
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-outbound",
+		Method:      http.MethodGet,
+		Path:        APIPrefix + "/outbound",
+		Summary:     "Live outbound funnel snapshot (the six stage lists + distribution counts)",
+	}, func(_ context.Context, _ *struct{}) (*outboundOutput, error) {
+		// A locked read of the live snapshot, mapped to the wire DTO with
+		// parse-on-read title parts (ADR 0006). It is the zero value before the
+		// first cycle and after a failed outbound fetch, which renders as empty
+		// lists + zero counts.
+		body := outboundToBody(eng.Outbound())
+		// The fixed derived authored search rides the snapshot so the Outgoing
+		// station can show WHICH search produced this set — seam config, not
+		// snapshot data, so it is set here rather than in outboundToBody.
+		body.Search = github.AuthoredSearch
+		return &outboundOutput{Body: body}, nil
+	})
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-analytics",
 		Method:      http.MethodGet,
 		Path:        APIPrefix + "/analytics",
