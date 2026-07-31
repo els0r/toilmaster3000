@@ -230,10 +230,18 @@
               "null"
             ]
           },
+          "merged_count": {
+            "format": "int64",
+            "type": "integer"
+          },
           "outcome": {
             "type": "string"
           },
           "queue_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ready_count": {
             "format": "int64",
             "type": "integer"
           },
@@ -248,7 +256,9 @@
           "approved_count",
           "queue_count",
           "dropped_count",
-          "staging_count"
+          "staging_count",
+          "ready_count",
+          "merged_count"
         ],
         "type": "object"
       },
@@ -452,6 +462,46 @@
         "required": [
           "ok",
           "number"
+        ],
+        "type": "object"
+      },
+      "Merge": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "merged_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "title_parts": {
+            "$ref": "#/components/schemas/TitleParts"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "title",
+          "title_parts",
+          "url",
+          "merged_at",
+          "approved_by"
         ],
         "type": "object"
       },
@@ -1105,6 +1155,40 @@
           }
         },
         "summary": "Approval Feed, newest-first"
+      }
+    },
+    "/api/toilmaster3000/v1/merges": {
+      "get": {
+        "operationId": "list-merges",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Merge"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Merge ledger, newest-first, today only (the Merged station)"
       }
     },
     "/api/toilmaster3000/v1/outbound": {
