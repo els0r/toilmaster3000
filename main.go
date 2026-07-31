@@ -39,6 +39,7 @@ var embeddedFrontend embed.FS
 const (
 	addr         = "localhost:8666"
 	statePath    = ".state/approvals.jsonl"
+	mergesPath   = ".state/merges.jsonl"
 	armedPath    = ".state/armed.json"
 	rulesPath    = ".config/rules.yaml"
 	settingsPath = ".config/settings.yaml"
@@ -158,7 +159,7 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("build armed store: %w", err)
 	}
 
-	eng, err := engine.New(client, statePath, rules, arms)
+	eng, err := engine.New(client, statePath, mergesPath, rules, arms)
 	if err != nil {
 		return fmt.Errorf("build engine: %w", err)
 	}

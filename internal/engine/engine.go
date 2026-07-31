@@ -147,7 +147,11 @@ const ManualApprovalPrefix = "human approval: "
 type Engine struct {
 	client    github.GitHubClient
 	statePath string
-	rules     *rule.Store
+	// mergesPath is the merge ledger file (merges.jsonl) — the outbound analog
+	// of statePath's approvals.jsonl, appended only on a successful merge (see
+	// merges.go).
+	mergesPath string
+	rules      *rule.Store
 	// armed is the persisted Armed/Withheld consent set of the outbound
 	// direction (ADR 0016) — see armed.go for the arm lifecycle the engine
 	// enforces (snapshot-validated arming, level-triggered disarm, cleanup).
@@ -156,7 +160,13 @@ type Engine struct {
 
 	mu     sync.Mutex
 	dedup  map[int]bool
-	feed   []Approval  // newest-first
+	feed   []Approval // newest-first
+	// merges is the in-memory merge ledger, newest-first — loaded from
+	// merges.jsonl at startup, appended on every successful outbound merge
+	// (see merges.go). Durable by design: a merged PR leaves the is:open pull
+	// immediately, so the ledger is the only signal left for the Merged
+	// station and the heartbeat's merged count.
+	merges []Merge
 	queue  []QueueItem // live Needs-Human-Review snapshot, recomputed each cycle
 	funnel Funnel      // live Cycle Funnel snapshot, recomputed each cycle
 	// outbound is the live outbound funnel snapshot (the authored direction),
@@ -173,16 +183,19 @@ type Engine struct {
 	pollInterval time.Duration // wait between cycles; default DefaultPollInterval
 }
 
-// New constructs an Engine over the given client, approvals.jsonl path, rule
-// store, and armed store. It loads any existing approvals into the dedup set
-// and feed so approvals survive restart and are not re-approved. The rule
-// store supplies the enabled rules each cycle consults to decide which
-// candidates to approve; the armed store carries the outbound consent set the
-// cycle reconciles (see armed.go).
-func New(client github.GitHubClient, statePath string, rules *rule.Store, arms *armed.Store) (*Engine, error) {
+// New constructs an Engine over the given client, approvals.jsonl path,
+// merges.jsonl path, rule store, and armed store. It loads any existing
+// approvals into the dedup set and feed so approvals survive restart and are
+// not re-approved, and any existing merge ledger so the Merged station
+// survives restart too. The rule store supplies the enabled rules each cycle
+// consults to decide which candidates to approve; the armed store carries the
+// outbound consent set the cycle reconciles (see armed.go) and the merge step
+// obeys (see merge.go).
+func New(client github.GitHubClient, statePath, mergesPath string, rules *rule.Store, arms *armed.Store) (*Engine, error) {
 	e := &Engine{
 		client:       client,
 		statePath:    statePath,
+		mergesPath:   mergesPath,
 		rules:        rules,
 		armed:        arms,
 		logger:       slog.Default(),
@@ -193,6 +206,9 @@ func New(client github.GitHubClient, statePath string, rules *rule.Store, arms *
 	}
 	if err := e.load(); err != nil {
 		return nil, fmt.Errorf("load approvals: %w", err)
+	}
+	if err := e.loadMerges(); err != nil {
+		return nil, fmt.Errorf("load merges: %w", err)
 	}
 	return e, nil
 }

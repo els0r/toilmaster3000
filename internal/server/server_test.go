@@ -75,6 +75,13 @@ func testArms(t *testing.T) *armed.Store {
 	return arms
 }
 
+// tempMerges returns a throwaway merges.jsonl path — the merge ledger every
+// server test that does not assert merging itself wires in.
+func tempMerges(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "merges.jsonl")
+}
+
 // newEngine builds an Engine over the given fake client, a temp-dir state file,
 // and a permissive chore-matching rule store. The fake GitHubClient is the only
 // substitution; everything else is asserted through the HTTP API. The store is
@@ -83,7 +90,7 @@ func newEngine(t *testing.T, fake *github.Fake) (*engine.Engine, *rule.Store) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(fake, statePath, store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	return eng, store
 }
@@ -94,7 +101,7 @@ func newEngine(t *testing.T, fake *github.Fake) (*engine.Engine, *rule.Store) {
 func newEngineAt(t *testing.T, fake *github.Fake, statePath string) (*engine.Engine, *rule.Store) {
 	t.Helper()
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(fake, statePath, store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	return eng, store
 }
@@ -104,7 +111,7 @@ func newEngineAt(t *testing.T, fake *github.Fake, statePath string) (*engine.Eng
 func newEngineWith(t *testing.T, fake *github.Fake, store *rule.Store) *engine.Engine {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
-	eng, err := engine.New(fake, statePath, store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	return eng
 }
@@ -917,7 +924,7 @@ func TestSeededDefaultsDriveCycle(t *testing.T) {
 	fake := github.NewFake(mixedCandidates(self)...)
 	fake.Login = self
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
-	eng, err := engine.New(fake, statePath, store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	eng.SetSelfLogin(self)
 	srv := newTestServerFor(t, eng, store)
@@ -1847,7 +1854,7 @@ func TestLegacyApprovalNotManual(t *testing.T) {
 		ApprovedAt:  time.Now(),
 	})
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -1879,7 +1886,7 @@ func TestApprovalsTodayScopedAtLocalMidnight(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -1922,7 +1929,7 @@ func TestAnalyticsTodayStatsRow(t *testing.T) {
 			MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -1953,7 +1960,7 @@ func TestAnalyticsRangeParamDrivesCutoff(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2000,7 +2007,7 @@ func TestAnalyticsSeriesPerDay(t *testing.T) {
 			MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2063,7 +2070,7 @@ func TestAnalyticsHeadlineDeltasVsAlignedPriorPeriod(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now.Add(-1 * time.Hour)},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2088,7 +2095,7 @@ func TestAnalyticsWireIsSnakeCase(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: time.Now()},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2110,7 +2117,7 @@ func TestAnalyticsWireIsSnakeCase(t *testing.T) {
 func TestAnalyticsEmptyRangeAllZeros(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t)) // no file -> empty feed
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t)) // no file -> empty feed
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2221,7 +2228,7 @@ func TestAnalyticsSwitchesSavedMoneyRange(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	set, err := settings.NewStore(filepath.Join(t.TempDir(), "settings.yaml"))
 	require.NoError(t, err)
@@ -2268,7 +2275,7 @@ func TestAnalyticsByTypeCohort(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 

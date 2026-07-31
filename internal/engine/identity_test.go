@@ -17,7 +17,7 @@ func TestSelfLoginRoundTrip(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
 	require.NoError(t, err)
-	eng, err := engine.New(github.NewFake(), statePath, store, testArms(t))
+	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t))
 	require.NoError(t, err)
 
 	require.Empty(t, eng.SelfLogin(), "no self login before preflight resolves it")

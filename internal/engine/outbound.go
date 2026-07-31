@@ -120,6 +120,12 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 		"ready", len(ob.Ready),
 	)
 	e.setOutbound(ob)
+
+	// The merge step runs LAST, over the same fresh snapshot: reconciliation
+	// above already applied the level-triggered disarm, so consent read now is
+	// current. A failed outbound fetch returned early — the robot never merges
+	// on stale data (ADR 0016).
+	e.mergeArmedReady(ctx, ob)
 }
 
 // setOutbound swaps the outbound snapshot under lock.
