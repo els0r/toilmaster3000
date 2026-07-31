@@ -111,6 +111,19 @@ type GitHubClient interface {
 	// 0008). Files past the page cap are simply not returned; the caller compares
 	// the count against the PR's changed_files to render a "first N of M" banner.
 	Diff(ctx context.Context, number int) ([]FileDiff, error)
+	// MergeInfo fetches one PR's live title, body, and reviews in a single
+	// `gh pr view` at the moment of merge — a sanctioned per-PR call in the ADR
+	// 0008 sense (rare, consented via the Arm; fires only on an actual merge),
+	// which guarantees the commit message is built from the PR description as
+	// it is NOW, never a stale arm-time copy (ADR 0016). Decode-only:
+	// CommitMessage/ApprovedBy judge the details.
+	MergeInfo(ctx context.Context, number int) (MergeDetails, error)
+	// Merge squash-merges one PR with the given commit subject and body,
+	// deleting the branch — the gh-land command shape
+	// `gh pr merge <n> -s -d -t <subject> -b <body>` (ADR 0016). The engine
+	// owns the preconditions and the one immediate retry; this call only
+	// executes.
+	Merge(ctx context.Context, number int, subject, body string) error
 }
 
 // CLI is the production GitHubClient. It shells out to the gh CLI, reusing the
@@ -320,6 +333,64 @@ func (c *CLI) Diff(ctx context.Context, number int) ([]FileDiff, error) {
 		return nil, fmt.Errorf("decode gh api files output: %w", err)
 	}
 	return files, nil
+}
+
+// ghViewItem mirrors the JSON gh emits for `gh pr view --json
+// title,body,reviews`. Reviewer logins nest under author.login, like the list
+// call's author.
+type ghViewItem struct {
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	Reviews []struct {
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+		State string `json:"state"`
+	} `json:"reviews"`
+}
+
+// MergeInfo fetches one PR's live merge-time details via a single
+// `gh pr view` (the sanctioned per-merge call, ADR 0016). Decode-only —
+// CommitMessage judges the details into the commit message.
+func (c *CLI) MergeInfo(ctx context.Context, number int) (MergeDetails, error) {
+	cmd := exec.CommandContext(ctx, "gh", "pr", "view", strconv.Itoa(number),
+		"--repo", c.repo,
+		"--json", "title,body,reviews",
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return MergeDetails{}, fmt.Errorf("gh pr view %d: %w: %s", number, err, stderr.String())
+	}
+
+	var item ghViewItem
+	if err := json.Unmarshal(stdout.Bytes(), &item); err != nil {
+		return MergeDetails{}, fmt.Errorf("decode gh pr view output: %w", err)
+	}
+	details := MergeDetails{Title: item.Title, Body: item.Body}
+	for _, r := range item.Reviews {
+		details.Reviews = append(details.Reviews, Review{Author: r.Author.Login, State: r.State})
+	}
+	return details, nil
+}
+
+// Merge squash-merges one PR with the given commit subject and body, deleting
+// the branch — the gh-land command shape (ADR 0016). The commit message rides
+// as exec args, so no shell quoting can corrupt it.
+func (c *CLI) Merge(ctx context.Context, number int, subject, body string) error {
+	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", strconv.Itoa(number),
+		"--repo", c.repo,
+		"-s", "-d",
+		"-t", subject,
+		"-b", body,
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gh pr merge %d: %w: %s", number, err, stderr.String())
+	}
+	return nil
 }
 
 // Approve records an approving review on one PR.

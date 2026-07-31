@@ -43,6 +43,13 @@ const (
 // it; the stage fold never reads mergeable.
 const MergeableConflicting = "CONFLICTING"
 
+// MergeableMergeable is gh's mergeable value for a PR GitHub will accept a
+// merge on — the merge step's final precondition (ADR 0016). Anything else
+// (CONFLICTING, or UNKNOWN while GitHub is still computing) blocks the merge
+// without moving the PR out of its stage; UNKNOWN is retried naturally next
+// cycle.
+const MergeableMergeable = "MERGEABLE"
+
 // StatusContext pending states (the legacy commit-status analog of a CheckRun
 // that has not completed).
 const (
