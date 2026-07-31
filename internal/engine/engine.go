@@ -154,6 +154,10 @@ type Engine struct {
 	feed   []Approval  // newest-first
 	queue  []QueueItem // live Needs-Human-Review snapshot, recomputed each cycle
 	funnel Funnel      // live Cycle Funnel snapshot, recomputed each cycle
+	// outbound is the live outbound funnel snapshot (the authored direction),
+	// recomputed each cycle from its OWN list call and cleared when that call
+	// fails — see outbound.go.
+	outbound Outbound
 	// prStates is the live GitHub lifecycle of feed PRs, keyed by number. It is
 	// volatile and NEVER persisted (the approvals.jsonl record is the frozen
 	// approval moment): refreshed out-of-band at the tail of every cycle, empty
@@ -354,6 +358,12 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 	// a list-fetch failure or a cycle that approved nothing): a PR approved earlier
 	// can merge/close between cycles independent of new candidates.
 	defer e.refreshPRStates(ctx)
+
+	// The outbound snapshot is rebuilt at the tail of EVERY cycle too (deferred
+	// so it runs even when the inbound fetch fails): the two pulls are disjoint
+	// by search and fail independently — only a failed OUTBOUND fetch clears the
+	// outbound snapshot.
+	defer e.rebuildOutbound(ctx)
 
 	candidates, err := e.client.ListCandidates(ctx)
 	if err != nil {
