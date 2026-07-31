@@ -16,6 +16,18 @@ export function BreakingBadge() {
   );
 }
 
+// ArmedBadge is the outbound consent marker: the per-PR Armed state riding
+// the row in whatever stage the PR is in — orthogonal to the stage partition,
+// a badge and never a stage. A row without it is Withheld, the default.
+export function ArmedBadge() {
+  return (
+    <span className="badge-armed">
+      <span className="dot" />
+      armed
+    </span>
+  );
+}
+
 // ConflictBadge is the Ready station's conflict marker: a Ready PR whose
 // branch conflicts with its base stays in Ready (the stage partition is total)
 // but never auto-merges until the conflict — which is on you — is resolved.

@@ -131,6 +131,7 @@ const outboundItem = (n: number): OutboundItem => ({
   deletions: 0,
   changed_files: 0,
   conflict: false,
+  armed: false,
 });
 
 beforeEach(() => {

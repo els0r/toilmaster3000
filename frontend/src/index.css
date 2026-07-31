@@ -684,6 +684,64 @@ textarea:focus {
   cursor: progress;
   opacity: 0.6;
 }
+/* Armed badge — the outbound consent marker (success-toned: consent given).
+   Rides the row in whatever stage the PR is in; absence means Withheld. */
+.badge-armed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--success-bg);
+  color: var(--success);
+  font-weight: var(--weight-medium);
+}
+.badge-armed .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--success-dot);
+}
+/* Arm/Disarm toggle — the consent control riding every armable outbound row.
+   Arm is the affirmative action (solid, the Approve idiom); Disarm is the
+   quiet undo (outlined), so an armed row reads calm, not alarming. */
+.btn-arm,
+.btn-disarm {
+  flex: none;
+  align-self: center;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  letter-spacing: var(--tracking-tight);
+}
+.btn-arm {
+  border: none;
+  background: var(--action-solid);
+  color: var(--action-on-solid);
+  box-shadow: var(--shadow);
+}
+.btn-arm:hover {
+  filter: brightness(1.08);
+}
+.btn-arm:active {
+  filter: brightness(0.92);
+}
+.btn-disarm {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--fg-2);
+}
+.btn-disarm:hover {
+  border-color: var(--fg-3);
+}
+.btn-arm:disabled,
+.btn-disarm:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
 
 /* ---------- approval feed ---------- */
 .feed-scroll {

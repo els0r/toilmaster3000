@@ -31,12 +31,16 @@ export function App() {
   // The Cycle Funnel snapshot polls on the same 10s cadence. It clears on a
   // failed fetch (usePollingClearable) so a candidate-fetch failure shows an
   // empty funnel rather than a stale partition.
-  const pipeline = usePollingClearable(fetchPipeline, POLL_MS);
+  const [pipeline] = usePollingClearable(fetchPipeline, POLL_MS);
 
   // The outbound snapshot polls alongside it (the tab badge needs it from every
   // tab) with the same clear-on-failure policy: a failed authored fetch shows a
-  // loading funnel, never stale stages.
-  const outbound = usePollingClearable(fetchOutbound, POLL_MS);
+  // loading funnel, never stale stages. refetchOutbound pulls a fresh snapshot
+  // right after an Arm/Disarm toggle, so the row flips without waiting a poll.
+  const [outbound, refetchOutbound] = usePollingClearable(
+    fetchOutbound,
+    POLL_MS,
+  );
 
   // Numbers that first appeared in the most recent poll — the feed flashes them
   // once so a fresh approval is visible without the user hunting for it.
@@ -158,7 +162,7 @@ export function App() {
             role="tabpanel"
             aria-labelledby="tab-outbound"
           >
-            <OutboundFunnel outbound={outbound} />
+            <OutboundFunnel outbound={outbound} onArmChanged={refetchOutbound} />
           </div>
         )}
         {tab === "rules" && (

@@ -1,7 +1,33 @@
-import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  render,
+  screen,
+  within,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { OutboundFunnel } from "./Outbound";
 import type { Outbound, OutboundItem } from "./api";
+
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
+  return {
+    ...actual,
+    armOutbound: vi.fn(),
+    disarmOutbound: vi.fn(),
+  };
+});
+
+import { armOutbound, disarmOutbound } from "./api";
+const mockArm = vi.mocked(armOutbound);
+const mockDisarm = vi.mocked(disarmOutbound);
+
+beforeEach(() => {
+  mockArm.mockReset();
+  mockArm.mockResolvedValue();
+  mockDisarm.mockReset();
+  mockDisarm.mockResolvedValue();
+});
 
 const outboundItem = (over: Partial<OutboundItem> = {}): OutboundItem => ({
   number: 200,
@@ -18,6 +44,7 @@ const outboundItem = (over: Partial<OutboundItem> = {}): OutboundItem => ({
   deletions: 2,
   changed_files: 1,
   conflict: false,
+  armed: false,
   ...over,
 });
 
@@ -262,6 +289,145 @@ describe("Outbound funnel — row markers", () => {
 
     const awaiting = screen.getByTestId("outbound-awaiting");
     expect(within(awaiting).getAllByText("breaking change")).toHaveLength(1);
+  });
+});
+
+describe("Outbound funnel — Arm/Disarm toggle", () => {
+  // The toggle rides every armable station's rows: a Withheld row offers Arm,
+  // an Armed row offers Disarm. Arm-while-red is the core use case, so the
+  // toggle must exist far beyond Ready.
+  it("offers Arm on a Withheld row and Disarm on an Armed row, in every armable stage", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 5,
+          draft: [outboundItem({ number: 260 })],
+          red: [outboundItem({ number: 261, armed: true })],
+          running: [outboundItem({ number: 262 })],
+          awaiting_approval: [outboundItem({ number: 263 })],
+          ready: [outboundItem({ number: 264, armed: true })],
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "arm #260" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "disarm #261" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "arm #262" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "arm #263" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "disarm #264" }),
+    ).toBeInTheDocument();
+  });
+
+  // Changes Requested never offers the toggle: Armed ∧ Changes-Requested is an
+  // impossible state, so the consent control is absent, not merely disabled.
+  it("offers no toggle on Changes Requested rows", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 1,
+          changes_requested: [outboundItem({ number: 270 })],
+        })}
+      />,
+    );
+
+    const card = screen.getByTestId("outbound-changes-requested");
+    expect(within(card).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  // Clicking Arm gives the consent through the API and refetches, so the row
+  // flips to Armed/Disarm on the fresh snapshot.
+  it("arms a row and refetches after the mutation", async () => {
+    const onArmChanged = vi.fn();
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 1,
+          awaiting_approval: [outboundItem({ number: 271 })],
+        })}
+        onArmChanged={onArmChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "arm #271" }));
+
+    await waitFor(() => expect(mockArm).toHaveBeenCalledWith(271));
+    await waitFor(() => expect(onArmChanged).toHaveBeenCalledTimes(1));
+    expect(mockDisarm).not.toHaveBeenCalled();
+  });
+
+  // Clicking Disarm withdraws the consent through the API and refetches.
+  it("disarms an armed row and refetches after the mutation", async () => {
+    const onArmChanged = vi.fn();
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 1,
+          ready: [outboundItem({ number: 272, armed: true })],
+        })}
+        onArmChanged={onArmChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "disarm #272" }));
+
+    await waitFor(() => expect(mockDisarm).toHaveBeenCalledWith(272));
+    await waitFor(() => expect(onArmChanged).toHaveBeenCalledTimes(1));
+    expect(mockArm).not.toHaveBeenCalled();
+  });
+
+  // A server rejection (e.g. the 409 racing an incoming CHANGES_REQUESTED) is
+  // surfaced, not swallowed — the operator must see why consent was refused.
+  it("surfaces an arm error", async () => {
+    mockArm.mockRejectedValue(
+      new Error("pr has changes requested; arming is rejected: #273"),
+    );
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 1,
+          awaiting_approval: [outboundItem({ number: 273 })],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "arm #273" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /changes requested/,
+    );
+  });
+});
+
+describe("Outbound funnel — armed badge", () => {
+  // The armed state is a badge riding the row in whatever stage the PR is in —
+  // orthogonal to the partition, so it renders in every stage.
+  it("shows the armed badge on armed rows in every stage and not on Withheld ones", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 4,
+          draft: [outboundItem({ number: 280, armed: true })],
+          red: [outboundItem({ number: 281, armed: true })],
+          ready: [
+            outboundItem({ number: 282, armed: true }),
+            outboundItem({ number: 283 }),
+          ],
+        })}
+      />,
+    );
+
+    for (const testid of ["outbound-draft", "outbound-red"]) {
+      expect(
+        within(screen.getByTestId(testid)).getAllByText("armed"),
+      ).toHaveLength(1);
+    }
+    // Ready: one armed row carries the badge, the Withheld one does not.
+    expect(
+      within(screen.getByTestId("outbound-ready")).getAllByText("armed"),
+    ).toHaveLength(1);
   });
 });
 
