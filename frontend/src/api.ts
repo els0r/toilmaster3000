@@ -154,6 +154,22 @@ export async function fetchOutbound(): Promise<Outbound> {
   return resp.json();
 }
 
+// MergeRecord is one merge-ledger entry (generated from the backend's Merge
+// DTO): a PR the robot landed, with the title that became the squash commit's
+// subject, the merge moment, and the normalized approver logins the commit's
+// "Approved by:" trailer named. GET /merges is today-scoped server-side (the
+// approvals-feed analog) — a merged PR leaves the is:open pull immediately, so
+// this ledger is the Merged station's only data source.
+export type MergeRecord = components["schemas"]["Merge"];
+
+export async function fetchMerges(): Promise<MergeRecord[]> {
+  const resp = await fetch(`${API_BASE}/merges`);
+  if (!resp.ok) {
+    throw new Error(`merges request failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
 // armOutbound gives the per-PR merge consent (Armed) for one outbound PR —
 // the Arm toggle click. The server rejects a PR that is not in the outbound
 // snapshot (404) or whose review state is CHANGES_REQUESTED (409, Armed ∧

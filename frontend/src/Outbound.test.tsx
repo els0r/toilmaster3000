@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { OutboundFunnel } from "./Outbound";
-import type { Outbound, OutboundItem } from "./api";
+import type { MergeRecord, Outbound, OutboundItem } from "./api";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -428,6 +428,74 @@ describe("Outbound funnel — armed badge", () => {
     expect(
       within(screen.getByTestId("outbound-ready")).getAllByText("armed"),
     ).toHaveLength(1);
+  });
+});
+
+// mergeRecord is one /merges ledger entry — what the robot landed today.
+const mergeRecord = (over: Partial<MergeRecord> = {}): MergeRecord => ({
+  number: 300,
+  title: "feat(cli): landed thing",
+  title_parts: {
+    type: "feat",
+    scopes: ["cli"],
+    breaking: false,
+    description: "landed thing",
+  },
+  url: "https://github.com/o/r/pull/300",
+  merged_at: "2026-07-31T10:00:00Z",
+  approved_by: ["alice", "bob"],
+  ...over,
+});
+
+describe("Outbound funnel — Merged station", () => {
+  // The Merged station sits at the funnel bottom: the today-scoped, read-only
+  // ledger view (from merges.jsonl) answering "what did the robot land today".
+  // Each row shows the landed title, a GitHub link, and the approvers the
+  // commit trailer named — and NO action buttons (read-only by design).
+  it("renders today's merges read-only with title, link, and approvers", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound()}
+        merges={[
+          mergeRecord(),
+          mergeRecord({
+            number: 301,
+            title: "fix: second landing",
+            title_parts: {
+              type: "fix",
+              scopes: [],
+              breaking: false,
+              description: "second landing",
+            },
+            url: "https://github.com/o/r/pull/301",
+            approved_by: ["carol"],
+          }),
+        ]}
+      />,
+    );
+
+    const card = screen.getByTestId("outbound-merged");
+    expect(within(card).getByText("Merged")).toBeInTheDocument();
+    expect(within(card).getByText(/today · read-only/i)).toBeInTheDocument();
+    expect(within(card).getByText("Landed thing")).toBeInTheDocument();
+    expect(
+      within(card).getByRole("link", { name: /#300/ }),
+    ).toHaveAttribute("href", "https://github.com/o/r/pull/300");
+    expect(within(card).getByText(/alice, bob/)).toBeInTheDocument();
+    expect(within(card).getByText(/carol/)).toBeInTheDocument();
+    expect(within(card).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  // An empty ledger renders the station's empty note — the funnel keeps its
+  // shape and the day starts honestly at nothing.
+  it("renders an empty note when the robot has landed nothing today", () => {
+    render(<OutboundFunnel outbound={outbound()} merges={[]} />);
+
+    expect(
+      within(screen.getByTestId("outbound-merged")).getByText(
+        /no merges yet today/i,
+      ),
+    ).toBeInTheDocument();
   });
 });
 

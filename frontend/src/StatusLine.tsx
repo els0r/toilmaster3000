@@ -85,6 +85,23 @@ export function StatusLine({
         </div>
       )}
 
+      {/* The outbound pair rides the strip from every tab: ready (PRs waiting
+          only on you — the actionable signal, parallel to the Inbound tab's
+          staging badge) and merged (what the robot landed today — the pulse).
+          Zeros stay visible: an honest heartbeat shows the pulse at rest. */}
+      <div className="hb-group">
+        <span className="hb-label">Ready</span>
+        <span className="hb-ago tnum" data-testid="hb-ready">
+          {status.ready_count}
+        </span>
+      </div>
+      <div className="hb-group">
+        <span className="hb-label">Merged</span>
+        <span className="hb-ago tnum" data-testid="hb-merged">
+          {status.merged_count}
+        </span>
+      </div>
+
       <div className="spacer" />
 
       <div className="hb-sync">

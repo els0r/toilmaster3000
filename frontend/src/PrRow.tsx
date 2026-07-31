@@ -46,10 +46,13 @@ export function PrRow({
           />
         </div>
         <div className="pr-meta">
-          <span>{item.author}</span>
+          {/* The author leads the meta line when present; a row without one
+              (the Merged station — every ledger entry is yours by definition)
+              starts straight at its meta, with no orphaned separator. */}
+          {item.author && <span>{item.author}</span>}
           {meta != null && (
             <>
-              <span className="sep">·</span>
+              {item.author && <span className="sep">·</span>}
               {meta}
             </>
           )}

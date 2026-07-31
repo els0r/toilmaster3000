@@ -20,6 +20,7 @@ vi.mock("./api", async (importOriginal) => {
     fetchQueue: vi.fn(),
     fetchPipeline: vi.fn(),
     fetchOutbound: vi.fn(),
+    fetchMerges: vi.fn(),
     fetchRules: vi.fn(),
     fetchAnalytics: vi.fn(),
     fetchSettings: vi.fn(),
@@ -32,6 +33,7 @@ import {
   fetchQueue,
   fetchPipeline,
   fetchOutbound,
+  fetchMerges,
   fetchRules,
   fetchAnalytics,
   fetchSettings,
@@ -41,6 +43,7 @@ const mockApprovals = vi.mocked(fetchApprovals);
 const mockQueue = vi.mocked(fetchQueue);
 const mockPipeline = vi.mocked(fetchPipeline);
 const mockOutbound = vi.mocked(fetchOutbound);
+const mockMerges = vi.mocked(fetchMerges);
 const mockRules = vi.mocked(fetchRules);
 const mockAnalytics = vi.mocked(fetchAnalytics);
 const mockSettings = vi.mocked(fetchSettings);
@@ -52,6 +55,8 @@ const status = (approved: number): CycleStatus => ({
   queue_count: 0,
   dropped_count: 0,
   staging_count: 0,
+  ready_count: 0,
+  merged_count: 0,
 });
 
 const approval = (n: number): Approval => ({
@@ -141,12 +146,14 @@ beforeEach(() => {
   mockQueue.mockReset();
   mockPipeline.mockReset();
   mockOutbound.mockReset();
+  mockMerges.mockReset();
   mockRules.mockReset();
   mockAnalytics.mockReset();
   mockSettings.mockReset();
   mockQueue.mockResolvedValue([]);
   mockPipeline.mockResolvedValue(emptyPipeline);
   mockOutbound.mockResolvedValue(emptyOutbound);
+  mockMerges.mockResolvedValue([]);
   mockRules.mockResolvedValue([]);
   mockSettings.mockResolvedValue({ cost_low: 10, cost_high: 26, currency: "CHF" });
   mockAnalytics.mockResolvedValue({
@@ -422,6 +429,38 @@ describe("App tabbed shell", () => {
     );
     expect(screen.getByTestId("outgoing-total")).toHaveTextContent("3");
     expect(screen.queryByText("Needs Human Review")).not.toBeInTheDocument();
+  });
+
+  // F-tab-merged: the Outbound tab's Merged station renders today's polled
+  // /merges ledger — the funnel's read-only bottom station.
+  it("renders the Merged station from the polled /merges ledger on the Outbound tab", async () => {
+    window.location.hash = "#outbound";
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+    mockMerges.mockResolvedValue([
+      {
+        number: 310,
+        title: "feat: landed",
+        title_parts: {
+          type: "feat",
+          scopes: [],
+          breaking: false,
+          description: "landed",
+        },
+        url: "https://github.com/o/r/pull/310",
+        merged_at: "2026-07-31T10:00:00Z",
+        approved_by: ["alice"],
+      },
+    ]);
+
+    render(<App />);
+    await flush();
+
+    expect(mockMerges).toHaveBeenCalledTimes(1);
+    const card = screen.getByTestId("outbound-merged");
+    expect(card).toHaveTextContent("Landed");
+    expect(card).toHaveTextContent("alice");
   });
 
   // F-tab-outbound-hash: loading with #outbound opens the Outbound tab directly —
