@@ -154,6 +154,31 @@ export async function fetchOutbound(): Promise<Outbound> {
   return resp.json();
 }
 
+// armOutbound gives the per-PR merge consent (Armed) for one outbound PR —
+// the Arm toggle click. The server rejects a PR that is not in the outbound
+// snapshot (404) or whose review state is CHANGES_REQUESTED (409, Armed ∧
+// Changes-Requested being an impossible state); either message is thrown so
+// the funnel can surface why consent was refused.
+export async function armOutbound(number: number): Promise<void> {
+  const resp = await fetch(`${API_BASE}/outbound/${number}/arm`, {
+    method: "POST",
+  });
+  if (!resp.ok) {
+    throw new Error(await extractError(resp, "arm failed"));
+  }
+}
+
+// disarmOutbound withdraws the merge consent (back to Withheld) — the Disarm
+// toggle click. Idempotent on the server; only a persistence failure throws.
+export async function disarmOutbound(number: number): Promise<void> {
+  const resp = await fetch(`${API_BASE}/outbound/${number}/arm`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) {
+    throw new Error(await extractError(resp, "disarm failed"));
+  }
+}
+
 // QueueItem is a Needs-Human-Review entry (generated from the backend's
 // QueueItem DTO): a PR routed here for one or more `reasons` (MVP today:
 // `["breaking_change"]`). Each carries a GitHub url and is approvable only via

@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { armOutbound, disarmOutbound } from "./api";
 import type { Outbound, OutboundItem } from "./api";
-import { BreakingBadge, ConflictBadge } from "./Badges";
+import { ArmedBadge, BreakingBadge, ConflictBadge } from "./Badges";
 import { DiffMag } from "./DiffMag";
 import { DistributionStation, StationCard } from "./Station";
 
@@ -39,7 +40,57 @@ const SEGMENTS: {
 // then the itemized stations. `outbound` is null while the first snapshot is
 // loading OR after a failed authored fetch — a failed fetch CLEARS the funnel
 // (the robot never shows stale data), so null renders a loading state.
-export function OutboundFunnel({ outbound }: { outbound: Outbound | null }) {
+// `onArmChanged` is called after a successful Arm/Disarm toggle so the caller
+// can refetch the snapshot immediately (the toggle reflects on the next
+// fetch, not the next cycle).
+export function OutboundFunnel({
+  outbound,
+  onArmChanged,
+}: {
+  outbound: Outbound | null;
+  onArmChanged?: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<number | null>(null);
+
+  // toggleArm flips one row's consent: Arm when Withheld, Disarm when Armed.
+  // A server rejection (the 409 racing an incoming CHANGES_REQUESTED, a 404
+  // for a row that just left the pull) is surfaced, never swallowed — the
+  // operator must see why consent was refused.
+  async function toggleArm(item: OutboundItem) {
+    setError(null);
+    setPending(item.number);
+    try {
+      if (item.armed) {
+        await disarmOutbound(item.number);
+      } else {
+        await armOutbound(item.number);
+      }
+      onArmChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  // armToggle is the per-row Arm/Disarm action, offered on every station
+  // EXCEPT Changes Requested (Armed ∧ Changes-Requested is an impossible
+  // state, so the consent control is absent there, not merely disabled).
+  function armToggle(item: OutboundItem): ReactNode {
+    return (
+      <button
+        type="button"
+        className={item.armed ? "btn-disarm" : "btn-arm"}
+        onClick={() => toggleArm(item)}
+        disabled={pending === item.number}
+        aria-label={`${item.armed ? "disarm" : "arm"} #${item.number}`}
+      >
+        {item.armed ? "Disarm" : "Arm"}
+      </button>
+    );
+  }
+
   if (outbound === null) {
     return (
       <div className="funnel">
@@ -52,6 +103,12 @@ export function OutboundFunnel({ outbound }: { outbound: Outbound | null }) {
 
   return (
     <div className="funnel">
+      {error && (
+        <p className="row-alert" role="alert">
+          {error}
+        </p>
+      )}
+
       <DistributionStation
         title="Outgoing"
         total={outbound.outgoing}
@@ -68,6 +125,7 @@ export function OutboundFunnel({ outbound }: { outbound: Outbound | null }) {
         items={outbound.draft ?? []}
         emptyNote="None — nothing of yours in draft."
         renderMeta={outboundMeta}
+        renderAction={armToggle}
       />
 
       {/* Not green — two side-by-side sub-cards: an author must distinguish
@@ -79,6 +137,7 @@ export function OutboundFunnel({ outbound }: { outbound: Outbound | null }) {
           items={outbound.red ?? []}
           emptyNote="None — nothing of yours failed checks."
           renderMeta={outboundMeta}
+          renderAction={armToggle}
         />
         <StationCard
           testid="outbound-running"
@@ -86,9 +145,12 @@ export function OutboundFunnel({ outbound }: { outbound: Outbound | null }) {
           items={outbound.running ?? []}
           emptyNote="None — no checks in flight."
           renderMeta={outboundMeta}
+          renderAction={armToggle}
         />
       </div>
 
+      {/* Changes Requested never offers the Arm toggle: an open objection
+          requires the feedback addressed and fresh consent after re-approval. */}
       <StationCard
         testid="outbound-changes-requested"
         title="Changes Requested"
@@ -105,6 +167,7 @@ export function OutboundFunnel({ outbound }: { outbound: Outbound | null }) {
         items={outbound.awaiting_approval ?? []}
         emptyNote="None — nothing green is unreviewed."
         renderMeta={outboundMeta}
+        renderAction={armToggle}
       />
 
       <StationCard
@@ -114,17 +177,19 @@ export function OutboundFunnel({ outbound }: { outbound: Outbound | null }) {
         items={outbound.ready ?? []}
         emptyNote="None — nothing is waiting on you."
         renderMeta={readyMeta}
+        renderAction={armToggle}
       />
     </div>
   );
 }
 
 // outboundMeta is the meta line every outbound row shares: the PR's diff
-// magnitude through the shared DiffMag leaf, plus the breaking badge on any
-// `!`-titled row (arm with open eyes) and — on the Ready station only — the
-// conflict marker on a non-mergeable row. The magnitude is a static readout
-// (not the clickable DiffPill): the on-demand diff endpoint resolves
-// queue/Staging PRs only (ADR 0015), so a pill here would always fail.
+// magnitude through the shared DiffMag leaf, the breaking badge on any
+// `!`-titled row (arm with open eyes), and the armed badge on an Armed row —
+// the consent state riding the row in whatever stage it is in. The magnitude
+// is a static readout (not the clickable DiffPill): the on-demand diff
+// endpoint resolves queue/Staging PRs only (ADR 0015), so a pill here would
+// always fail.
 function outboundMeta(item: OutboundItem): ReactNode {
   return (
     <>
@@ -135,6 +200,12 @@ function outboundMeta(item: OutboundItem): ReactNode {
         <>
           <span className="sep">·</span>
           <BreakingBadge />
+        </>
+      )}
+      {item.armed && (
+        <>
+          <span className="sep">·</span>
+          <ArmedBadge />
         </>
       )}
     </>
