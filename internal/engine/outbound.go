@@ -104,6 +104,12 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 		}
 	}
 
+	// A fresh authored pull is the ONLY trigger for arm-lifecycle changes
+	// (level-triggered disarm on Changes Requested, cleanup of PRs that left
+	// the pull) — a failed fetch returned above, so consent is never withdrawn
+	// on stale or missing data.
+	e.reconcileArmed(ob)
+
 	e.logger.Info("cycle: outbound snapshot rebuilt",
 		"outgoing", ob.Outgoing,
 		"draft", len(ob.Draft),

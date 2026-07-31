@@ -25,6 +25,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
 	"github.com/els0r/toilmaster3000/internal/github"
 	"github.com/els0r/toilmaster3000/internal/rule"
@@ -38,6 +39,7 @@ var embeddedFrontend embed.FS
 const (
 	addr         = "localhost:8666"
 	statePath    = ".state/approvals.jsonl"
+	armedPath    = ".state/armed.json"
 	rulesPath    = ".config/rules.yaml"
 	settingsPath = ".config/settings.yaml"
 )
@@ -149,7 +151,14 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("build settings store: %w", err)
 	}
 
-	eng, err := engine.New(client, statePath, rules)
+	// Load the persisted armed set — the outbound consent state (ADR 0016).
+	// A missing file is the first run: every authored PR starts Withheld.
+	arms, err := armed.NewStore(armedPath)
+	if err != nil {
+		return fmt.Errorf("build armed store: %w", err)
+	}
+
+	eng, err := engine.New(client, statePath, rules, arms)
 	if err != nil {
 		return fmt.Errorf("build engine: %w", err)
 	}
