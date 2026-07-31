@@ -425,6 +425,182 @@
         ],
         "type": "object"
       },
+      "Outbound": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Outbound.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "awaiting_approval": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "changes_requested": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "distribution": {
+            "$ref": "#/components/schemas/OutboundDistribution"
+          },
+          "draft": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "outgoing": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ready": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "red": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "running": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "search": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outgoing",
+          "draft",
+          "red",
+          "running",
+          "changes_requested",
+          "awaiting_approval",
+          "ready",
+          "distribution",
+          "search"
+        ],
+        "type": "object"
+      },
+      "OutboundDistribution": {
+        "additionalProperties": false,
+        "properties": {
+          "awaiting_approval": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "changes_requested": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "draft": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ready": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "red": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "running": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "draft",
+          "red",
+          "running",
+          "changes_requested",
+          "awaiting_approval",
+          "ready"
+        ],
+        "type": "object"
+      },
+      "OutboundItem": {
+        "additionalProperties": false,
+        "properties": {
+          "additions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "author": {
+            "type": "string"
+          },
+          "changed_files": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "conflict": {
+            "type": "boolean"
+          },
+          "deletions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "title_parts": {
+            "$ref": "#/components/schemas/TitleParts"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "title",
+          "title_parts",
+          "author",
+          "url",
+          "additions",
+          "deletions",
+          "changed_files",
+          "conflict"
+        ],
+        "type": "object"
+      },
       "PRDiffBody": {
         "additionalProperties": false,
         "properties": {
@@ -895,6 +1071,34 @@
           }
         },
         "summary": "Approval Feed, newest-first"
+      }
+    },
+    "/api/toilmaster3000/v1/outbound": {
+      "get": {
+        "operationId": "get-outbound",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outbound"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Live outbound funnel snapshot (the six stage lists + distribution counts)"
       }
     },
     "/api/toilmaster3000/v1/pipeline": {
