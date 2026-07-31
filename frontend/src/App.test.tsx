@@ -5,6 +5,8 @@ import type {
   Approval,
   CycleStatus,
   FunnelItem,
+  Outbound,
+  OutboundItem,
   Pipeline,
   QueueItem,
 } from "./api";
@@ -17,6 +19,7 @@ vi.mock("./api", async (importOriginal) => {
     fetchApprovals: vi.fn(),
     fetchQueue: vi.fn(),
     fetchPipeline: vi.fn(),
+    fetchOutbound: vi.fn(),
     fetchRules: vi.fn(),
     fetchAnalytics: vi.fn(),
     fetchSettings: vi.fn(),
@@ -28,6 +31,7 @@ import {
   fetchApprovals,
   fetchQueue,
   fetchPipeline,
+  fetchOutbound,
   fetchRules,
   fetchAnalytics,
   fetchSettings,
@@ -36,6 +40,7 @@ const mockStatus = vi.mocked(fetchStatus);
 const mockApprovals = vi.mocked(fetchApprovals);
 const mockQueue = vi.mocked(fetchQueue);
 const mockPipeline = vi.mocked(fetchPipeline);
+const mockOutbound = vi.mocked(fetchOutbound);
 const mockRules = vi.mocked(fetchRules);
 const mockAnalytics = vi.mocked(fetchAnalytics);
 const mockSettings = vi.mocked(fetchSettings);
@@ -97,17 +102,50 @@ const funnelItem = (n: number): FunnelItem => ({
   changed_files: 0,
 });
 
+const emptyOutbound: Outbound = {
+  outgoing: 0,
+  draft: [],
+  red: [],
+  running: [],
+  changes_requested: [],
+  awaiting_approval: [],
+  ready: [],
+  distribution: {
+    draft: 0,
+    red: 0,
+    running: 0,
+    changes_requested: 0,
+    awaiting_approval: 0,
+    ready: 0,
+  },
+  search: "is:open author:@me",
+};
+
+const outboundItem = (n: number): OutboundItem => ({
+  number: n,
+  title: `feat: authored ${n}`,
+  title_parts: { type: "feat", scopes: [], breaking: false, description: `authored ${n}` },
+  author: "lennart",
+  url: `https://github.com/o/r/pull/${n}`,
+  additions: 0,
+  deletions: 0,
+  changed_files: 0,
+  conflict: false,
+});
+
 beforeEach(() => {
   vi.useFakeTimers();
   mockStatus.mockReset();
   mockApprovals.mockReset();
   mockQueue.mockReset();
   mockPipeline.mockReset();
+  mockOutbound.mockReset();
   mockRules.mockReset();
   mockAnalytics.mockReset();
   mockSettings.mockReset();
   mockQueue.mockResolvedValue([]);
   mockPipeline.mockResolvedValue(emptyPipeline);
+  mockOutbound.mockResolvedValue(emptyOutbound);
   mockRules.mockResolvedValue([]);
   mockSettings.mockResolvedValue({ cost_low: 10, cost_high: 26, currency: "CHF" });
   mockAnalytics.mockResolvedValue({
@@ -123,7 +161,7 @@ beforeEach(() => {
     by_type: [],
     scopes: [],
   });
-  // Each test starts from a clean hash so the default (Review) tab applies.
+  // Each test starts from a clean hash so the default (Inbound) tab applies.
   window.location.hash = "";
 });
 
@@ -293,10 +331,11 @@ describe("App polling", () => {
 });
 
 describe("App tabbed shell", () => {
-  // F-tab-default: with no hash, the Pipeline tab is active — its funnel (with
+  // F-tab-default: with no hash, the Inbound tab is active — its funnel (with
   // the Needs-Human-Review station) shows and the Rules panel does not. The
-  // heartbeat strip and tab bar are always present.
-  it("defaults to the Pipeline tab with the heartbeat strip and tab bar persistent", async () => {
+  // heartbeat strip and tab bar (all four direction/config tabs) are always
+  // present.
+  it("defaults to the Inbound tab with the heartbeat strip and tab bar persistent", async () => {
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([approval(1)]);
     mockQueue.mockResolvedValue([queueItem(41)]);
@@ -304,13 +343,16 @@ describe("App tabbed shell", () => {
     render(<App />);
     await flush();
 
-    // Heartbeat strip + tab bar are always rendered.
+    // Heartbeat strip + tab bar are always rendered; the four tabs read
+    // Inbound / Outbound / Rules / Analytics.
     expect(screen.getByText(/last cycle/i)).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /pipeline/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /inbound/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /outbound/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /rules/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /analytics/i })).toBeInTheDocument();
 
-    // Pipeline tab is selected; its funnel is visible, Rules' is not.
-    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveAttribute(
+    // Inbound tab is selected; its funnel is visible, Rules' is not.
+    expect(screen.getByRole("tab", { name: /inbound/i })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -318,9 +360,9 @@ describe("App tabbed shell", () => {
     expect(screen.queryByText("Approve Rules")).not.toBeInTheDocument();
   });
 
-  // F-tab-review-redirect: an old #review bookmark redirects to #pipeline so
-  // links survive the rename, landing on the Pipeline tab.
-  it("redirects #review to the Pipeline tab", async () => {
+  // F-tab-review-redirect: an old #review bookmark redirects to #inbound so
+  // links survive both renames, landing on the Inbound tab.
+  it("redirects #review to the Inbound tab", async () => {
     window.location.hash = "#review";
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
@@ -329,16 +371,106 @@ describe("App tabbed shell", () => {
     render(<App />);
     await flush();
 
-    expect(window.location.hash).toBe("#pipeline");
-    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveAttribute(
+    expect(window.location.hash).toBe("#inbound");
+    expect(screen.getByRole("tab", { name: /inbound/i })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     expect(screen.getByText("Needs Human Review")).toBeInTheDocument();
   });
 
+  // F-tab-pipeline-redirect: an old #pipeline bookmark redirects to #inbound so
+  // links survive the Pipeline → Inbound rename.
+  it("redirects #pipeline to the Inbound tab", async () => {
+    window.location.hash = "#pipeline";
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+
+    render(<App />);
+    await flush();
+
+    expect(window.location.hash).toBe("#inbound");
+    expect(screen.getByRole("tab", { name: /inbound/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("Needs Human Review")).toBeInTheDocument();
+  });
+
+  // F-tab-outbound: clicking the Outbound tab writes #outbound and renders the
+  // authored funnel (its Outgoing station), hiding the Inbound funnel.
+  it("switches to the Outbound tab on click and renders the outbound funnel", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+    mockOutbound.mockResolvedValue({ ...emptyOutbound, outgoing: 3 });
+
+    render(<App />);
+    await flush();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("tab", { name: /outbound/i }));
+    });
+    await flush();
+
+    expect(window.location.hash).toBe("#outbound");
+    expect(screen.getByRole("tab", { name: /outbound/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTestId("outgoing-total")).toHaveTextContent("3");
+    expect(screen.queryByText("Needs Human Review")).not.toBeInTheDocument();
+  });
+
+  // F-tab-outbound-hash: loading with #outbound opens the Outbound tab directly —
+  // linkable / reload-stable like the others.
+  it("opens the Outbound tab when loaded with #outbound", async () => {
+    window.location.hash = "#outbound";
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+
+    render(<App />);
+    await flush();
+
+    expect(screen.getByRole("tab", { name: /outbound/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("Outgoing")).toBeInTheDocument();
+  });
+
+  // F-tab-ready-badge: the Outbound tab carries a ready-count badge (PRs waiting
+  // only on you), mirroring Inbound's staging badge; zero renders no badge.
+  it("shows the live ready-count badge on the Outbound tab and hides it at zero", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([]);
+    mockOutbound.mockResolvedValue({
+      ...emptyOutbound,
+      outgoing: 2,
+      ready: [outboundItem(60), outboundItem(61)],
+      distribution: { ...emptyOutbound.distribution, ready: 2 },
+    });
+
+    render(<App />);
+    await flush();
+
+    expect(screen.getByTestId("outbound-tab-badge")).toHaveTextContent("2");
+
+    // Zero ready → the badge disappears on the next poll.
+    mockOutbound.mockResolvedValue(emptyOutbound);
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    await flush();
+
+    expect(screen.queryByTestId("outbound-tab-badge")).not.toBeInTheDocument();
+  });
+
   // F-tab-switch: clicking the Rules tab shows the Rules panel and hides the
-  // Pipeline funnel, and writes the hash.
+  // Inbound funnel, and writes the hash.
   it("switches to the Rules tab on click and updates the hash", async () => {
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
@@ -379,8 +511,8 @@ describe("App tabbed shell", () => {
     expect(screen.getByText("Approve Rules")).toBeInTheDocument();
   });
 
-  // F-tab-unknown-hash: an unknown hash falls back to the default Pipeline tab.
-  it("falls back to Pipeline for an unknown hash", async () => {
+  // F-tab-unknown-hash: an unknown hash falls back to the default Inbound tab.
+  it("falls back to Inbound for an unknown hash", async () => {
     window.location.hash = "#bogus";
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
@@ -389,7 +521,7 @@ describe("App tabbed shell", () => {
     render(<App />);
     await flush();
 
-    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: /inbound/i })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -416,10 +548,10 @@ describe("App tabbed shell", () => {
     expect(screen.getByText("Approve Rules")).toBeInTheDocument();
   });
 
-  // F-tab-badge: the Pipeline tab carries a staging-count badge (the actionable
+  // F-tab-badge: the Inbound tab carries a staging-count badge (the actionable
   // "uncovered PRs awaiting a rule" signal) that stays visible from the Rules
   // tab (the count is never hidden).
-  it("shows the live staging-count badge on the Pipeline tab, visible from Rules", async () => {
+  it("shows the live staging-count badge on the Inbound tab, visible from Rules", async () => {
     mockStatus.mockResolvedValue(status(0));
     mockApprovals.mockResolvedValue([]);
     mockPipeline.mockResolvedValue({
@@ -431,21 +563,21 @@ describe("App tabbed shell", () => {
     render(<App />);
     await flush();
 
-    const pipelineTab = screen.getByRole("tab", { name: /pipeline/i });
-    expect(pipelineTab).toHaveTextContent("2");
+    const inboundTab = screen.getByRole("tab", { name: /inbound/i });
+    expect(inboundTab).toHaveTextContent("2");
 
-    // Move to Rules — the badge on the Pipeline tab control stays visible.
+    // Move to Rules — the badge on the Inbound tab control stays visible.
     await act(async () => {
       fireEvent.click(screen.getByRole("tab", { name: /rules/i }));
     });
     await flush();
 
-    expect(screen.getByRole("tab", { name: /pipeline/i })).toHaveTextContent(
+    expect(screen.getByRole("tab", { name: /inbound/i })).toHaveTextContent(
       "2",
     );
   });
 
-  // F-tab-badge-zero: with empty staging the Pipeline tab shows no count badge
+  // F-tab-badge-zero: with empty staging the Inbound tab shows no count badge
   // (zero is presented as the absence of a badge).
   it("hides the staging-count badge when staging is empty", async () => {
     mockStatus.mockResolvedValue(status(0));
@@ -456,7 +588,7 @@ describe("App tabbed shell", () => {
     await flush();
 
     expect(
-      screen.queryByTestId("pipeline-tab-badge"),
+      screen.queryByTestId("inbound-tab-badge"),
     ).not.toBeInTheDocument();
   });
 

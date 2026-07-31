@@ -136,6 +136,24 @@ export async function fetchPipeline(): Promise<Pipeline> {
   return resp.json();
 }
 
+// Outbound is the live outbound funnel snapshot (generated from the backend's
+// Outbound DTO): the `outgoing` total of the raw authored pull plus its
+// partition into the six itemized stage lists (draft, red, running,
+// changes_requested, awaiting_approval, ready), the per-stage distribution
+// counts, and the derived authored `search` shown on the Outgoing station's
+// code chip. OutboundItem rows carry title_parts, the diff magnitude, and the
+// Ready station's `conflict` flag.
+export type Outbound = components["schemas"]["Outbound"];
+export type OutboundItem = components["schemas"]["OutboundItem"];
+
+export async function fetchOutbound(): Promise<Outbound> {
+  const resp = await fetch(`${API_BASE}/outbound`);
+  if (!resp.ok) {
+    throw new Error(`outbound request failed: ${resp.status}`);
+  }
+  return resp.json();
+}
+
 // QueueItem is a Needs-Human-Review entry (generated from the backend's
 // QueueItem DTO): a PR routed here for one or more `reasons` (MVP today:
 // `["breaking_change"]`). Each carries a GitHub url and is approvable only via

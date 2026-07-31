@@ -630,6 +630,35 @@ textarea:focus {
   border-radius: var(--radius-full);
   background: var(--attn-dot);
 }
+/* Conflict marker — the Ready station's non-mergeable flag (error-toned twin of
+   the breaking badge). */
+.badge-conflict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--error-bg);
+  color: var(--error);
+  font-weight: var(--weight-medium);
+}
+.badge-conflict .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--error);
+}
+/* Static diff-magnitude readout (outbound rows) — the same +add/−del/files
+   figures as the DiffPill, without the clickable pill chrome (the on-demand
+   diff endpoint does not resolve outbound PRs; ADR 0015). */
+.diff-mag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg-3);
+}
 .btn-approve {
   flex: none;
   align-self: center;
@@ -1730,8 +1759,9 @@ textarea:focus {
   gap: var(--space-4);
 }
 
-/* Incoming — a single stacked distribution bar + legend, not a PR list. */
-.station-incoming .filter-chip {
+/* Distribution stations (Inbound's Incoming, Outbound's Outgoing) — a single
+   stacked bar + legend, not a PR list. */
+.filter-chip {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: var(--text-xs);
   color: var(--fg-2);
@@ -1741,7 +1771,7 @@ textarea:focus {
   padding: 2px 8px;
   white-space: nowrap;
 }
-.station-incoming-body {
+.dist-body {
   padding: var(--space-3) 18px var(--space-4);
 }
 .dist-bar {
@@ -1776,6 +1806,20 @@ textarea:focus {
 .dist-seg-approved-elsewhere {
   background: var(--pr-merged);
 }
+/* Outbound (Outgoing) segment palette — draft/red reuse the inbound hues; the
+   four outbound-only stages get their own stable hooks. */
+.dist-seg-running {
+  background: var(--attn-solid);
+}
+.dist-seg-changes-requested {
+  background: var(--action-solid);
+}
+.dist-seg-awaiting {
+  background: var(--pr-open);
+}
+.dist-seg-ready {
+  background: var(--success-dot);
+}
 .dist-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1802,15 +1846,16 @@ textarea:focus {
   color: var(--fg);
 }
 
-/* Dropped — two side-by-side sub-cards (pipeline-red, draft); stack on narrow. */
-.station-dropped {
+/* Station pair — two side-by-side sub-cards (Inbound's Dropped red/draft,
+   Outbound's not-green red/running); stack on narrow. */
+.station-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
   align-items: start;
 }
 @media (max-width: 920px) {
-  .station-dropped {
+  .station-pair {
     grid-template-columns: 1fr;
   }
 }
