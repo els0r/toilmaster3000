@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/toilmaster3000/v1/outbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live outbound funnel snapshot (the six stage lists + distribution counts) */
+        get: operations["get-outbound"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/toilmaster3000/v1/pipeline": {
         parameters: {
             query?: never;
@@ -344,6 +361,53 @@ export interface components {
             number: number;
             ok: boolean;
         };
+        Outbound: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/Outbound.json
+             */
+            readonly $schema?: string;
+            awaiting_approval: components["schemas"]["OutboundItem"][] | null;
+            changes_requested: components["schemas"]["OutboundItem"][] | null;
+            distribution: components["schemas"]["OutboundDistribution"];
+            draft: components["schemas"]["OutboundItem"][] | null;
+            /** Format: int64 */
+            outgoing: number;
+            ready: components["schemas"]["OutboundItem"][] | null;
+            red: components["schemas"]["OutboundItem"][] | null;
+            running: components["schemas"]["OutboundItem"][] | null;
+            search: string;
+        };
+        OutboundDistribution: {
+            /** Format: int64 */
+            awaiting_approval: number;
+            /** Format: int64 */
+            changes_requested: number;
+            /** Format: int64 */
+            draft: number;
+            /** Format: int64 */
+            ready: number;
+            /** Format: int64 */
+            red: number;
+            /** Format: int64 */
+            running: number;
+        };
+        OutboundItem: {
+            /** Format: int64 */
+            additions: number;
+            author: string;
+            /** Format: int64 */
+            changed_files: number;
+            conflict: boolean;
+            /** Format: int64 */
+            deletions: number;
+            /** Format: int64 */
+            number: number;
+            title: string;
+            title_parts: components["schemas"]["TitleParts"];
+            url: string;
+        };
         PRDiffBody: {
             /**
              * Format: uri
@@ -515,6 +579,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Approval"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-outbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Outbound"];
                 };
             };
             /** @description Error */
