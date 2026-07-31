@@ -59,6 +59,28 @@ type Fake struct {
 	diffs     map[int][]FileDiff
 	DiffErr   error
 	diffCalls []int
+
+	// mergeInfos are canned live merge-time details served by MergeInfo (the
+	// per-merge gh pr view), keyed by PR number. MergeInfoErr, when set, makes
+	// MergeInfo fail wholesale (to prove a merge without live details is
+	// skipped).
+	mergeInfos   map[int]MergeDetails
+	MergeInfoErr error
+
+	// mergeCalls records every Merge invocation in order (including failed
+	// attempts, so a test can count the one immediate retry); failMerges maps a
+	// PR number to how many of its next Merge calls fail.
+	mergeCalls []MergeCall
+	failMerges map[int]int
+}
+
+// MergeCall is one recorded Merge invocation: the PR number and the commit
+// subject/body the engine constructed — what a test asserts gh-land parity
+// against.
+type MergeCall struct {
+	Number  int
+	Subject string
+	Body    string
 }
 
 // NewFake returns a Fake seeded with the given canned candidates.
@@ -218,6 +240,65 @@ func (f *Fake) Diff(_ context.Context, number int) ([]FileDiff, error) {
 	out := make([]FileDiff, len(f.diffs[number]))
 	copy(out, f.diffs[number])
 	return out, nil
+}
+
+// SetMergeInfo canns the live merge-time details MergeInfo returns for a PR
+// number.
+func (f *Fake) SetMergeInfo(number int, details MergeDetails) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.mergeInfos == nil {
+		f.mergeInfos = map[int]MergeDetails{}
+	}
+	f.mergeInfos[number] = details
+}
+
+// MergeInfo returns the canned details for the number (or MergeInfoErr),
+// standing in for the per-merge `gh pr view` call. A number with no canned
+// entry returns the zero details — an engine test that does not assert the
+// message need not cann one.
+func (f *Fake) MergeInfo(_ context.Context, number int) (MergeDetails, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.MergeInfoErr != nil {
+		return MergeDetails{}, f.MergeInfoErr
+	}
+	return f.mergeInfos[number], nil
+}
+
+// FailMerge marks a PR number so its next `times` Merge calls fail — one
+// failure proves the immediate retry lands, two prove the cycle gives up and
+// the next cycle retries.
+func (f *Fake) FailMerge(number, times int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failMerges == nil {
+		f.failMerges = map[int]int{}
+	}
+	f.failMerges[number] = times
+}
+
+// MergeCalls returns every Merge invocation in order (including failed
+// attempts), so a test can assert both the retry count and the constructed
+// commit message.
+func (f *Fake) MergeCalls() []MergeCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]MergeCall, len(f.mergeCalls))
+	copy(out, f.mergeCalls)
+	return out
+}
+
+// Merge records the call and fails while the number has FailMerge budget left.
+func (f *Fake) Merge(_ context.Context, number int, subject, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mergeCalls = append(f.mergeCalls, MergeCall{Number: number, Subject: subject, Body: body})
+	if f.failMerges[number] > 0 {
+		f.failMerges[number]--
+		return fmt.Errorf("fake: merge %d failed", number)
+	}
+	return nil
 }
 
 // Approve records the call and fails if the number was marked via FailApprove.
