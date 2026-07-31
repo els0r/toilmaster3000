@@ -20,6 +20,16 @@ type Fake struct {
 	// skips the whole cycle).
 	ListErr error
 
+	// Authored is the canned authored (outbound) set returned by ListAuthored.
+	Authored []PR
+	// AuthoredErr, when set, makes ListAuthored fail (to prove a failed
+	// outbound fetch clears the outbound snapshot, independent of the inbound
+	// pull).
+	AuthoredErr error
+	// authoredCalls counts ListAuthored invocations, so a test can assert one
+	// additional list call per cycle (no N+1).
+	authoredCalls int
+
 	// Login is the login CurrentUser returns (the resolved @me token).
 	Login string
 	// CurrentUserErr, when set, makes CurrentUser fail (to prove preflight
@@ -97,6 +107,27 @@ func (f *Fake) ListCandidates(_ context.Context) ([]PR, error) {
 	out := make([]PR, len(f.Candidates))
 	copy(out, f.Candidates)
 	return out, nil
+}
+
+// ListAuthored returns the canned authored set (or AuthoredErr), recording the
+// call so a test can assert exactly one outbound list call per cycle.
+func (f *Fake) ListAuthored(_ context.Context) ([]PR, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.authoredCalls++
+	if f.AuthoredErr != nil {
+		return nil, f.AuthoredErr
+	}
+	out := make([]PR, len(f.Authored))
+	copy(out, f.Authored)
+	return out, nil
+}
+
+// AuthoredCallCount returns how many times ListAuthored was invoked.
+func (f *Fake) AuthoredCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.authoredCalls
 }
 
 // CurrentUser returns the configured Login (or CurrentUserErr), standing in for

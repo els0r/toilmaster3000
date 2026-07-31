@@ -48,6 +48,13 @@ type PR struct {
 	// alone as a soft dedup (ADR 0013), so saved-switches analytics never double-
 	// counts across a team running multiple tm3k instances.
 	ReviewDecision string
+	// Mergeable is gh's mergeable field (MERGEABLE | CONFLICTING | UNKNOWN),
+	// populated only by the authored-PR (outbound) list call — the inbound
+	// candidate call does not request it. It is a MERGE precondition, not a
+	// stage boundary: ClassifyOutboundStage never reads it, and a conflicted
+	// Ready PR stays in Ready carrying its conflict state. UNKNOWN means GitHub
+	// is still computing mergeability — retried naturally next cycle.
+	Mergeable string
 }
 
 // FileDiff is one changed file of a PR, as the GitHub files API emits it: the
@@ -81,6 +88,13 @@ type Check struct {
 // can expand the @me author token.
 type GitHubClient interface {
 	ListCandidates(ctx context.Context) ([]PR, error)
+	// ListAuthored pulls the outbound candidate set — every open PR the
+	// operator authors — once per cycle via a second `gh pr list` against the
+	// same repo with the fixed derived search AuthoredSearch. Drafts are
+	// included (draft is an outbound STAGE, not a gate), and mergeable +
+	// reviewDecision ride the single call (no N+1). Decode-only:
+	// ClassifyOutboundStage judges each PR into its stage.
+	ListAuthored(ctx context.Context) ([]PR, error)
 	Approve(ctx context.Context, number int) error
 	CurrentUser(ctx context.Context) (string, error)
 	// PRStatesSince fetches the live lifecycle (state + mergedAt) of every PR the
@@ -136,14 +150,52 @@ type ghListItem struct {
 	// ReviewDecision is gh's coarse review-state signal, pulled in the same single
 	// list call (no per-PR N+1) to drive the approved-elsewhere soft dedup.
 	ReviewDecision string `json:"reviewDecision"`
+	// Mergeable is gh's mergeability signal, requested only by the authored
+	// (outbound) list call; the inbound call leaves it empty.
+	Mergeable string `json:"mergeable"`
 }
 
-// ListCandidates pulls the candidate set once via a single gh call.
+// listJSONFields is the --json field set of the inbound candidate list call —
+// everything the cycle needs from ONE call (no per-PR N+1).
+const listJSONFields = "number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision"
+
+// AuthoredSearch is the fixed derived outbound search: every open PR the
+// operator authors, drafts included (draft is an outbound stage, not a gate).
+// It is not configurable — the outbound direction always means "my PRs in the
+// configured repo".
+const AuthoredSearch = "is:open author:@me"
+
+// InboundSearch derives the effective inbound search from the operator's
+// configured query by appending -author:@me, so the two per-cycle pulls are
+// disjoint: authored PRs never enter the inbound funnel (they previously sat
+// in inbound Staging as unmatchable noise) and live on the outbound tab
+// instead. Applied once at startup (main); every consumer — the gh call and
+// the /pipeline search chip — sees the same effective search.
+func InboundSearch(configured string) string {
+	return configured + " -author:@me"
+}
+
+// ListCandidates pulls the inbound candidate set once via a single gh call.
 func (c *CLI) ListCandidates(ctx context.Context) ([]PR, error) {
+	return c.list(ctx, c.search, listJSONFields)
+}
+
+// ListAuthored pulls the outbound candidate set once via a second single gh
+// call against the same repo: the fixed AuthoredSearch, with mergeable riding
+// the call (needed for the Ready conflict marker and, in a later slice, the
+// merge precondition). Decode-only — ClassifyOutboundStage judges the stages.
+func (c *CLI) ListAuthored(ctx context.Context) ([]PR, error) {
+	return c.list(ctx, AuthoredSearch, listJSONFields+",mergeable")
+}
+
+// list runs one `gh pr list` over the given search and --json field set and
+// decodes each item into a PR. Both per-cycle pulls (inbound candidates,
+// outbound authored) flow through here so the decode never forks.
+func (c *CLI) list(ctx context.Context, search, jsonFields string) ([]PR, error) {
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
 		"--repo", c.repo,
-		"--search", c.search,
-		"--json", "number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision",
+		"--search", search,
+		"--json", jsonFields,
 	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -170,6 +222,7 @@ func (c *CLI) ListCandidates(ctx context.Context) ([]PR, error) {
 			IsDraft:        it.IsDraft,
 			Checks:         it.StatusCheckRollup,
 			ReviewDecision: it.ReviewDecision,
+			Mergeable:      it.Mergeable,
 		})
 	}
 	return prs, nil
