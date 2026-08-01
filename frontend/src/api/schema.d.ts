@@ -107,15 +107,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/toilmaster3000/v1/pipeline/{number}/diff": {
+    "/api/toilmaster3000/v1/prs/{number}/diff": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Fetch a tracked PR's diff on demand (the Diff card) — the queue or Staging */
-        get: operations["get-pipeline-diff"];
+        /** Fetch a tracked PR's diff on demand (the Diff card) — queue, Staging, or outbound */
+        get: operations["get-pr-diff"];
         put?: never;
         post?: never;
         delete?: never;
@@ -805,12 +805,12 @@ export interface operations {
             };
         };
     };
-    "get-pipeline-diff": {
+    "get-pr-diff": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description PR number whose diff to fetch, from the queue or Staging */
+                /** @description PR number whose diff to fetch, from the queue, Staging, or the outbound snapshot */
                 number: number;
             };
             cookie?: never;

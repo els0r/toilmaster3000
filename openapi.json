@@ -1327,17 +1327,17 @@
         "summary": "Live Cycle Funnel snapshot (the four terminal lists + distribution counts)"
       }
     },
-    "/api/toilmaster3000/v1/pipeline/{number}/diff": {
+    "/api/toilmaster3000/v1/prs/{number}/diff": {
       "get": {
-        "operationId": "get-pipeline-diff",
+        "operationId": "get-pr-diff",
         "parameters": [
           {
-            "description": "PR number whose diff to fetch, from the queue or Staging",
+            "description": "PR number whose diff to fetch, from the queue, Staging, or the outbound snapshot",
             "in": "path",
             "name": "number",
             "required": true,
             "schema": {
-              "description": "PR number whose diff to fetch, from the queue or Staging",
+              "description": "PR number whose diff to fetch, from the queue, Staging, or the outbound snapshot",
               "format": "int64",
               "type": "integer"
             }
@@ -1365,7 +1365,7 @@
             "description": "Error"
           }
         },
-        "summary": "Fetch a tracked PR's diff on demand (the Diff card) — the queue or Staging"
+        "summary": "Fetch a tracked PR's diff on demand (the Diff card) — queue, Staging, or outbound"
       }
     },
     "/api/toilmaster3000/v1/queue": {

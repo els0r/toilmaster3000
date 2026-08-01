@@ -1199,11 +1199,11 @@ func TestNoRuleCanAutoApproveBreaking(t *testing.T) {
 	require.Len(t, queue, 2, "both breaking PRs routed to the queue")
 }
 
-// S6-Diff-A: GET /pipeline/{number}/diff returns the queued PR's changed files
+// S6-Diff-A: GET /prs/{number}/diff returns the queued PR's changed files
 // (filename/status/+N/−M/patch) plus total_files — the queue item's
 // changed_files — so the Diff card can render per-file and show "first N of M".
 // A file GitHub omits the patch for (binary) crosses the wire with an empty patch.
-func TestPipelineDiffReturnsFilesAndTotalForAQueuedPR(t *testing.T) {
+func TestPRDiffReturnsFilesAndTotalForAQueuedPR(t *testing.T) {
 	store := storeWith(t, matchAllChores())
 	fake := github.NewFake(
 		github.PR{Number: 60, Title: "chore!: breaking chore", Author: "alice", URL: "u60",
@@ -1219,7 +1219,7 @@ func TestPipelineDiffReturnsFilesAndTotalForAQueuedPR(t *testing.T) {
 	eng.RunCycleOnce(context.Background())
 
 	var body server.PRDiffBody
-	getJSON(t, srv.URL+apiPrefix+"/pipeline/60/diff", &body)
+	getJSON(t, srv.URL+apiPrefix+"/prs/60/diff", &body)
 	require.Equal(t, 142, body.TotalFiles, "total_files is the PR's changed_files (banner: first 2 of 142)")
 	require.Equal(t, []server.FileDiff{
 		{Filename: "main.go", Status: "modified", Additions: 2, Deletions: 1, Patch: "@@ -1 +1 @@\n+a\n-b"},
@@ -1227,10 +1227,10 @@ func TestPipelineDiffReturnsFilesAndTotalForAQueuedPR(t *testing.T) {
 	}, body.Files)
 }
 
-// S6-Diff-C: GET /pipeline/{number}/diff also resolves a Staging PR (eligible,
+// S6-Diff-C: GET /prs/{number}/diff also resolves a Staging PR (eligible,
 // matched no rule) — the route widened from queue-only to queue-or-Staging
 // (ADR 0015) so Staging's diff pill works exactly like the queue's.
-func TestPipelineDiffReturnsFilesAndTotalForAStagedPR(t *testing.T) {
+func TestPRDiffReturnsFilesAndTotalForAStagedPR(t *testing.T) {
 	store := storeWith(t) // no rules: an eligible PR matching nothing falls into Staging
 	fake := github.NewFake(
 		github.PR{Number: 70, Title: "feat: a new panel", Author: "camille", URL: "u70",
@@ -1245,20 +1245,46 @@ func TestPipelineDiffReturnsFilesAndTotalForAStagedPR(t *testing.T) {
 	eng.RunCycleOnce(context.Background())
 
 	var body server.PRDiffBody
-	getJSON(t, srv.URL+apiPrefix+"/pipeline/70/diff", &body)
+	getJSON(t, srv.URL+apiPrefix+"/prs/70/diff", &body)
 	require.Equal(t, 5, body.TotalFiles)
 	require.Equal(t, []server.FileDiff{
 		{Filename: "panel.go", Status: "added", Additions: 118, Deletions: 0, Patch: "@@ -0,0 +1 @@"},
 	}, body.Files)
 }
 
-// S6-Diff-B: GET /pipeline/{number}/diff for a number tracked in neither the
-// queue nor Staging is a 404 — the endpoint never fetches a diff for a PR the
-// human isn't looking at.
-func TestPipelineDiffUntrackedIs404(t *testing.T) {
+// S6-Diff-E: GET /prs/{number}/diff also resolves an outbound PR (authored,
+// tracked in an outbound stage list) — the lookup widened beyond inbound (ADR
+// 0017) so the Diff pill rides outbound rows exactly as it does inbound ones.
+func TestPRDiffReturnsFilesAndTotalForAnOutboundPR(t *testing.T) {
+	fake := github.NewFake()
+	fake.Authored = []github.PR{
+		{Number: 80, Title: "feat(web): pending", Author: "me", URL: "u80",
+			Additions: 40, Deletions: 2, ChangedFiles: 3,
+			Checks: greenChecks(), ReviewDecision: "REVIEW_REQUIRED"},
+	}
+	fake.SetDiff(80, []github.FileDiff{
+		{Filename: "web.go", Status: "modified", Additions: 40, Deletions: 2, Patch: "@@ -1 +1 @@"},
+	})
+	eng, store := newEngine(t, fake)
+	srv := newTestServerFor(t, eng, store)
+
+	eng.RunCycleOnce(context.Background())
+
+	var body server.PRDiffBody
+	getJSON(t, srv.URL+apiPrefix+"/prs/80/diff", &body)
+	require.Equal(t, 3, body.TotalFiles)
+	require.Equal(t, []server.FileDiff{
+		{Filename: "web.go", Status: "modified", Additions: 40, Deletions: 2, Patch: "@@ -1 +1 @@"},
+	}, body.Files)
+}
+
+// S6-Diff-B: GET /prs/{number}/diff for a number tracked in neither the
+// queue, Staging, nor the outbound snapshot is a 404 — the endpoint never
+// fetches a diff for a PR the human isn't looking at.
+func TestPRDiffUntrackedIs404(t *testing.T) {
 	srv := newTestServer(t)
 
-	resp, err := http.Get(srv.URL + apiPrefix + "/pipeline/999/diff")
+	resp, err := http.Get(srv.URL + apiPrefix + "/prs/999/diff")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
