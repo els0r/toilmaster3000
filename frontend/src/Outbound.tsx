@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { armOutbound, disarmOutbound } from "./api";
 import type { MergeRecord, Outbound, OutboundItem } from "./api";
 import { ArmedBadge, BreakingBadge, ConflictBadge } from "./Badges";
-import { DiffMag } from "./DiffMag";
+import { DiffPill } from "./DiffPill";
 import { DistributionStation, StationCard } from "./Station";
 import { clock, timeAgo, useNow } from "./time";
 
@@ -232,18 +232,14 @@ function MergedStation({ merges }: { merges: MergeRecord[] }) {
 }
 
 // outboundMeta is the meta line every outbound row shares: the PR's diff
-// magnitude through the shared DiffMag leaf, the breaking badge on any
-// `!`-titled row (arm with open eyes), and the armed badge on an Armed row —
-// the consent state riding the row in whatever stage it is in. The magnitude
-// is a static readout (not the clickable DiffPill): the on-demand diff
-// endpoint resolves queue/Staging PRs only (ADR 0015), so a pill here would
-// always fail.
+// magnitude as the shared clickable DiffPill (the on-demand diff lookup
+// resolves outbound PRs too), the breaking badge on any `!`-titled row (arm
+// with open eyes), and the armed badge on an Armed row — the consent state
+// riding the row in whatever stage it is in.
 function outboundMeta(item: OutboundItem): ReactNode {
   return (
     <>
-      <span className="diff-mag tnum">
-        <DiffMag item={item} />
-      </span>
+      <DiffPill item={item} />
       {item.title_parts.breaking && (
         <>
           <span className="sep">·</span>

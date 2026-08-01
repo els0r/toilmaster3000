@@ -247,10 +247,10 @@ export type PRDiff = components["schemas"]["PRDiffBody"];
 export type FileDiff = components["schemas"]["FileDiff"];
 
 // fetchDiff fetches a tracked PR's diff on demand (the Diff pill click) — a PR
-// currently in the queue or Staging. A number tracked in neither is a 404,
-// surfaced as the server's message so the card can show why.
+// currently in the queue, Staging, or the outbound snapshot. An untracked
+// number is a 404, surfaced as the server's message so the card can show why.
 export async function fetchDiff(number: number): Promise<PRDiff> {
-  const resp = await fetch(`${API_BASE}/pipeline/${number}/diff`);
+  const resp = await fetch(`${API_BASE}/prs/${number}/diff`);
   if (!resp.ok) {
     throw new Error(await extractError(resp, "diff request failed"));
   }
