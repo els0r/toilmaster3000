@@ -304,13 +304,15 @@ func (e *Engine) ApproveManually(ctx context.Context, number int) error {
 }
 
 // ErrPRNotTracked is returned by Diff when the given PR number is not
-// currently tracked in the Needs-Human-Review queue or Staging — the two
-// buckets the on-demand Diff pill may be opened from (ADR 0015).
-var ErrPRNotTracked = errors.New("pr not tracked in queue or staging")
+// currently tracked in the Needs-Human-Review queue, Staging, or the outbound
+// snapshot — the buckets the on-demand Diff pill may be opened from (ADR 0015,
+// widened to outbound by ADR 0017).
+var ErrPRNotTracked = errors.New("pr not tracked in queue, staging, or outbound")
 
 // Diff fetches one tracked PR's changed files on demand (the Diff pill, opened
-// from the queue or Staging). It is scoped to the CURRENT queue-or-Staging
-// snapshot — a number absent from both is ErrPRNotTracked and never reaches gh.
+// from the queue, Staging, or an outbound stage row). It is scoped to the
+// CURRENT snapshots — a number absent from all is ErrPRNotTracked and never
+// reaches gh.
 // The returned totalFiles is the tracked item's changed_files, the
 // authoritative count for the caller's "first N of M files" banner; the
 // fetched files may be fewer (the gh seam returns one page — ADR 0008). The
@@ -331,8 +333,9 @@ func (e *Engine) Diff(ctx context.Context, number int) (files []github.FileDiff,
 }
 
 // trackedChangedFiles returns the authoritative changed_files count for a PR
-// number currently tracked in the queue or Staging (locked read) — the two
-// buckets Diff resolves from.
+// number currently tracked in the queue, Staging, or any outbound stage list
+// (locked read) — the buckets Diff resolves from. Inbound and outbound pulls
+// are disjoint by search, so first match wins without ambiguity.
 func (e *Engine) trackedChangedFiles(number int) (int, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -344,6 +347,16 @@ func (e *Engine) trackedChangedFiles(number int) (int, bool) {
 	for _, s := range e.funnel.Staging {
 		if s.Number == number {
 			return s.ChangedFiles, true
+		}
+	}
+	for _, stage := range [][]OutboundItem{
+		e.outbound.Draft, e.outbound.Red, e.outbound.Running,
+		e.outbound.ChangesRequested, e.outbound.AwaitingApproval, e.outbound.Ready,
+	} {
+		for _, o := range stage {
+			if o.Number == number {
+				return o.ChangedFiles, true
+			}
 		}
 	}
 	return 0, false

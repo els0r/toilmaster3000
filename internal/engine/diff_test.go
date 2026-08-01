@@ -99,6 +99,43 @@ func TestDiffOfStagedPRReturnsFilesAndTotal(t *testing.T) {
 	}, files)
 }
 
+// E-diff-5: Diff of an outbound PR (authored, tracked in an outbound stage
+// list) returns its fetched changed files alongside its authoritative total —
+// the Diff pill rides outbound rows exactly as it does queue/Staging rows.
+func TestDiffOfOutboundPRReturnsFilesAndTotal(t *testing.T) {
+	eng, fake := outboundEngine(t,
+		github.PR{Number: 88, Title: "feat(ui): pending review", Author: "me", URL: "u88",
+			Additions: 30, Deletions: 4, ChangedFiles: 7,
+			Checks: green(), ReviewDecision: "REVIEW_REQUIRED"},
+	)
+	fake.SetDiff(88, []github.FileDiff{
+		{Filename: "ui.go", Status: "modified", Additions: 30, Deletions: 4, Patch: "@@ -1 +1 @@"},
+	})
+	eng.RunCycleOnce(context.Background())
+
+	files, total, err := eng.Diff(context.Background(), 88)
+	require.NoError(t, err)
+	require.Equal(t, 7, total, "total_files is the outbound item's changed_files")
+	require.Equal(t, []github.FileDiff{
+		{Filename: "ui.go", Status: "modified", Additions: 30, Deletions: 4, Patch: "@@ -1 +1 @@"},
+	}, files)
+}
+
+// E-diff-6: with only an outbound snapshot populated, an unknown number is
+// still ErrPRNotTracked and never reaches gh — widening the lookup must not
+// loosen the untracked guard.
+func TestDiffOfUnknownPRWithOutboundPresentIsNotTracked(t *testing.T) {
+	eng, fake := outboundEngine(t,
+		github.PR{Number: 88, Title: "feat(ui): pending review", Author: "me", URL: "u88",
+			Checks: green(), ReviewDecision: "REVIEW_REQUIRED"},
+	)
+	eng.RunCycleOnce(context.Background())
+
+	_, _, err := eng.Diff(context.Background(), 999)
+	require.ErrorIs(t, err, engine.ErrPRNotTracked)
+	require.Empty(t, fake.DiffCalls(), "an untracked number never reaches the gh diff call")
+}
+
 // E-diff-4: a PR that is ONLY in Staging (never queued) must never become
 // manually-approvable — ApproveManually is the queue's own override path, and
 // widening Diff's scope must not widen this one too (a Staging PR hasn't
