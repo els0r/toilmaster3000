@@ -74,8 +74,9 @@ fixed `manual (breaking override)` string).
   queue (a 40-line fix vs a 1000-line refactor). All three ride the single cycle
   fetch (see Engine) — no extra `gh` call. Rendered as the **Diff pill**: one
   clickable pill showing green-bold `+N`, red-bold `−M`, and a muted `K files`.
-  Shown on the **queue only**, not the feed (diff size is noise when merely
-  verifying the robot behaved).
+  Shown on PR rows across the queue, Staging, and the outbound stations (ADR
+  0015, ADR 0017) — not the feed (diff size is noise when merely verifying the
+  robot behaved).
 - **Diff pill / Diff card** — the Diff pill (see Diff magnitude) is clickable;
   clicking it opens the **Diff card**, a modal that fetches and renders the PR's
   changes per-file (filename · status · `+N −M`, collapsible — files ≤ 40 changed
@@ -816,6 +817,7 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 | `POST` | `/api/toilmaster3000/v1/outbound/{number}/arm` | arm a PR (rejected while `reviewDecision == CHANGES_REQUESTED`) |
 | `DELETE` | `/api/toilmaster3000/v1/outbound/{number}/arm` | disarm a PR |
 | `GET` | `/api/toilmaster3000/v1/merges` | merge ledger, newest-first, **today only** (reads `merges.jsonl`; feeds the Merged station) |
+| `GET` | `/api/toilmaster3000/v1/prs/{number}/diff` | on-demand per-file diff for the Diff card — resolves a PR tracked in the queue, Staging, or the outbound snapshot; untracked → 404 (ADR 0015, ADR 0017) |
 | `GET` | `/api/toilmaster3000/v1/rules` | list rules |
 | `POST` | `/api/toilmaster3000/v1/rules` | create a rule |
 | `PUT` | `/api/toilmaster3000/v1/rules/{id}` | update / enable / disable (full replace) |
