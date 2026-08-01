@@ -812,7 +812,7 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 | `GET` | `/api/toilmaster3000/v1/analytics` | approval-history aggregates for a range (+ scope filter): totals, shares, switches-saved, by-type cohort, elapsed-aligned deltas, all-time scope list. Query: `range=today\|week\|month\|days`, `days=N` (for `days`), `scope=a,b` (repeatable/CSV) |
 | `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `cost_low`, `cost_high` (CHF per saved switch), `currency` |
 | `PUT` | `/api/toilmaster3000/v1/settings` | update the constants (full replace) |
-| `GET` | `/api/toilmaster3000/v1/outbound` | live **outbound funnel** snapshot: per-stage lists (draft, red, running, changes-requested, awaiting, ready incl. conflict/mergeable state), distribution counts, `armed` flag per row, `merged_this_cycle`. Derived live each cycle like `/pipeline` |
+| `GET` | `/api/toilmaster3000/v1/outbound` | live **outbound funnel** snapshot: per-stage lists (draft, red, running, changes-requested, awaiting, ready incl. conflict/mergeable state), distribution counts, `armed` flag per row. Derived live each cycle like `/pipeline` (the Merged station reads `/merges`, not a per-cycle field) |
 | `POST` | `/api/toilmaster3000/v1/outbound/{number}/arm` | arm a PR (rejected while `reviewDecision == CHANGES_REQUESTED`) |
 | `DELETE` | `/api/toilmaster3000/v1/outbound/{number}/arm` | disarm a PR |
 | `GET` | `/api/toilmaster3000/v1/merges` | merge ledger, newest-first, **today only** (reads `merges.jsonl`; feeds the Merged station) |
