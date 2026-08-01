@@ -15,18 +15,33 @@ vi.mock("./api", async (importOriginal) => {
     ...actual,
     armOutbound: vi.fn(),
     disarmOutbound: vi.fn(),
+    fetchDiff: vi.fn(),
   };
 });
 
-import { armOutbound, disarmOutbound } from "./api";
+import { armOutbound, disarmOutbound, fetchDiff } from "./api";
 const mockArm = vi.mocked(armOutbound);
 const mockDisarm = vi.mocked(disarmOutbound);
+const mockFetchDiff = vi.mocked(fetchDiff);
 
 beforeEach(() => {
   mockArm.mockReset();
   mockArm.mockResolvedValue();
   mockDisarm.mockReset();
   mockDisarm.mockResolvedValue();
+  mockFetchDiff.mockReset();
+  mockFetchDiff.mockResolvedValue({
+    files: [
+      {
+        filename: "web.go",
+        status: "modified",
+        additions: 8,
+        deletions: 2,
+        patch: "@@ -1 +1 @@\n+new\n-old",
+      },
+    ],
+    total_files: 1,
+  });
 });
 
 const outboundItem = (over: Partial<OutboundItem> = {}): OutboundItem => ({
@@ -333,8 +348,12 @@ describe("Outbound funnel — Arm/Disarm toggle", () => {
       />,
     );
 
+    // The diff pill button legitimately rides every row — only the consent
+    // control must be absent here.
     const card = screen.getByTestId("outbound-changes-requested");
-    expect(within(card).queryAllByRole("button")).toHaveLength(0);
+    expect(
+      within(card).queryByRole("button", { name: /arm/i }),
+    ).not.toBeInTheDocument();
   });
 
   // Clicking Arm gives the consent through the API and refetches, so the row
@@ -496,6 +515,52 @@ describe("Outbound funnel — Merged station", () => {
         /no merges yet today/i,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Outbound funnel — diff pill", () => {
+  // Outbound rows carry the same clickable diff pill as inbound rows: clicking
+  // it fetches that PR's diff and opens the same Diff card — no more static
+  // readout (the on-demand lookup now resolves outbound PRs too).
+  it("opens the diff card when an outbound row's pill is clicked", async () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 1,
+          awaiting_approval: [outboundItem({ number: 88 })],
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "view diff for #88" }));
+
+    expect(await screen.findByText("web.go")).toBeInTheDocument();
+    expect(mockFetchDiff).toHaveBeenCalledWith(88);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  // Every station's rows carry the pill — the affordance is uniform across the
+  // whole outbound funnel, not just one stage.
+  it("renders a clickable pill on every station's rows", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 6,
+          draft: [outboundItem({ number: 1 })],
+          red: [outboundItem({ number: 2 })],
+          running: [outboundItem({ number: 3 })],
+          changes_requested: [outboundItem({ number: 4 })],
+          awaiting_approval: [outboundItem({ number: 5 })],
+          ready: [outboundItem({ number: 6 })],
+        })}
+      />,
+    );
+
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      expect(
+        screen.getByRole("button", { name: `view diff for #${n}` }),
+      ).toBeInTheDocument();
+    }
   });
 });
 
