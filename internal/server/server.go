@@ -210,7 +210,7 @@ type FileDiff struct {
 	Patch     string `json:"patch"`
 }
 
-// PRDiffBody is the wire shape of one queued PR's diff: the changed files fetched
+// PRDiffBody is the wire shape of one tracked PR's diff: the changed files fetched
 // (at most one page) plus TotalFiles, the PR's authoritative changed_files count.
 // The card compares len(Files) against TotalFiles to render "first N of M files".
 type PRDiffBody struct {
@@ -250,7 +250,7 @@ type queueOutput struct {
 	Body []QueueItem
 }
 
-type pipelineDiffOutput struct {
+type prDiffOutput struct {
 	Body PRDiffBody
 }
 
@@ -565,13 +565,13 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "get-pipeline-diff",
+		OperationID: "get-pr-diff",
 		Method:      http.MethodGet,
-		Path:        APIPrefix + "/pipeline/{number}/diff",
-		Summary:     "Fetch a tracked PR's diff on demand (the Diff card) — the queue or Staging",
+		Path:        APIPrefix + "/prs/{number}/diff",
+		Summary:     "Fetch a tracked PR's diff on demand (the Diff card) — queue, Staging, or outbound",
 	}, func(ctx context.Context, in *struct {
-		Number int `path:"number" doc:"PR number whose diff to fetch, from the queue or Staging"`
-	}) (*pipelineDiffOutput, error) {
+		Number int `path:"number" doc:"PR number whose diff to fetch, from the queue, Staging, or the outbound snapshot"`
+	}) (*prDiffOutput, error) {
 		files, total, err := eng.Diff(ctx, in.Number)
 		if err != nil {
 			if errors.Is(err, engine.ErrPRNotTracked) {
@@ -583,7 +583,7 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		for _, f := range files {
 			out = append(out, fileDiffToBody(f))
 		}
-		return &pipelineDiffOutput{Body: PRDiffBody{Files: out, TotalFiles: total}}, nil
+		return &prDiffOutput{Body: PRDiffBody{Files: out, TotalFiles: total}}, nil
 	})
 
 	huma.Register(api, huma.Operation{
