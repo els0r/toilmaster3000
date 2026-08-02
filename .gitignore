@@ -19,6 +19,6 @@ frontend/*.tsbuildinfo
 /docs/plans/
 
 # Runtime state (seeded at first run)
-.state/*.jsonl
+.state/
 .config/rules.yaml
 .config/settings.yaml
