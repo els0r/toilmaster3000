@@ -64,6 +64,11 @@ mind whenever you touch the cycle loop, the rules, or the funnel.
   in exactly one terminal bucket; the branch precedence in `RunCycleOnce` *is*
   the partition. The segment counts sum to `Incoming` by construction — preserve
   that when editing the cycle loop.
+- **Engine-caused changes mutate the snapshots in place** (ADR 0018): a manual
+  approve removes the PR from the queue and moves its funnel count; a merge
+  prunes Ready atomically with the ledger append — both preserving the
+  partition sums. Never "simplify" these mutations away: the next cycle would
+  serve a known falsehood for up to 60s.
 
 ## Conventions
 
