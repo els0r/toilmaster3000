@@ -216,6 +216,51 @@ func TestFailedMergeInfoSkipsMerge(t *testing.T) {
 	require.Empty(t, eng.Merges())
 }
 
+// M10: a successful merge prunes the PR from the published outbound snapshot
+// in the same locked step that appends the ledger (ADR 0018): the engine
+// performed the merge, so serving the PR in Ready for another cycle would be a
+// known falsehood — the Ready+Merged duplicate the UI can never be shown.
+// Outgoing follows the prune, so the outbound partition still sums.
+func TestMergePrunesReadyImmediately(t *testing.T) {
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
+	fake.SetMergeInfo(21, github.MergeDetails{
+		Title: "feat: t", Body: "b",
+		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+	})
+
+	eng.RunCycleOnce(context.Background())
+	require.NoError(t, eng.Arm(21))
+	eng.RunCycleOnce(context.Background())
+
+	require.Len(t, eng.Merges(), 1, "the PR merged and entered the ledger")
+	ob := eng.Outbound()
+	require.Empty(t, ob.Ready, "the merged PR left Ready in the same step it entered the ledger")
+	require.Zero(t, ob.Outgoing, "Outgoing follows the prune — the partition still sums")
+}
+
+// M11: a failed merge (attempt + immediate retry) mutates NOTHING — the PR
+// stays in the published Ready list with Outgoing unchanged, and the ledger
+// stays empty. The prune is tied to merge success alone: a PR that did not
+// merge genuinely IS still Ready, and saying so is the truth, not staleness.
+func TestFailedMergeLeavesSnapshotUntouched(t *testing.T) {
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
+	fake.SetMergeInfo(21, github.MergeDetails{
+		Title: "feat: t", Body: "b",
+		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+	})
+	fake.FailMerge(21, 2) // attempt + immediate retry both fail this cycle
+
+	eng.RunCycleOnce(context.Background())
+	require.NoError(t, eng.Arm(21))
+	eng.RunCycleOnce(context.Background())
+
+	require.Empty(t, eng.Merges(), "a failed merge appends nothing")
+	ob := eng.Outbound()
+	require.Len(t, ob.Ready, 1, "the unmerged PR stays in Ready — that is the truth")
+	require.Equal(t, 21, ob.Ready[0].Number)
+	require.Equal(t, 1, ob.Outgoing, "Outgoing is untouched")
+}
+
 // M9: the merged PR leaves the is:open pull, so the NEXT cycle's slice-3
 // reconciliation cleans its armed entry — the merge step itself does not need
 // to touch the armed set (verified here rather than duplicated).

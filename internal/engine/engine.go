@@ -300,7 +300,37 @@ func (e *Engine) ApproveManually(ctx context.Context, number int) error {
 	if _, err := e.approve(ctx, pr, matchedRule); err != nil {
 		return fmt.Errorf("manual approve #%d: %w", number, err)
 	}
+	e.applyManualApprove(number)
 	return nil
+}
+
+// applyManualApprove applies a just-performed manual override to the published
+// snapshots (ADR 0018): the engine approved the PR, so serving it in
+// Needs-Human-Review until the next cycle rebuild would be a known falsehood.
+// Under one lock it removes the PR from the queue snapshot and — only when the
+// PR was actually still queued — moves its funnel count from NeedsHumanReview
+// to ApprovedByTm3k (the partition keeps summing to Incoming: the PR migrates
+// between terminal segments) and decrements the heartbeat's queue count. The
+// found-guard makes the mutation a no-op when a cycle rebuild won the race and
+// already recomputed the snapshots without the PR — adjusting counts then would
+// corrupt the fresh partition. ApprovedThisCycle stays untouched: it is the
+// cycle's pulse, and a manual override is not the cycle's doing.
+func (e *Engine) applyManualApprove(number int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	queue := make([]QueueItem, 0, len(e.queue))
+	for _, q := range e.queue {
+		if q.Number != number {
+			queue = append(queue, q)
+		}
+	}
+	if len(queue) == len(e.queue) {
+		return // a cycle rebuild won the race; the fresh snapshots are already correct
+	}
+	e.queue = queue
+	e.funnel.NeedsHumanReview--
+	e.funnel.ApprovedByTm3k++
+	e.status.QueueCount--
 }
 
 // ErrPRNotTracked is returned by Diff when the given PR number is not

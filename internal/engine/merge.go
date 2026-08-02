@@ -81,12 +81,34 @@ func (e *Engine) mergeOne(ctx context.Context, it OutboundItem) {
 		)
 	}
 	e.merges = append([]Merge{rec}, e.merges...) // newest-first
+	e.pruneMergedFromOutbound(it.Number)
 	e.logger.Info("merged PR",
 		"pr", it.Number,
 		"subject", subject,
 		"approved_by", rec.ApprovedBy,
 		"url", it.URL,
 	)
+}
+
+// pruneMergedFromOutbound removes a just-merged PR from the published outbound
+// snapshot's Ready list and decrements Outgoing so the partition still sums
+// (ADR 0018). It runs in the same critical section as the ledger append, so
+// /outbound and /merges can never disagree — the row leaves Ready in the same
+// atomic step that puts it in the ledger. Callers must hold e.mu. The Ready
+// slice is rebuilt, never shifted in place: mergeArmedReady is still ranging
+// over the published slice header, and both share the backing array.
+func (e *Engine) pruneMergedFromOutbound(number int) {
+	ready := make([]OutboundItem, 0, len(e.outbound.Ready))
+	for _, it := range e.outbound.Ready {
+		if it.Number != number {
+			ready = append(ready, it)
+		}
+	}
+	if len(ready) == len(e.outbound.Ready) {
+		return // not in the published snapshot; nothing to reconcile
+	}
+	e.outbound.Ready = ready
+	e.outbound.Outgoing--
 }
 
 // appendMergeRecord appends one merge as a JSON line to merges.jsonl, creating

@@ -159,6 +159,6 @@ func TestStatusReportsReadyAndMergedCounts(t *testing.T) {
 
 	var status server.CycleStatus
 	getJSON(t, url+apiPrefix+"/status", &status)
-	require.Equal(t, 2, status.ReadyCount, "both Ready rows count — the actionable signal, conflict included")
+	require.Equal(t, 1, status.ReadyCount, "the conflicted PR still counts — Ready ignores mergeable — but the just-merged one left Ready with the merge (ADR 0018)")
 	require.Equal(t, 2, status.MergedCount, "today's ledger: the seeded record plus the fresh merge; yesterday's never counts")
 }
