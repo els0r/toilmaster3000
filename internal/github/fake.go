@@ -35,6 +35,10 @@ type Fake struct {
 	// CurrentUserErr, when set, makes CurrentUser fail (to prove preflight
 	// fails fast when @me cannot be resolved).
 	CurrentUserErr error
+	// RepoVisibleErr, when set, makes CheckRepoVisible fail (to prove
+	// preflight fails fast when the configured repo is invisible to the
+	// active gh identity).
+	RepoVisibleErr error
 
 	failNumbers map[int]bool
 	approved    []int
@@ -161,6 +165,15 @@ func (f *Fake) CurrentUser(_ context.Context) (string, error) {
 		return "", f.CurrentUserErr
 	}
 	return f.Login, nil
+}
+
+// CheckRepoVisible returns the configured RepoVisibleErr (nil by default),
+// standing in for `gh repo view` so the repo-visibility preflight is provable
+// without a real gh.
+func (f *Fake) CheckRepoVisible(_ context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.RepoVisibleErr
 }
 
 // SetState canns the raw lifecycle PRStatesSince returns for a PR number.

@@ -41,6 +41,29 @@ func TestResolveSelfLoginEmpty(t *testing.T) {
 	require.Error(t, err)
 }
 
+// An invisible repo is a hard preflight error, and the message names BOTH the
+// repo and the active gh account: the per-cycle pulls go through GitHub's
+// search API, which returns empty (not an error) for a repo the identity
+// cannot see — without this gate a wrong active account boots fine and reports
+// `ok` with zero counts forever (the silent-blindness failure mode).
+func TestCheckRepoVisibleFailsWhenRepoInvisible(t *testing.T) {
+	fake := github.NewFake()
+	fake.RepoVisibleErr = errors.New("GraphQL: Could not resolve to a Repository")
+
+	err := checkRepoVisible(context.Background(), fake, "acme/private", "els0r")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "acme/private")
+	require.Contains(t, err.Error(), "els0r")
+}
+
+// A visible repo passes the gate silently — the happy path adds no friction.
+func TestCheckRepoVisiblePasses(t *testing.T) {
+	fake := github.NewFake()
+
+	err := checkRepoVisible(context.Background(), fake, "acme/public", "els0r")
+	require.NoError(t, err)
+}
+
 // listen binds a free port and returns a usable listener.
 func TestListenBindsFreePort(t *testing.T) {
 	ln, err := listen("localhost:0")

@@ -4,7 +4,8 @@
 // background goroutine.
 //
 // Boot order (fail fast, clear message, never silently approve nothing):
-//  1. preflight: gh installed+authenticated, resolve @me, bind the listen port.
+//  1. preflight: gh installed+authenticated, resolve @me, repo visible to the
+//     active identity, bind the listen port.
 //  2. SetSelfLogin on the engine so the matcher can expand @me.
 //  3. serve the SPA + API on the bound listener.
 package main
@@ -104,7 +105,8 @@ func newRootCmd() *cobra.Command {
 //
 // Boot order (fail fast, clear message, never silently approve nothing):
 //  1. validate required config (repo, search, poll interval).
-//  2. preflight: gh installed+authenticated, resolve @me, bind the listen port.
+//  2. preflight: gh installed+authenticated, resolve @me, repo visible to the
+//     active identity, bind the listen port.
 //  3. SetSelfLogin on the engine so the matcher can expand @me.
 //  4. serve the SPA + API on the bound listener.
 func run(ctx context.Context, cfg config) error {
@@ -175,6 +177,11 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return fmt.Errorf("preflight: resolve @me: %w", err)
 	}
+	// Runs after resolve @me: the resolved login IS the active gh identity,
+	// so the failure message can name who cannot see the repo.
+	if err := checkRepoVisible(ctx, client, cfg.repo, selfLogin); err != nil {
+		return fmt.Errorf("preflight: repo visibility: %w", err)
+	}
 	ln, err := listen(addr)
 	if err != nil {
 		return fmt.Errorf("preflight: bind listen port: %w", err)
@@ -235,6 +242,22 @@ func resolveSelfLogin(ctx context.Context, client github.GitHubClient) (string, 
 		return "", fmt.Errorf("resolve @me via `gh api user`: empty login")
 	}
 	return login, nil
+}
+
+// checkRepoVisible verifies the configured repo is visible to the active gh
+// identity (via the seam's boot-time `gh repo view`). A failure is a hard
+// preflight error whose message names BOTH the repo and the active account:
+// the per-cycle pulls go through GitHub's search API, which returns an empty
+// result — not an error — for a repo the identity cannot see, so without this
+// gate a wrong active account (e.g. a personal account active while the repo
+// needs the EMU work account) boots fine and reports `ok` with zero counts
+// forever. selfLogin is the @me login preflight already resolved — that IS
+// the active identity.
+func checkRepoVisible(ctx context.Context, client github.GitHubClient, repo, selfLogin string) error {
+	if err := client.CheckRepoVisible(ctx); err != nil {
+		return fmt.Errorf("repo %s is not visible to the active gh account %q: switch identity (`gh auth switch`) or run with a GH_TOKEN that can see it: %w", repo, selfLogin, err)
+	}
+	return nil
 }
 
 // listen binds the listen port up front so a port already in use causes a clear

@@ -97,6 +97,14 @@ type GitHubClient interface {
 	ListAuthored(ctx context.Context) ([]PR, error)
 	Approve(ctx context.Context, number int) error
 	CurrentUser(ctx context.Context) (string, error)
+	// CheckRepoVisible reports whether the configured repo is visible to the
+	// active gh identity — a boot-time preflight gate. It exists because the
+	// per-cycle pulls go through GitHub's search API, which returns an EMPTY
+	// result (not an error) for a repo the identity cannot see: without this
+	// check a wrong active account boots fine and reports `ok` with zero
+	// counts forever, the silent-blindness failure mode the preflight is
+	// there to prevent.
+	CheckRepoVisible(ctx context.Context) error
 	// PRStatesSince fetches the live lifecycle (state + mergedAt) of every PR the
 	// bot has reviewed — it only ever approves, so reviewed-by:@me == approved-by-me
 	// — that was updated at or after since, in ONE batched call, for the engine's
@@ -186,6 +194,19 @@ const AuthoredSearch = "is:open author:@me"
 // the /pipeline search chip — sees the same effective search.
 func InboundSearch(configured string) string {
 	return configured + " -author:@me"
+}
+
+// CheckRepoVisible verifies the configured repo resolves for the active gh
+// identity via one boot-time `gh repo view` (--json keeps it quiet and
+// non-interactive; the fields are discarded — only the exit code judges).
+func (c *CLI) CheckRepoVisible(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "gh", "repo", "view", c.repo, "--json", "name")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gh repo view %s: %w: %s", c.repo, err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 // ListCandidates pulls the inbound candidate set once via a single gh call.
