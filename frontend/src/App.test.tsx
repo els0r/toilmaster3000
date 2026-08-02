@@ -18,6 +18,7 @@ vi.mock("./api", async (importOriginal) => {
     fetchStatus: vi.fn(),
     fetchApprovals: vi.fn(),
     fetchQueue: vi.fn(),
+    approveQueueItem: vi.fn(),
     fetchPipeline: vi.fn(),
     fetchOutbound: vi.fn(),
     fetchMerges: vi.fn(),
@@ -31,6 +32,7 @@ import {
   fetchStatus,
   fetchApprovals,
   fetchQueue,
+  approveQueueItem,
   fetchPipeline,
   fetchOutbound,
   fetchMerges,
@@ -41,6 +43,7 @@ import {
 const mockStatus = vi.mocked(fetchStatus);
 const mockApprovals = vi.mocked(fetchApprovals);
 const mockQueue = vi.mocked(fetchQueue);
+const mockApprove = vi.mocked(approveQueueItem);
 const mockPipeline = vi.mocked(fetchPipeline);
 const mockOutbound = vi.mocked(fetchOutbound);
 const mockMerges = vi.mocked(fetchMerges);
@@ -144,6 +147,7 @@ beforeEach(() => {
   mockStatus.mockReset();
   mockApprovals.mockReset();
   mockQueue.mockReset();
+  mockApprove.mockReset();
   mockPipeline.mockReset();
   mockOutbound.mockReset();
   mockMerges.mockReset();
@@ -244,6 +248,30 @@ describe("App polling", () => {
     expect(mockStatus).toHaveBeenCalledTimes(2);
     expect(mockApprovals).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("link", { name: /#2/ })).toBeInTheDocument();
+  });
+
+  // F-approve-refetch: a manual override approve refetches /pipeline along with
+  // queue/status/approvals — the server moves the funnel counts in the same
+  // step as the approve (ADR 0018), so the Incoming bar must repaint together
+  // with the queue panel, not one poll later.
+  it("refetches /pipeline immediately after an approve", async () => {
+    mockStatus.mockResolvedValue(status(0));
+    mockApprovals.mockResolvedValue([]);
+    mockQueue.mockResolvedValue([queueItem(41)]);
+    mockApprove.mockResolvedValue(undefined);
+
+    render(<App />);
+    await flush();
+    expect(mockPipeline).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "approve #41" }));
+    await flush();
+
+    expect(mockApprove).toHaveBeenCalledWith(41);
+    expect(mockQueue).toHaveBeenCalledTimes(2);
+    expect(mockStatus).toHaveBeenCalledTimes(2);
+    expect(mockApprovals).toHaveBeenCalledTimes(2);
+    expect(mockPipeline).toHaveBeenCalledTimes(2);
   });
 
   // F-funnel-poll: the Incoming distribution bar reflects the polled /pipeline

@@ -31,8 +31,14 @@ export function App() {
 
   // The Cycle Funnel snapshot polls on the same 10s cadence. It clears on a
   // failed fetch (usePollingClearable) so a candidate-fetch failure shows an
-  // empty funnel rather than a stale partition.
-  const [pipeline] = usePollingClearable(fetchPipeline, POLL_MS);
+  // empty funnel rather than a stale partition. refetchPipeline pulls a fresh
+  // snapshot right after a manual approve — the server moves the funnel counts
+  // in the same step as the approve (ADR 0018), so the bar repaints with the
+  // queue panel instead of one poll later.
+  const [pipeline, refetchPipeline] = usePollingClearable(
+    fetchPipeline,
+    POLL_MS,
+  );
 
   // The outbound snapshot polls alongside it (the tab badge needs it from every
   // tab) with the same clear-on-failure policy: a failed authored fetch shows a
@@ -53,13 +59,15 @@ export function App() {
   // once so a fresh approval is visible without the user hunting for it.
   const freshNumbers = useFreshApprovals(approvals);
 
-  // After a manual override approve, pull the queue (the approved item leaves it
-  // next cycle) plus status + approvals immediately, so the move shows without
-  // waiting for the next interval.
+  // After a manual override approve, pull the queue (the server removes the
+  // approved item immediately — ADR 0018) plus status, approvals, and the
+  // funnel snapshot, so the move shows everywhere without waiting for the next
+  // interval.
   function onApproved() {
     refetchQueue();
     refetchStatus();
     refetchApprovals();
+    refetchPipeline();
   }
 
   // The active tab lives in the URL hash (#inbound / #outbound / #rules /
