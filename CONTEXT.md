@@ -255,7 +255,12 @@ delegating to GitHub native auto-merge.
   retry next cycle). Required for any Merged display at all: a merged PR leaves
   the `is:open` pull immediately, so live data can never show it. The outbound
   funnel ends in a **today-scoped, read-only Merged station** (same cadence seam
-  as the Approval Feed). Analytics integration: deferred, its own decision.
+  as the Approval Feed). Today-scoping was **reaffirmed against a station-level
+  range picker**: the funnel is the glance surface, and the only temporal
+  question it answers is "what landed today" — the live stations upstream carry
+  no time scope at all (they *are* the body of work heading to merge).
+  Range-scoped merge history is an Analytics-tab concern (see Deferred).
+  Analytics integration: deferred, its own decision.
 
 ## Invariants
 
@@ -746,9 +751,13 @@ confirms the robot is alive — not just that it approved things. **`staging`**
 joins the strip as the new actionable signal (uncovered PRs awaiting a rule),
 beside `approved`/`review` (queue)/`dropped`. The **outbound pair** rides the
 same strip: **`ready`** (PRs waiting only on you — the outbound actionable
-signal, parallel to `staging`) and **`merged`** (last cycle's merges — the
-outbound pulse, parallel to `approved`); both ride `/status` so every tab shows
-them. The heartbeat's **`approved` count is the last
+signal, parallel to `staging`) and **`merged`** (merges **today**, not last
+cycle — a **deliberate asymmetry** with `approved`: a merged PR leaves the
+`is:open` pull immediately and merges are rare against a 60s cadence, so a
+per-cycle count would read `0` on nearly every glance — noise pretending to be
+signal. Today-scoping makes the strip's `merged` equal the Merged station's
+row count; both read through the same `todaysMerges` filter so they can never
+disagree); both ride `/status` so every tab shows them. The heartbeat's **`approved` count is the last
 cycle's** (the live pulse) — deliberately a different scope from the
 **today-scoped** Approval Feed, so "approved 3" in the strip and N rows in the
 feed are the same word at two scopes (cycle vs day), disambiguated by labels
@@ -805,7 +814,7 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 
 | method | path | purpose |
 |---|---|---|
-| `GET` | `/api/toilmaster3000/v1/status` | cycle status: `last_run`, `outcome`, counts (approved / staging / in queue / dropped / **ready / merged**) — `staging` and the outbound pair ride `/status` so the always-polled heartbeat strip shows them from every tab without fetching `/pipeline` or `/outbound` |
+| `GET` | `/api/toilmaster3000/v1/status` | cycle status: `last_run`, `outcome`, counts (approved / staging / in queue / dropped / **ready / merged**; `merged` is **today-scoped**, all others per-cycle) — `staging` and the outbound pair ride `/status` so the always-polled heartbeat strip shows them from every tab without fetching `/pipeline` or `/outbound` |
 | `GET` | `/api/toilmaster3000/v1/approvals` | feed, newest-first, **today only** (`approved_at ≥ local midnight`; reads `approvals.jsonl`) |
 | `GET` | `/api/toilmaster3000/v1/queue` | Needs-Human-Review items (derived live) |
 | `POST` | `/api/toilmaster3000/v1/queue/{number}/approve` | manual override approve |
@@ -875,8 +884,18 @@ Repo is self-contained (will be relocated later). Layout:
 
 - **Preflight (fail fast at boot, clear message):** verify `gh` is installed and
   authenticated (`gh auth status`); resolve the `@me` token once via
-  `gh api user`; exit if `:8666` is already in use. A broken `gh` exits hard
-  rather than silently approving nothing.
+  `gh api user`; **verify the configured repo is visible to the active `gh`
+  identity** (`gh repo view <repo>` or equivalent — fail with a message naming
+  the active account and the repo); exit if `:8666` is already in use. A broken
+  `gh` exits hard rather than silently approving nothing. The repo-visibility
+  check exists because the per-cycle pulls go through GitHub's **search API,
+  which returns an empty result — not an error — for a repo the identity cannot
+  see**: without the boot check, a wrong active account (e.g. a personal
+  account active while the repo needs the EMU work account) yields perpetual
+  `outcome: ok` with zero counts everywhere — the silent-blindness failure mode
+  the `dropped` count cannot catch because it lives below the fetch. *(Boot-time
+  only, decided: no per-cycle re-check — visibility lost after boot is out of
+  scope for now.)*
 - **Concurrency:** one mutex-guarded in-memory store (rules, dedup set, last
   cycle status, latest queue snapshot); HTTP reads are locked reads. **All
   approvals — auto and manual — flow through one locked `approve()` path**
@@ -916,6 +935,10 @@ Repo is self-contained (will be relocated later). Layout:
 - **Dismiss action** on queue items — needs persistent hidden-state.
 - **Outbound analytics** — merges saved-switches integration (`merges.jsonl` is
   the durable signal; whether/how a merge counts as a saved switch is undecided).
+  **Placement decided:** when a range-scoped merge-history view lands, it lives
+  in the **Analytics tab** behind the existing Grafana-style range picker —
+  **never** as a control on the funnel's Merged station (that station stays
+  today-scoped; a lean-back range control does not belong on the glance surface).
 - **Commit-message preview at arm time** — gh-land shows the constructed message
   before its confirm; tm3k's arm predates the merge, and the body is fetched
   live at merge time, so a preview at arm time could mislead. Skipped for now.
