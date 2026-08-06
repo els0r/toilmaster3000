@@ -1,9 +1,9 @@
 <!--
-DRAFT — pending operator review (#40).
-
-This security-screen prompt ships as an example and has NOT been signed off
-by an operator. Review and tune it before relying on the screen's judgement.
-The screen it drives is defense-in-depth: it raises the cost of smuggling a
+Default security-screen prompt — reviewed and signed off by the operator
+(#40, 2026-08-06) after live verification of both verdict paths: a clean
+release chore proceeded; a security-config diff disguised under a deps-chore
+title was held with concrete reasoning. Tune freely for your setup. The
+screen it drives is defense-in-depth: it raises the cost of smuggling a
 malicious change past the rule set — it does not guarantee safety.
 -->
 

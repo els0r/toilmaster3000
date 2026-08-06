@@ -138,8 +138,8 @@ func TestBuildScreenerConstructsScreensOverTheClaudeAdapter(t *testing.T) {
 }
 
 // The shipped example hook config must load through the real hook loader
-// (drift guard for field renames), and the draft security-screen prompt it
-// references must exist and carry its pending-operator-review marking (#40).
+// (drift guard for field renames), and the security-screen prompt it
+// references must exist, signed off by the operator (#40).
 func TestExampleHooksConfigLoads(t *testing.T) {
 	data, err := os.ReadFile("examples/hooks.yaml")
 	require.NoError(t, err)
@@ -156,9 +156,10 @@ func TestExampleHooksConfigLoads(t *testing.T) {
 	require.NotEmpty(t, cfg.Screens[0].ID, "boot must self-heal an Id into the entry")
 }
 
-func TestDraftSecurityScreenPromptIsMarkedPendingReview(t *testing.T) {
+func TestSecurityScreenPromptIsSignedOff(t *testing.T) {
 	data, err := os.ReadFile("examples/security-screen-prompt.md")
 	require.NoError(t, err)
-	require.Contains(t, string(data), "DRAFT", "the prompt ships as a draft pending operator sign-off")
+	require.NotContains(t, string(data), "DRAFT", "the operator signed off in #40 — the pending-review marker is gone")
+	require.Contains(t, string(data), "signed off", "the sign-off provenance stays recorded in the header")
 	require.Contains(t, string(data), "untrusted", "the prompt must remind the screen the diff is untrusted data")
 }
