@@ -188,7 +188,17 @@ type Engine struct {
 	// nil means no screens are configured — the consult is skipped entirely
 	// and behavior is bit-for-bit pre-screening.
 	screener *hook.Screener
-	logger   *slog.Logger
+	// notifiers is the notification dependency (ADR 0021): the fired-ledger
+	// consult + async side-effect dispatch behind the post-point events
+	// (queue_entered, screen_held, post_approve). Set via SetNotifierRunner —
+	// an optional observer, never a gate: nil means no Notifiers are
+	// configured and every fire point is a straight fall-through. Guarded by
+	// mu like the rest of the mutable fields (ApproveManually fires from the
+	// HTTP goroutine), but Fire itself is always called OUTSIDE the lock — a
+	// Notifier can never block an engine action, so it never rides one's lock
+	// either.
+	notifiers *hook.NotifierRunner
+	logger    *slog.Logger
 
 	mu     sync.Mutex
 	dedup  map[int]bool
@@ -246,6 +256,30 @@ func New(client github.GitHubClient, statePath, mergesPath string, rules *rule.S
 		return nil, fmt.Errorf("load merges: %w", err)
 	}
 	return e, nil
+}
+
+// SetNotifierRunner wires the Notifier runtime (ADR 0021) — main calls it once
+// at boot, before Run starts (the SetSelfLogin idiom; the runner is an
+// optional observer, so it stays out of New's required dependencies). nil —
+// the default — means no Notifiers are configured: every fire point is a
+// straight fall-through and behavior is bit-for-bit pre-notifier.
+func (e *Engine) SetNotifierRunner(r *hook.NotifierRunner) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.notifiers = r
+}
+
+// fireNotifiers announces one completed fact at a post-point (ADR 0021): a
+// no-op without a runner, and Fire itself never blocks — so no fire can ever
+// block, divert, or reorder the engine action it trails. Called OUTSIDE the
+// engine lock, always after the fact it announces is settled.
+func (e *Engine) fireNotifiers(ctx context.Context, pr hook.PRContext) {
+	e.mu.Lock()
+	r := e.notifiers
+	e.mu.Unlock()
+	if r != nil {
+		r.Fire(ctx, pr)
+	}
 }
 
 // Status returns a copy of the last cycle's status (locked read).
@@ -333,10 +367,28 @@ func (e *Engine) ApproveManually(ctx context.Context, number int) error {
 		"pr", number,
 		"reasons", item.Reasons,
 	)
-	if _, err := e.approve(ctx, pr, matchedRule); err != nil {
+	ok, err := e.approve(ctx, pr, matchedRule)
+	if err != nil {
 		return fmt.Errorf("manual approve #%d: %w", number, err)
 	}
 	e.applyManualApprove(number)
+	if ok {
+		// post_approve announces the COMPLETED override — manual and auto
+		// announce through the one event, distinguished by the manual flag
+		// (ADR 0021); the overridden queue reasons ride as the point extra.
+		// ok==false means a racing cycle won and already announced: the
+		// approval is one fact, so it fires once. Fired outside every lock,
+		// after the snapshots settled — never able to block or reorder.
+		e.fireNotifiers(ctx, hook.PRContext{
+			Point:   hook.PostApprove,
+			Number:  item.Number,
+			Title:   item.Title,
+			Author:  item.Author,
+			URL:     item.URL,
+			Reasons: item.Reasons,
+			Manual:  true,
+		})
+	}
 	return nil
 }
 
@@ -571,6 +623,20 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 				ChangedFiles: pr.ChangedFiles,
 				Reasons:      reasons,
 			})
+			// queue_entered announces the rule-routed entry (ADR 0021) — and
+			// ONLY the rule-routed one: screen-hold diverts fire screen_held
+			// below, so the two events partition queue entries by topology.
+			// The queue re-presents this entry every cycle; the fired-ledger
+			// makes the announcement once-per-PR-ever.
+			e.fireNotifiers(ctx, hook.PRContext{
+				Point:   hook.QueueEntered,
+				Number:  pr.Number,
+				Title:   pr.Title,
+				Author:  pr.Author,
+				URL:     pr.URL,
+				HeadSHA: pr.HeadSHA,
+				Reasons: reasons,
+			})
 			continue
 		}
 		if !approveMatched {
@@ -608,7 +674,21 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 					"pr", pr.Number,
 					"screens", screenNames(disp.Holds),
 				)
-				queue = append(queue, queueItemForHolds(pr, disp.Holds))
+				qi := queueItemForHolds(pr, disp.Holds)
+				queue = append(queue, qi)
+				// screen_held announces the screen-hold divert — including the
+				// 3-strikes synthetic hold, which flows through here like any
+				// hold (ADR 0022) — never queue_entered: the event split is
+				// what keeps a review-assist off just-screened PRs (ADR 0021).
+				e.fireNotifiers(ctx, hook.PRContext{
+					Point:   hook.ScreenHeld,
+					Number:  pr.Number,
+					Title:   pr.Title,
+					Author:  pr.Author,
+					URL:     pr.URL,
+					HeadSHA: pr.HeadSHA,
+					Reasons: qi.Reasons,
+				})
 				continue
 			}
 			if len(disp.Pending) > 0 {
@@ -634,6 +714,18 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 			approved++
 			funnel.ApprovedByTm3k++
 			funnel.ApprovedThisCycle++
+			// post_approve announces the COMPLETED approval — only ok==true is
+			// a fact; a failed approve fired nothing above and retries next
+			// cycle, announcing once on the success (ADR 0021).
+			e.fireNotifiers(ctx, hook.PRContext{
+				Point:   hook.PostApprove,
+				Number:  pr.Number,
+				Title:   pr.Title,
+				Author:  pr.Author,
+				URL:     pr.URL,
+				HeadSHA: pr.HeadSHA,
+				Manual:  false,
+			})
 		}
 	}
 
