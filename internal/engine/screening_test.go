@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -241,7 +242,7 @@ func TestInFlightRunIsNotDispatchedTwice(t *testing.T) {
 // S5: a run that overruns its per-screen Timeout is cancelled and recorded as
 // an error row — which is NO verdict: the PR stays in Screening and the next
 // cycle's level-triggered consult re-dispatches (transient blips self-heal;
-// the 3-strikes synthesis is a later slice). Timeout is the only tunable.
+// three strikes synthesize a hold — S10). Timeout is the only tunable.
 func TestTimedOutRunRecordsErrorAndRedispatches(t *testing.T) {
 	scr := newScriptedScreen(hook.Verdict{Outcome: hook.Proceed}, nil, true) // never released: every run rides into its timeout
 	defer close(scr.release)
@@ -395,6 +396,137 @@ func TestFunnelPartitionSumsToIncomingWithScreening(t *testing.T) {
 	require.Equal(t, 2, f.NeedsHumanReview, "one screen-held + one rule-routed")
 	require.Equal(t, 1, f.ApprovedByTm3k, "#7 stands as a dedup member")
 	require.Zero(t, f.ApprovedThisCycle)
+}
+
+// S10: the no-verdict path is bounded and ends at a human (ADR 0022 decision
+// 5). After one or two failed attempts the PR stays visibly in Screening and
+// the level-triggered consult re-dispatches next cycle; the THIRD error row
+// for the key synthesizes a hold carrying the last error, and the PR flows to
+// the queue like any hold — never silent limbo, never a walk-through. Once
+// struck out, no further paid run is dispatched for the key.
+func TestThreeErrorAttemptsSynthesizeScreenUnavailableHold(t *testing.T) {
+	scr := newScriptedScreen(hook.Verdict{}, errors.New("harness exploded"), false)
+	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
+	store := tempVerdicts(t)
+
+	pr := github.PR{Number: 28, Title: "chore: flaky harness", Author: "ann", URL: "u28", Checks: green(), HeadSHA: "head-1"}
+	eng, fake := screeningEngine(t, store, screens, pr)
+
+	// Cycles 1-3: each consult still has no verdict (an error row is no
+	// verdict), keeps the PR visibly in Screening, and re-dispatches — the
+	// streak growing to N proves attempt N actually ran and recorded.
+	for attempt := 1; attempt <= 3; attempt++ {
+		eng.RunCycleOnce(context.Background())
+		f := eng.Funnel()
+		require.Len(t, f.Screening, 1, "after %d failed attempts the PR stays visibly in Screening", attempt-1)
+		require.Empty(t, eng.Queue(), "short of the cap nothing routes to the queue")
+		require.Equal(t, f.Incoming, partitionSum(f))
+		require.Eventually(t, func() bool {
+			return store.ErrorStreak("id-sec", 28, "head-1") == attempt
+		}, 10*time.Second, 5*time.Millisecond, "attempt %d records its error row", attempt)
+	}
+
+	// Cycle 4: three error rows synthesize a hold carrying the last error —
+	// the PR reaches the queue like any hold, and is never approved.
+	eng.RunCycleOnce(context.Background())
+	require.Empty(t, fake.ApprovedCalls(), "a screen-unavailable PR is never walked through")
+	queue := eng.Queue()
+	require.Len(t, queue, 1, "the third strike summons a human")
+	require.Equal(t, []string{"screen:security"}, queue[0].Reasons)
+	require.Equal(t, []engine.ScreenHold{{Screen: "security", Reason: "screen unavailable: harness exploded"}},
+		queue[0].ScreenHolds, "the synthesized hold carries the last error as its prose")
+	f := eng.Funnel()
+	require.Empty(t, f.Screening, "struck out is held, not pending")
+	require.Equal(t, 1, f.NeedsHumanReview)
+	require.Equal(t, f.Incoming, partitionSum(f), "the partition stays whole through the synthesized-hold path")
+
+	// A holding disposition dispatches nothing: the cap also stops the paid
+	// runs (retry-forever was explicitly rejected, ADR 0022).
+	require.Never(t, func() bool { return scr.callCount() > 3 }, 250*time.Millisecond, 50*time.Millisecond,
+		"a struck-out key never dispatches another run")
+	require.Equal(t, 3, store.ErrorStreak("id-sec", 28, "head-1"), "no fourth attempt is ever recorded")
+}
+
+// S11: the queue's manual-override Approve outranks a screen hold — exactly as
+// it outranks the breaking-change Invariant (ADR 0022 decision 4). The held PR
+// approves on GitHub through the same override path, the published snapshots
+// mutate in place (ADR 0018: queue removal + funnel count move, atomically with
+// the ledger append), and the partition keeps summing to Incoming. The next
+// cycle keeps it approved: the stored hold row is outranked for good.
+func TestManualOverrideOutranksScreenHold(t *testing.T) {
+	store := tempVerdicts(t)
+	require.NoError(t, store.Append(hook.VerdictRecord{ScreenID: "id-sec", Number: 29, Head: "head-1", Outcome: hook.Hold, Reason: "touches auth code", At: time.Now()}))
+	scr := newScriptedScreen(hook.Verdict{Outcome: hook.Hold, Reason: "touches auth code"}, nil, false)
+	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
+
+	pr := github.PR{Number: 29, Title: "chore: contested", Author: "ann", URL: "u29", Checks: green(), HeadSHA: "head-1"}
+	eng, fake := screeningEngine(t, store, screens, pr)
+
+	eng.RunCycleOnce(context.Background())
+	require.Len(t, eng.Queue(), 1, "the stored hold diverts the PR to the queue")
+
+	require.NoError(t, eng.ApproveManually(context.Background(), 29))
+
+	require.Equal(t, []int{29}, fake.ApprovedCalls(), "the human outranks the robot's hold")
+	require.Empty(t, eng.Queue(), "ADR 0018: the queue snapshot mutates in place, no waiting for a rebuild")
+	f := eng.Funnel()
+	require.Zero(t, f.NeedsHumanReview, "the funnel count left needs-human-review in the same mutation")
+	require.Equal(t, 1, f.ApprovedByTm3k, "and became an approved-by-tm3k member")
+	require.Zero(t, f.ApprovedThisCycle, "a manual override is not the cycle's pulse")
+	require.Equal(t, f.Incoming, partitionSum(f), "the in-place mutation keeps the partition whole")
+	require.Zero(t, eng.Status().QueueCount, "the heartbeat's queue count follows the queue")
+
+	feed := eng.Approvals()
+	require.Len(t, feed, 1)
+	require.Equal(t, engine.ManualApprovalPrefix+"screen:security", feed[0].MatchedRule,
+		"the override self-documents the outranked screen hold")
+
+	// Next cycle: the dedup set outranks the still-stored hold row — the PR
+	// stays approved, never re-queues, and no screen ever runs for it.
+	eng.RunCycleOnce(context.Background())
+	f = eng.Funnel()
+	require.Empty(t, eng.Queue())
+	require.Equal(t, 1, f.ApprovedByTm3k)
+	require.Equal(t, f.Incoming, partitionSum(f))
+	require.Zero(t, scr.callCount(), "an approved PR never reaches a screen again")
+}
+
+// S12: disabling a screen (disable + restart) releases its holds on the next
+// cycle (ADR 0022 decision 4): the fold only consults ENABLED screens, so the
+// stored hold row simply stops participating — level-triggered, no cleanup
+// pass, no state-file surgery. The formerly-held PR approves on the rebuilt
+// engine's first cycle.
+func TestDisabledScreenReleasesItsHoldsAfterRestart(t *testing.T) {
+	verdictsPath := filepath.Join(t.TempDir(), "verdicts.jsonl")
+	scr := newScriptedScreen(hook.Verdict{Outcome: hook.Hold, Reason: "touches auth code"}, nil, false)
+	pr := github.PR{Number: 30, Title: "chore: misjudged", Author: "ann", URL: "u30", Checks: green(), HeadSHA: "head-1"}
+
+	// Life 1: the enabled screen's stored hold diverts the PR to the queue.
+	store1, err := hook.NewVerdictStore(verdictsPath)
+	require.NoError(t, err)
+	require.NoError(t, store1.Append(hook.VerdictRecord{ScreenID: "id-sec", Number: 30, Head: "head-1", Outcome: hook.Hold, Reason: "touches auth code", At: time.Now()}))
+	eng1, fake1 := screeningEngine(t, store1, []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}, pr)
+	eng1.RunCycleOnce(context.Background())
+	require.Len(t, eng1.Queue(), 1, "enabled, the stored hold diverts")
+	require.Empty(t, fake1.ApprovedCalls())
+
+	// Restart with the screen DISABLED: same verdicts file, fresh store, the
+	// spec now carries Enabled=false — the backing-out story, no state-file
+	// surgery involved.
+	store2, err := hook.NewVerdictStore(verdictsPath)
+	require.NoError(t, err)
+	off := enabledSpec("id-sec", "security")
+	off.Enabled = false
+	eng2, fake2 := screeningEngine(t, store2, []hook.ScreenInstance{{Spec: off, Screen: scr}}, pr)
+
+	eng2.RunCycleOnce(context.Background())
+	require.Equal(t, []int{30}, fake2.ApprovedCalls(), "the released PR approves on the next cycle")
+	require.Empty(t, eng2.Queue(), "the disabled screen's hold stopped participating")
+	f := eng2.Funnel()
+	require.Empty(t, f.Screening, "a disabled screen is never pending either")
+	require.Equal(t, 1, f.ApprovedByTm3k)
+	require.Equal(t, f.Incoming, partitionSum(f), "the partition stays whole through the release")
+	require.Zero(t, scr.callCount(), "a disabled screen never runs")
 }
 
 // S9: screens run ONLY on the would-auto-approve subset — after the gates,

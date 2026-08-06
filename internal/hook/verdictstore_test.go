@@ -69,6 +69,43 @@ func TestLatestRowPerKeyWinsAndHeadsAreIndependent(t *testing.T) {
 	require.Equal(t, late, got)
 }
 
+// V4: ErrorStreak counts the consecutive TRAILING error rows per key — the
+// failed-attempt count the 3-strikes fold consumes (ADR 0022 decision 5). A
+// real verdict resets its key to zero, other keys are untouched, and the
+// streak is rebuilt from disk order on reload so the attempt cap survives a
+// restart.
+func TestErrorStreakCountsTrailingErrorsPerKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "verdicts.jsonl")
+	s, err := hook.NewVerdictStore(path)
+	require.NoError(t, err)
+
+	require.Zero(t, s.ErrorStreak("scr-1", 7, "h1"), "an unknown key has no failed attempts")
+
+	row := func(head string, outcome hook.Outcome, reason string) hook.VerdictRecord {
+		return hook.VerdictRecord{ScreenID: "scr-1", Number: 7, Head: head,
+			Outcome: outcome, Reason: reason, At: time.Date(2026, 8, 6, 9, 0, 0, 0, time.UTC)}
+	}
+
+	require.NoError(t, s.Append(row("h1", hook.Errored, "timeout")))
+	require.NoError(t, s.Append(row("h1", hook.Errored, "nonzero exit")))
+	require.Equal(t, 2, s.ErrorStreak("scr-1", 7, "h1"), "each error row extends its key's streak")
+
+	require.NoError(t, s.Append(row("h2", hook.Errored, "timeout")))
+	require.Equal(t, 1, s.ErrorStreak("scr-1", 7, "h2"), "a new push is a fresh key: its streak starts over")
+	require.Equal(t, 2, s.ErrorStreak("scr-1", 7, "h1"), "other keys' streaks are untouched")
+
+	require.NoError(t, s.Append(row("h1", hook.Hold, "touches auth")))
+	require.Zero(t, s.ErrorStreak("scr-1", 7, "h1"), "a real verdict ends the failure streak")
+
+	require.NoError(t, s.Append(row("h1", hook.Errored, "timeout")))
+	require.Equal(t, 1, s.ErrorStreak("scr-1", 7, "h1"), "only TRAILING errors count: the streak restarts after a verdict")
+
+	reloaded, err := hook.NewVerdictStore(path)
+	require.NoError(t, err)
+	require.Equal(t, 1, reloaded.ErrorStreak("scr-1", 7, "h1"), "the streak is rebuilt from disk order")
+	require.Equal(t, 1, reloaded.ErrorStreak("scr-1", 7, "h2"))
+}
+
 // V3: first run (no verdicts.jsonl) is the empty store, and nothing is
 // written until the first append (the armed-store precedent — no seed).
 func TestEmptyStoreOnFirstRun(t *testing.T) {

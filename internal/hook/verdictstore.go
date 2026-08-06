@@ -42,16 +42,21 @@ func (r VerdictRecord) key() VerdictKey {
 }
 
 // VerdictStore owns the persisted screen verdicts: append-only
-// verdicts.jsonl on disk, the latest row per key in memory (latest wins —
-// the level-triggered read the cycle consults, ADR 0022). Append-only keeps
-// the error-attempt history on disk for the 3-strikes fold of a later slice;
-// this store only ever serves the latest row. Mirrors the armed store: a
-// mutex-guarded map, loaded at construction, appended under lock.
+// verdicts.jsonl on disk; in memory the latest row per key (latest wins —
+// the level-triggered read the cycle consults, ADR 0022) plus each key's
+// trailing error streak (the failed-attempt count the 3-strikes fold
+// consumes). Mirrors the armed store: mutex-guarded maps, loaded at
+// construction, appended under lock.
 type VerdictStore struct {
 	path string
 
 	mu     sync.Mutex
 	latest map[VerdictKey]VerdictRecord
+	// errorStreak counts the consecutive TRAILING error rows per key — how
+	// many failed attempts the key's history ends with. A non-error row resets
+	// its key to zero: a real verdict ends the failure streak. Rebuilt from
+	// disk order at load, so the 3-strikes cap survives a restart (ADR 0022).
+	errorStreak map[VerdictKey]int
 }
 
 // NewVerdictStore constructs a VerdictStore backed by the given
@@ -59,7 +64,7 @@ type VerdictStore struct {
 // file is the first-run case: the empty store, nothing written until the
 // first verdict.
 func NewVerdictStore(path string) (*VerdictStore, error) {
-	s := &VerdictStore{path: path, latest: map[VerdictKey]VerdictRecord{}}
+	s := &VerdictStore{path: path, latest: map[VerdictKey]VerdictRecord{}, errorStreak: map[VerdictKey]int{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -76,6 +81,16 @@ func (s *VerdictStore) Latest(screenID string, number int, head string) (Verdict
 	return rec, ok
 }
 
+// ErrorStreak returns how many consecutive error rows the key's history ends
+// with — the failed-attempt count since the last real verdict; 0 when the
+// latest row is a verdict or the key is unknown (locked read). The 3-strikes
+// fold reads it to bound the no-verdict path (ADR 0022 decision 5).
+func (s *VerdictStore) ErrorStreak(screenID string, number int, head string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.errorStreak[VerdictKey{ScreenID: screenID, Number: number, Head: head}]
+}
+
 // Append appends one row to verdicts.jsonl and makes it the key's latest,
 // creating the .state directory if needed. The in-memory map is updated only
 // after the write succeeds, so memory never claims a verdict the disk lost
@@ -86,8 +101,21 @@ func (s *VerdictStore) Append(rec VerdictRecord) error {
 	if err := s.appendLine(rec); err != nil {
 		return fmt.Errorf("persist verdict %s #%d@%s: %w", rec.ScreenID, rec.Number, rec.Head, err)
 	}
-	s.latest[rec.key()] = rec
+	s.apply(rec)
 	return nil
+}
+
+// apply folds one row into the in-memory views: the latest-wins map and the
+// per-key trailing error streak (an error row extends its key's streak; a real
+// verdict resets it). Callers hold s.mu, or run pre-share at load.
+func (s *VerdictStore) apply(rec VerdictRecord) {
+	key := rec.key()
+	s.latest[key] = rec
+	if rec.Outcome == Errored {
+		s.errorStreak[key]++
+	} else {
+		delete(s.errorStreak, key)
+	}
 }
 
 // load reads verdicts.jsonl into the latest-wins map; a missing file is the
@@ -113,8 +141,9 @@ func (s *VerdictStore) load() error {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return fmt.Errorf("parse verdicts.jsonl line: %w", err)
 		}
-		// File order is append order, so overwriting realizes latest-wins.
-		s.latest[rec.key()] = rec
+		// File order is append order, so replaying realizes both latest-wins
+		// and the trailing error streak.
+		s.apply(rec)
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read verdicts.jsonl: %w", err)
