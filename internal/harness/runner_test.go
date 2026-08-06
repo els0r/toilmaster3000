@@ -193,6 +193,58 @@ func TestScreenerTimeoutBecomesAnErrorAttempt(t *testing.T) {
 	require.Empty(t, disp.Holds)
 }
 
+// TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter is the review-assist
+// path minus the real processes: a queue_entered fire reaches the AI Notifier
+// species, which composes the notify prompt — the never-approve/never-merge
+// ceiling riding every run — and invokes the (scripted) claude agent leg; the
+// fired-ledger row stands from dispatch, so a second fire dispatches nothing.
+// The real gh/claude CLIs never run: the agent seam is scripted.
+func TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter(t *testing.T) {
+	var mu sync.Mutex
+	var prompts []string
+	agent := scriptedClaudeAgent(func(_ context.Context, _ string, prompt string) ([]byte, error) {
+		mu.Lock()
+		prompts = append(prompts, prompt)
+		mu.Unlock()
+		return envelope(t, "Posted a review comment."), nil
+	})
+	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Prompt: "review Go idioms", Enabled: true}
+	ledger, err := hook.NewFiredLedger(filepath.Join(t.TempDir(), "hookfires.jsonl"))
+	require.NoError(t, err)
+	runner := hook.NewNotifierRunner(ledger, hook.NotifierInstance{
+		Spec:     spec,
+		Point:    hook.QueueEntered,
+		Notifier: NewAINotifier(spec, "acme/widgets", agent),
+	})
+
+	pr := hook.PRContext{Point: hook.QueueEntered, Number: 7, Title: "feat: new endpoint",
+		Author: "alice", URL: "https://github.com/acme/widgets/pull/7", HeadSHA: "feedface",
+		Reasons: []string{"docs gate"}}
+	runner.Fire(context.Background(), pr)
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(prompts) == 1
+	}, 5*time.Second, 10*time.Millisecond, "the fire reaches the agent leg")
+	require.True(t, ledger.Fired("n1", 7))
+
+	mu.Lock()
+	prompt := prompts[0]
+	mu.Unlock()
+	require.Contains(t, prompt, "review Go idioms", "the operator's instructions ride the run")
+	require.Contains(t, prompt, "gh pr diff 7 --repo acme/widgets", "the agent is told to fetch the diff itself")
+	require.Contains(t, prompt, "You must NEVER approve", "the ceiling rides every composed run")
+	require.Contains(t, prompt, "untrusted data")
+
+	runner.Fire(context.Background(), pr)
+	require.Never(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(prompts) > 1
+	}, 250*time.Millisecond, 50*time.Millisecond, "the spent fire never dispatches a second agent run")
+}
+
 // TestScreenerRecordsUnparseableOutputAsErrorAttempt is AC-2 through the full
 // runner: harness chatter without a structural verdict becomes a recorded
 // error attempt, never a fabricated proceed or hold.

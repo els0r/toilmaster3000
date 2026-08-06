@@ -76,6 +76,52 @@ func TestClaudeScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 	require.ErrorContains(t, err, "claude -p")
 }
 
+// scriptedClaudeAgent returns a Claude adapter whose side-effect seam is
+// scripted — the real claude CLI never runs in tests.
+func scriptedClaudeAgent(act func(ctx context.Context, model, prompt string) ([]byte, error)) *Claude {
+	return &Claude{act: act}
+}
+
+func TestClaudeActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
+	req := composeReq()
+	var gotModel, gotPrompt string
+	c := scriptedClaudeAgent(func(_ context.Context, model, prompt string) ([]byte, error) {
+		gotModel, gotPrompt = model, prompt
+		return envelope(t, "Posted a review comment on #42."), nil
+	})
+
+	transcript, err := c.Act(context.Background(), req)
+
+	require.NoError(t, err)
+	require.Equal(t, "Posted a review comment on #42.", transcript)
+	require.Equal(t, "sonnet", gotModel)
+	require.Equal(t, ComposeNotifyPrompt(req), gotPrompt,
+		"the invoked prompt is exactly the notify composition — the ceiling rides every run")
+}
+
+func TestClaudeActFailuresSurfaceAsErrors(t *testing.T) {
+	// A crashed CLI surfaces its error.
+	c := scriptedClaudeAgent(func(context.Context, string, string) ([]byte, error) {
+		return nil, errors.New("claude -p: signal: killed")
+	})
+	_, err := c.Act(context.Background(), composeReq())
+	require.ErrorContains(t, err, "claude -p")
+
+	// An errored run envelope is an error, not a transcript.
+	c = scriptedClaudeAgent(func(context.Context, string, string) ([]byte, error) {
+		return []byte(`{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": ""}`), nil
+	})
+	_, err = c.Act(context.Background(), composeReq())
+	require.ErrorContains(t, err, "errored")
+
+	// Non-envelope stdout (crash text) fails the decode.
+	c = scriptedClaudeAgent(func(context.Context, string, string) ([]byte, error) {
+		return []byte("panic: something broke"), nil
+	})
+	_, err = c.Act(context.Background(), composeReq())
+	require.Error(t, err)
+}
+
 func TestClaudeScreenUnparseableOutputIsAFailedAttempt(t *testing.T) {
 	c := scriptedClaude(
 		func(context.Context, string, int) (string, error) { return "+x", nil },

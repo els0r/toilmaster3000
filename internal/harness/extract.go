@@ -27,31 +27,13 @@ import (
 // 3-strikes path (ADR 0022). Prose is never scanned for keywords: "CAN
 // PROCEED" in agent chatter means nothing (ADR 0023).
 func ExtractVerdict(output []byte) (hook.Verdict, error) {
-	if len(bytes.TrimSpace(output)) == 0 {
-		return hook.Verdict{}, errors.New("empty claude output")
-	}
-
-	// The envelope of `claude -p --output-format json`: one JSON result
-	// object. Everything else on stdout (crash text, partial output) fails
-	// the decode and thereby the attempt.
-	var env struct {
-		Type    string `json:"type"`
-		Subtype string `json:"subtype"`
-		IsError bool   `json:"is_error"`
-		Result  string `json:"result"`
-	}
-	if err := json.Unmarshal(output, &env); err != nil {
-		return hook.Verdict{}, fmt.Errorf("decode claude result envelope: %w", err)
-	}
-	if env.Type != "result" {
-		return hook.Verdict{}, fmt.Errorf("unexpected claude envelope type %q", env.Type)
-	}
-	if env.IsError {
-		return hook.Verdict{}, fmt.Errorf("claude run errored (subtype %q)", env.Subtype)
+	result, err := resultText(output)
+	if err != nil {
+		return hook.Verdict{}, err
 	}
 
 	var verdicts []hook.Verdict
-	for _, block := range fencedBlocks(env.Result) {
+	for _, block := range fencedBlocks(result) {
 		if v, ok := decodeVerdictDocument(block); ok {
 			verdicts = append(verdicts, v)
 		}
@@ -64,6 +46,35 @@ func ExtractVerdict(output []byte) (hook.Verdict, error) {
 	default:
 		return hook.Verdict{}, fmt.Errorf("ambiguous claude result: %d verdict documents", len(verdicts))
 	}
+}
+
+// resultText decodes one claude CLI run's stdout (`claude -p --output-format
+// json`, a single result envelope) and returns its result text. Everything
+// else on stdout — crash text, partial output, a non-result envelope, an
+// errored run — is an error. Shared by both harness legs: ExtractVerdict
+// parses the text further (the Screen side), Act returns it verbatim as the
+// transcript (the Notifier side).
+func resultText(output []byte) (string, error) {
+	if len(bytes.TrimSpace(output)) == 0 {
+		return "", errors.New("empty claude output")
+	}
+
+	var env struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+		IsError bool   `json:"is_error"`
+		Result  string `json:"result"`
+	}
+	if err := json.Unmarshal(output, &env); err != nil {
+		return "", fmt.Errorf("decode claude result envelope: %w", err)
+	}
+	if env.Type != "result" {
+		return "", fmt.Errorf("unexpected claude envelope type %q", env.Type)
+	}
+	if env.IsError {
+		return "", fmt.Errorf("claude run errored (subtype %q)", env.Subtype)
+	}
+	return env.Result, nil
 }
 
 // decodeVerdictDocument reports whether a fenced block is a well-formed
