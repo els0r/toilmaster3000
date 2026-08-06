@@ -31,7 +31,9 @@ func outboundEngine(t *testing.T, authored ...github.PR) (*engine.Engine, *githu
 // O1 (tracer): one cycle folds every authored PR into exactly one outbound
 // stage list — the outbound funnel partition — and Outgoing is the raw pull, so
 // the distribution counts sum to it by construction. Drafts are included
-// (draft is an outbound stage, not a gate), and mergeable rides each item.
+// (draft is an outbound stage, not a gate), mergeable rides each item, and an
+// approved PR with an unresolved review thread lands in In Discussion, not
+// Ready (ADR 0019).
 func TestOutboundSnapshotPartition(t *testing.T) {
 	eng, fake := outboundEngine(t,
 		github.PR{Number: 1, Title: "feat(a): wip", Author: "me", URL: "u1", IsDraft: true, Checks: green()},
@@ -40,12 +42,14 @@ func TestOutboundSnapshotPartition(t *testing.T) {
 		github.PR{Number: 4, Title: "feat(d): objected", Author: "me", URL: "u4", Checks: green(), ReviewDecision: "CHANGES_REQUESTED"},
 		github.PR{Number: 5, Title: "feat(e): pending review", Author: "me", URL: "u5", Checks: green(), ReviewDecision: "REVIEW_REQUIRED"},
 		github.PR{Number: 6, Title: "feat(f): approved", Author: "me", URL: "u6", Checks: green(), ReviewDecision: "APPROVED", Mergeable: "CONFLICTING"},
+		github.PR{Number: 7, Title: "feat(g): approved with nits", Author: "me", URL: "u7", Checks: green(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
 	)
+	fake.SetThreads(7, github.RawReviewThreads{Nodes: []github.ReviewThread{{IsResolved: false}}})
 
 	eng.RunCycleOnce(context.Background())
 
 	ob := eng.Outbound()
-	require.Equal(t, 6, ob.Outgoing, "Outgoing is the raw authored pull")
+	require.Equal(t, 7, ob.Outgoing, "Outgoing is the raw authored pull")
 	require.Len(t, ob.Draft, 1)
 	require.Equal(t, 1, ob.Draft[0].Number)
 	require.Len(t, ob.Red, 1)
@@ -56,12 +60,14 @@ func TestOutboundSnapshotPartition(t *testing.T) {
 	require.Equal(t, 4, ob.ChangesRequested[0].Number)
 	require.Len(t, ob.AwaitingApproval, 1)
 	require.Equal(t, 5, ob.AwaitingApproval[0].Number)
+	require.Len(t, ob.InDiscussion, 1)
+	require.Equal(t, 7, ob.InDiscussion[0].Number)
 	require.Len(t, ob.Ready, 1)
 	require.Equal(t, 6, ob.Ready[0].Number)
 	require.Equal(t, "CONFLICTING", ob.Ready[0].Mergeable, "mergeable rides the item for the Ready conflict marker")
 
-	sum := len(ob.Draft) + len(ob.Red) + len(ob.Running) +
-		len(ob.ChangesRequested) + len(ob.AwaitingApproval) + len(ob.Ready)
+	sum := len(ob.Draft) + len(ob.Red) + len(ob.Running) + len(ob.ChangesRequested) +
+		len(ob.AwaitingApproval) + len(ob.InDiscussion) + len(ob.Ready)
 	require.Equal(t, ob.Outgoing, sum, "the stage lists partition the raw pull")
 
 	require.Equal(t, 1, fake.AuthoredCallCount(), "one additional gh list call per cycle, no N+1")
