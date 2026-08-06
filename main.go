@@ -175,7 +175,7 @@ func run(ctx context.Context, cfg config) error {
 		slog.Info("hooks loaded", "screens", len(hooks.Screens), "notifiers", len(hooks.Notifiers))
 	}
 
-	eng, err := engine.New(client, statePath, mergesPath, rules, arms)
+	eng, err := engine.New(client, statePath, mergesPath, rules, arms, nil)
 	if err != nil {
 		return fmt.Errorf("build engine: %w", err)
 	}

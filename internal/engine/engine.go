@@ -17,6 +17,7 @@ import (
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/conventionalcommit"
 	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
 )
 
@@ -78,6 +79,19 @@ type QueueItem struct {
 	Deletions    int      `json:"deletions"`
 	ChangedFiles int      `json:"changed_files"`
 	Reasons      []string `json:"reasons"`
+	// ScreenHolds is the prose behind a screen-held entry: one {screen, reason}
+	// per holding Screen, mirroring the screen:<name> entries in Reasons (chips
+	// stay chips; the AI's reasoning is one click away — ADR 0022). Empty on
+	// rule-routed entries: rule reasons XOR screen holds, disjoint by
+	// construction (ADR 0021).
+	ScreenHolds []ScreenHold `json:"screen_holds"`
+}
+
+// ScreenHold is one holding Screen on a screen-held queue entry: the screen's
+// user-facing name and its verdict's prose reason.
+type ScreenHold struct {
+	Screen string `json:"screen"`
+	Reason string `json:"reason"`
 }
 
 // FunnelItem is one PR itemized in a terminal funnel bucket (dropped_red,
@@ -102,30 +116,39 @@ type FunnelItem struct {
 	Additions    int
 	Deletions    int
 	ChangedFiles int
+	// PendingScreens names the enabled Screens still awaiting a verdict for the
+	// PR's current head — meaningful only on the screening bucket (the station's
+	// "why hasn't #N gone through?" signal, ADR 0022); nil on every other bucket
+	// (the FailingChecks pattern).
+	PendingScreens []string
 }
 
 // Funnel is the live Cycle Funnel snapshot: what each cycle saw, retained
-// instead of discarded. It holds the FOUR terminal item lists the cycle used to
+// instead of discarded. It holds the FIVE terminal item lists the cycle used to
 // drop plus the distribution counts that partition Incoming, and is swapped
 // under lock at cycle end (same lifecycle as the queue: empty after restart
 // until the first cycle, current as of the last completed cycle; a failed fetch
 // clears it). The raw Incoming PR set is NOT hoarded — Incoming renders as the
-// distribution bar (counts), so only the four lists + counts are kept.
+// distribution bar (counts), so only the five lists + counts are kept.
 //
 // Partition invariant (CONTEXT "Cycle Funnel"): every Incoming PR lands in
 // EXACTLY one terminal stage, so
 //
-//	Incoming = len(DroppedRed) + len(DroppedDraft) + len(Staging)
+//	Incoming = len(DroppedRed) + len(DroppedDraft) + len(Staging) + len(Screening)
 //	         + NeedsHumanReview + ApprovedByTm3k + len(ApprovedElsewhere)
 //
+// Screening is the awaiting-verdict segment (ADR 0022): eligible,
+// Approve-Rule-matched, but at least one enabled Screen has no verdict yet for
+// the PR's current head — transient by design, terminal within the cycle.
 // ApprovedByTm3k is the STANDING segment — every dedup-set member still in this
 // cycle's pull (any day) — distinct from ApprovedThisCycle (newly approved this
-// cycle); both are counts, only the four lists are itemized.
+// cycle); both are counts, only the five lists are itemized.
 type Funnel struct {
 	Incoming          int
 	DroppedRed        []FunnelItem
 	DroppedDraft      []FunnelItem
 	Staging           []FunnelItem
+	Screening         []FunnelItem
 	ApprovedElsewhere []FunnelItem
 	NeedsHumanReview  int
 	ApprovedByTm3k    int
@@ -135,6 +158,10 @@ type Funnel struct {
 // reasonBreakingChange is the queue reason for a PR blocked because its
 // conventional-commit title carries the breaking "!" marker.
 const reasonBreakingChange = "breaking_change"
+
+// reasonScreenPrefix prefixes the queue reason a holding Screen contributes:
+// "screen:" + the screen's user-facing Name (ADR 0022).
+const reasonScreenPrefix = "screen:"
 
 // ManualApprovalPrefix is stamped on the matched_rule of every manual queue
 // override (ApproveManually writes "<prefix><reasons joined>"). It is the single
@@ -155,8 +182,13 @@ type Engine struct {
 	// armed is the persisted Armed/Withheld consent set of the outbound
 	// direction (ADR 0016) — see armed.go for the arm lifecycle the engine
 	// enforces (snapshot-validated arming, level-triggered disarm, cleanup).
-	armed  *armed.Store
-	logger *slog.Logger
+	armed *armed.Store
+	// screener is the screening dependency (ADR 0022): the level-triggered
+	// verdict consult + async run dispatch the approve branch gates through.
+	// nil means no screens are configured — the consult is skipped entirely
+	// and behavior is bit-for-bit pre-screening.
+	screener *hook.Screener
+	logger   *slog.Logger
 
 	mu     sync.Mutex
 	dedup  map[int]bool
@@ -184,20 +216,23 @@ type Engine struct {
 }
 
 // New constructs an Engine over the given client, approvals.jsonl path,
-// merges.jsonl path, rule store, and armed store. It loads any existing
-// approvals into the dedup set and feed so approvals survive restart and are
-// not re-approved, and any existing merge ledger so the Merged station
+// merges.jsonl path, rule store, armed store, and screener. It loads any
+// existing approvals into the dedup set and feed so approvals survive restart
+// and are not re-approved, and any existing merge ledger so the Merged station
 // survives restart too. The rule store supplies the enabled rules each cycle
 // consults to decide which candidates to approve; the armed store carries the
 // outbound consent set the cycle reconciles (see armed.go) and the merge step
-// obeys (see merge.go).
-func New(client github.GitHubClient, statePath, mergesPath string, rules *rule.Store, arms *armed.Store) (*Engine, error) {
+// obeys (see merge.go); the screener gates the approve branch through the
+// level-triggered verdict consult (ADR 0022) — nil means no screens are
+// configured and the branch is skipped entirely.
+func New(client github.GitHubClient, statePath, mergesPath string, rules *rule.Store, arms *armed.Store, screener *hook.Screener) (*Engine, error) {
 	e := &Engine{
 		client:       client,
 		statePath:    statePath,
 		mergesPath:   mergesPath,
 		rules:        rules,
 		armed:        arms,
+		screener:     screener,
 		logger:       slog.Default(),
 		dedup:        map[int]bool{},
 		prStates:     map[int]github.PRState{},
@@ -263,6 +298,7 @@ func (e *Engine) Funnel() Funnel {
 	f.DroppedRed = append([]FunnelItem(nil), e.funnel.DroppedRed...)
 	f.DroppedDraft = append([]FunnelItem(nil), e.funnel.DroppedDraft...)
 	f.Staging = append([]FunnelItem(nil), e.funnel.Staging...)
+	f.Screening = append([]FunnelItem(nil), e.funnel.Screening...)
 	f.ApprovedElsewhere = append([]FunnelItem(nil), e.funnel.ApprovedElsewhere...)
 	return f
 }
@@ -546,7 +582,43 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 			continue
 		}
 		// An Approve Rule matched, no Review Rule gated it, and the title is not
-		// breaking (else reasons would carry breaking_change). Auto-approve.
+		// breaking (else reasons would carry breaking_change) — the PR is on the
+		// would-auto-approve path. Screens gate exactly here (the pre_approve
+		// moment, ADR 0021): the level-triggered verdict consult never blocks
+		// (ADR 0022) — any hold diverts to the queue (divert, never drop), any
+		// missing verdict dispatches an async run and parks the PR in the
+		// Screening segment this cycle; only an all-proceed fold falls through
+		// to approve. With no screener configured this is a straight
+		// fall-through, bit-for-bit pre-screening behavior.
+		if e.screener != nil {
+			disp := e.screener.Consult(ctx, hook.PRContext{
+				Point:   hook.PreApprove,
+				Number:  pr.Number,
+				Title:   pr.Title,
+				Author:  pr.Author,
+				URL:     pr.URL,
+				HeadSHA: pr.HeadSHA,
+			})
+			if len(disp.Holds) > 0 {
+				// A screen held: divert to Needs-Human-Review carrying EVERY
+				// holding screen — screen:<name> reasons (disjoint from rule
+				// reasons by construction: screens only run where no rule
+				// gated) plus the prose screen_holds the human reads.
+				e.logger.Info("cycle: PR held by screen, routed to needs-human-review queue",
+					"pr", pr.Number,
+					"screens", screenNames(disp.Holds),
+				)
+				queue = append(queue, queueItemForHolds(pr, disp.Holds))
+				continue
+			}
+			if len(disp.Pending) > 0 {
+				// At least one screen has no verdict for this head yet: the PR
+				// parks in Screening (a run was dispatched; the verdict acts on
+				// the next pass — approval latency ≤ one cycle).
+				funnel.Screening = append(funnel.Screening, screeningItem(pr, disp.Pending))
+				continue
+			}
+		}
 		ok, err := e.approve(ctx, pr, approveRuleName)
 		if err != nil {
 			e.logger.Warn("cycle: approve PR failed, skipping (retry next cycle)", "pr", pr.Number, "error", err)
@@ -577,6 +649,50 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 		"staging", len(funnel.Staging),
 	)
 	e.recordCycle(now, "ok", approved, dropped, queue, funnel)
+}
+
+// screeningItem projects a would-auto-approve candidate into its Screening
+// FunnelItem, naming the screens still awaiting a verdict for its head (the
+// station's "why hasn't #N gone through?" signal).
+func screeningItem(pr github.PR, pending []hook.ScreenInstance) FunnelItem {
+	it := funnelItem(pr, 0)
+	it.PendingScreens = make([]string, 0, len(pending))
+	for _, p := range pending {
+		it.PendingScreens = append(it.PendingScreens, p.Spec.Name)
+	}
+	return it
+}
+
+// queueItemForHolds projects a screen-held candidate into its queue entry:
+// screen:<name> reasons plus the {screen, reason} prose, one pair per holding
+// screen (every holding screen is carried — the reasons-list doctrine).
+func queueItemForHolds(pr github.PR, holds []hook.HoldDetail) QueueItem {
+	reasons := make([]string, 0, len(holds))
+	screenHolds := make([]ScreenHold, 0, len(holds))
+	for _, h := range holds {
+		reasons = append(reasons, reasonScreenPrefix+h.Screen)
+		screenHolds = append(screenHolds, ScreenHold{Screen: h.Screen, Reason: h.Reason})
+	}
+	return QueueItem{
+		Number:       pr.Number,
+		Title:        pr.Title,
+		Author:       pr.Author,
+		URL:          pr.URL,
+		Additions:    pr.Additions,
+		Deletions:    pr.Deletions,
+		ChangedFiles: pr.ChangedFiles,
+		Reasons:      reasons,
+		ScreenHolds:  screenHolds,
+	}
+}
+
+// screenNames lists the holding screens' names for the cycle log line.
+func screenNames(holds []hook.HoldDetail) []string {
+	names := make([]string, 0, len(holds))
+	for _, h := range holds {
+		names = append(names, h.Screen)
+	}
+	return names
 }
 
 // funnelItem projects a candidate PR into a terminal-bucket FunnelItem,

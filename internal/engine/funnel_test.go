@@ -26,7 +26,7 @@ func funnelEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *githu
 	require.NoError(t, err)
 
 	fake := github.NewFake(candidates...)
-	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	return eng, fake
 }
@@ -126,7 +126,7 @@ func TestFunnelPartitionSumsToIncoming(t *testing.T) {
 		{Number: 6, Title: "chore: elsewhere", Author: "f", URL: "u6", Checks: green(), ReviewDecision: "APPROVED"}, // approved elsewhere
 	}
 	fake := github.NewFake(candidates...)
-	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 
 	// First cycle approves #1 (it becomes a dedup member); run a second cycle with
@@ -136,9 +136,7 @@ func TestFunnelPartitionSumsToIncoming(t *testing.T) {
 	eng.RunCycleOnce(context.Background())
 
 	f := eng.Funnel()
-	sum := len(f.DroppedRed) + len(f.DroppedDraft) + len(f.Staging) +
-		f.NeedsHumanReview + f.ApprovedByTm3k + len(f.ApprovedElsewhere)
-	require.Equal(t, f.Incoming, sum, "the six terminal segments partition Incoming")
+	require.Equal(t, f.Incoming, partitionSum(f), "the terminal segments partition Incoming (Screening empty with no screens)")
 	require.Equal(t, 6, f.Incoming)
 	require.Equal(t, 1, len(f.DroppedRed))
 	require.Equal(t, 1, len(f.DroppedDraft))

@@ -31,7 +31,7 @@ func queuedBreakingEngine(t *testing.T) (*engine.Engine, *github.Fake) {
 		{Filename: "main.go", Status: "modified", Additions: 2, Deletions: 1, Patch: "@@ -1 +1 @@"},
 	})
 
-	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	eng.RunCycleOnce(context.Background())
 	return eng, fake
@@ -79,7 +79,7 @@ func stagedEngine(t *testing.T) (*engine.Engine, *github.Fake) {
 		{Filename: "panel.go", Status: "added", Additions: 118, Deletions: 0, Patch: "@@ -0,0 +1 @@"},
 	})
 
-	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	eng.RunCycleOnce(context.Background())
 	return eng, fake

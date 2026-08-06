@@ -45,7 +45,7 @@ func mergesServer(t *testing.T, mergesPath string, authored ...github.PR) (*engi
 		Reviews: []github.Review{{Author: "alice_osag", State: "APPROVED"}},
 	})
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(fake, filepath.Join(t.TempDir(), "approvals.jsonl"), mergesPath, store, testArms(t))
+	eng, err := engine.New(fake, filepath.Join(t.TempDir(), "approvals.jsonl"), mergesPath, store, testArms(t), nil)
 	require.NoError(t, err)
 	h, err := server.New(testSPA(), eng, store, defaultSettings(t), "")
 	require.NoError(t, err)

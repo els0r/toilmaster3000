@@ -25,7 +25,7 @@ func softDedupEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *gi
 	require.NoError(t, err)
 
 	fake := github.NewFake(candidates...)
-	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t))
+	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	return eng, fake, statePath
 }
