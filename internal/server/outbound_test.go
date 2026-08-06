@@ -131,7 +131,7 @@ func newArmedOutboundServer(t *testing.T, armedPath string, authored []github.PR
 	store := storeWith(t, matchAllChores())
 	arms, err := armed.NewStore(armedPath)
 	require.NoError(t, err)
-	eng, err := engine.New(fake, filepath.Join(t.TempDir(), "approvals.jsonl"), tempMerges(t), store, arms)
+	eng, err := engine.New(fake, filepath.Join(t.TempDir(), "approvals.jsonl"), tempMerges(t), store, arms, nil)
 	require.NoError(t, err)
 	eng.RunCycleOnce(context.Background())
 	srv := newTestServerFor(t, eng, store)

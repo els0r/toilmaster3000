@@ -34,7 +34,7 @@ func mergeEngine(t *testing.T, mergesPath string, authored ...github.PR) (*engin
 
 	fake := github.NewFake()
 	fake.Authored = authored
-	eng, err := engine.New(fake, statePath, mergesPath, store, arms)
+	eng, err := engine.New(fake, statePath, mergesPath, store, arms, nil)
 	require.NoError(t, err)
 	return eng, fake
 }

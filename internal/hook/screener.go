@@ -1,5 +1,13 @@
 package hook
 
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+)
+
 // ScreenInstance pairs a Screen's declarative Spec with the species
 // implementation realizing it — the unit the screener consults and
 // dispatches. Nothing instantiates species in this slice: production wiring
@@ -54,4 +62,117 @@ func FoldVerdicts(screens []ScreenInstance, latest func(screenID string) (Verdic
 		}
 	}
 	return d
+}
+
+// screenPoolSize bounds how many screen runs execute concurrently. Hardcoded
+// per ADR 0022 — the per-screen Timeout is the only tunable; no config
+// surface until a need shows.
+const screenPoolSize = 4
+
+// Screener is the engine's one screening dependency: the level-triggered
+// consult over the verdict store plus the async run dispatcher behind it
+// (ADR 0022). Consult never blocks — a missing verdict dispatches a bounded
+// background run and reports the screen as pending; the recorded verdict
+// acts on the next cycle pass. With zero screens every consult is an instant
+// proceed, bit-for-bit today's behavior.
+type Screener struct {
+	store   *VerdictStore
+	screens []ScreenInstance
+	logger  *slog.Logger
+
+	// sem is the run pool: dispatch goroutines block HERE (off-cycle), never
+	// the consult, so at most screenPoolSize runs execute at once.
+	sem chan struct{}
+
+	mu sync.Mutex
+	// inflight dedups dispatches per key: the level-triggered consult re-sees
+	// a missing verdict every cycle while a run executes, and must not stack a
+	// second run for the same (screen, number, head).
+	inflight map[VerdictKey]bool
+}
+
+// NewScreener constructs a Screener over the verdict store and the configured
+// screens. The store is required; the screens may be empty (the no-hooks
+// case — every consult proceeds and nothing ever dispatches).
+func NewScreener(store *VerdictStore, screens ...ScreenInstance) *Screener {
+	return &Screener{
+		store:    store,
+		screens:  screens,
+		logger:   slog.Default(),
+		sem:      make(chan struct{}, screenPoolSize),
+		inflight: map[VerdictKey]bool{},
+	}
+}
+
+// Consult is the per-candidate, level-triggered screening read (the
+// armed/disarm idiom — no transition memory): it folds the stored verdicts
+// for the PR's current head and, when no screen holds, dispatches an async
+// run for every pending screen (in-flight dedup makes the re-dispatch each
+// cycle harmless). It NEVER waits on a run — the disposition reflects only
+// what the store already knows. A holding disposition dispatches nothing:
+// the PR is bound for a human, so further paid runs would be waste.
+func (s *Screener) Consult(ctx context.Context, pr PRContext) Disposition {
+	disp := FoldVerdicts(s.screens, func(screenID string) (VerdictRecord, bool) {
+		return s.store.Latest(screenID, pr.Number, pr.HeadSHA)
+	})
+	if len(disp.Holds) == 0 {
+		for _, inst := range disp.Pending {
+			s.dispatch(ctx, inst, pr)
+		}
+	}
+	return disp
+}
+
+// dispatch starts one bounded background run for (screen, PR-head) unless one
+// is already in flight. It returns immediately: the goroutine waits for a
+// pool slot, runs the screen under its per-screen timeout
+// (Spec.TimeoutOrDefault — the only tunable, ADR 0022), and records exactly
+// one row — the verdict, or an error row for a failed attempt (crash,
+// timeout, no extractable outcome; never a fabricated verdict in either
+// direction, ADR 0023). A failed persist is logged and dropped: the store
+// still misses, so the next cycle's consult re-dispatches (self-healing by
+// level-trigger).
+func (s *Screener) dispatch(ctx context.Context, inst ScreenInstance, pr PRContext) {
+	key := VerdictKey{ScreenID: inst.Spec.ID, Number: pr.Number, Head: pr.HeadSHA}
+	s.mu.Lock()
+	if s.inflight[key] {
+		s.mu.Unlock()
+		return
+	}
+	s.inflight[key] = true
+	s.mu.Unlock()
+
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			delete(s.inflight, key)
+			s.mu.Unlock()
+		}()
+		s.sem <- struct{}{} // pool slot; queueing happens here, off-cycle
+		defer func() { <-s.sem }()
+
+		runCtx, cancel := context.WithTimeout(ctx, inst.Spec.TimeoutOrDefault())
+		defer cancel()
+		verdict, err := inst.Screen.Screen(runCtx, pr)
+
+		rec := VerdictRecord{ScreenID: inst.Spec.ID, Number: pr.Number, Head: pr.HeadSHA, At: time.Now()}
+		switch {
+		case err != nil:
+			rec.Outcome, rec.Reason = Errored, err.Error()
+		case verdict.Outcome != Proceed && verdict.Outcome != Hold:
+			// No affirmative parsed verdict is a failed attempt, never proceed
+			// and never hold — the screen species contract (ADR 0023).
+			rec.Outcome, rec.Reason = Errored, fmt.Sprintf("no extractable verdict (outcome %q)", verdict.Outcome)
+		default:
+			rec.Outcome, rec.Reason = verdict.Outcome, verdict.Reason
+		}
+		if rec.Outcome == Errored {
+			s.logger.Warn("screen: run failed, recording error attempt",
+				"screen", inst.Spec.Name, "pr", pr.Number, "head", pr.HeadSHA, "reason", rec.Reason)
+		}
+		if err := s.store.Append(rec); err != nil {
+			s.logger.Warn("screen: persist verdict failed; the next cycle re-dispatches",
+				"screen", inst.Spec.Name, "pr", pr.Number, "head", pr.HeadSHA, "error", err)
+		}
+	}()
 }
