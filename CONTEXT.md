@@ -33,7 +33,10 @@ Cross-cutting principles the entries below reference by name.
 - **One batched call per concern** — everything the cycle needs rides a fixed
   set of batched `gh` calls; per-PR calls are sanctioned only for rare,
   user-consented actions (the Diff card, ADR 0008; the moment-of-merge view,
-  ADR 0016). ADR 0007 records the N+1 this doctrine exists to prevent.
+  ADR 0016). ADR 0007 records the N+1 this doctrine exists to prevent. Hooks
+  extend the sanction: **configuring a hook is the consent** for the per-PR
+  calls the hook itself makes — tm3k's own cycle stays batched; the hook's
+  fetches are the hook's business (ADR 0023).
 - **Decode vs judge** — the `gh` seam only decodes GitHub's raw shapes; pure,
   table-tested folds do the judging (`AllGreen`, `CollapsePRState`, the stage
   folds). Never let the seam grow an opinion.
@@ -112,6 +115,37 @@ The engine autonomously approves every eligible, rule-matching PR **that is not
 already approved**, within a cycle of it appearing; no human in the happy path.
 The narrowing is the soft dedup (see Approved elsewhere, ADR 0013).
 
+### Hook (Notifier / Screen)
+A user-configured action tm3k runs at a named **hook point** — an event the
+cycle passes through, never a "stage" (a stage is a bucket a PR sits in). Two
+kinds with irreconcilable failure contracts (ADR 0021): a **Notifier** fires
+a side effect — output ignored, failure can never block or divert an engine
+action, fires **once per PR ever** (persisted fired-ledger, at-most-once); a
+**Screen** yields a **Verdict** (`proceed` / `hold`, with reason) gating the
+action at its point — keyed per-head so a new push re-screens, and a missing
+verdict is **never** `proceed` (never-fire-on-no-signal extends to hooks).
+Four points under the pre/post discipline (pre-points carry Screens only,
+post-points Notifiers only): `pre_approve`, `post_approve`, `queue_entered`
+(rules routed it — the review-assist's home) and `screen_held` (a Screen
+diverted it) — separate events, so a just-screened PR never auto-receives a
+second AI pass.
+
+Screens are a **polled external signal, never an awaited call** (ADR 0022):
+the cycle never blocks — a missing verdict dispatches a run and the PR sits
+in the Screening segment; any `hold` diverts to Needs-Human-Review (divert,
+never drop) carrying every holding screen; three failed attempts synthesize
+a hold — the end state is always a human summoned, never silent limbo, never
+a walk-through. A hold clears only by new push, manual override, or
+disabling the screen.
+
+MVP species are AI-only (ADR 0023): declarative `Harness`/`Model`/`Prompt`
+entries in `.config/hooks.yaml`, realized by harness adapters
+(`internal/harness`, claude-only) that fetch the diff themselves and extract
+verdicts structurally — never fabricated in either direction. **A Screen is
+defense-in-depth, not a security boundary.** The review-assist Notifier may
+comment or request changes, **never approve** — that authority stays with
+rules + Screens inbound and the human in the queue.
+
 ### Approved elsewhere
 An Incoming PR GitHub already reports `APPROVED` by someone other than tm3k
 (detected via `reviewDecision` on the cycle fetch; number absent from
@@ -128,7 +162,11 @@ here for a human decision. Derived live each cycle, never persisted. Each entry
 carries:
 - **`reasons` list** (not a single reason): the name of **every** enabled
   Review Rule that matched, plus `"breaking_change"` iff an enabled Approve
-  Rule matched and the title is breaking (ADR 0004).
+  Rule matched and the title is breaking (ADR 0004); a screen-held entry
+  instead carries `screen:<name>` per holding Screen (rule reasons XOR screen
+  holds, disjoint by construction) plus the prose `screen_holds` field —
+  chips stay chips, the AI's reasoning is one click away in the row detail,
+  never hidden (ADR 0022).
 - **Breaking badge as a display fact**: shown whenever `title_parts.breaking`,
   independent of whether `breaking_change` is a queueing reason; reason chips
   render `reasons` minus `breaking_change` (the badge represents it).
@@ -162,15 +200,26 @@ The Inbound tab's model of one cycle: **Incoming** is the parent set and every
 Incoming PR lands in exactly one terminal stage (funnel partition):
 
 ```
-INCOMING = Dropped:draft + Dropped:pipeline-red + Staging
+INCOMING = Dropped:draft + Dropped:pipeline-red + Staging + Screening
          + Needs-Human-Review + Approved-by-tm3k + Approved-elsewhere
 ```
 
-Five stations top-down: **Incoming** (a stacked distribution bar + legend —
+**Screening** is the awaiting-verdict segment: eligible, Approve-Rule-matched,
+but at least one enabled pre-approve Screen has no verdict yet for the PR's
+current head. Transient by design, terminal *within* the cycle — the same
+per-cycle disposition semantics as every other segment. Rendered as its own
+station between Staging and Needs Human Review: read-only `PrRow`s showing
+which screens are pending — no buttons, deliberately nothing to do here (no
+re-run, no skip). No heartbeat count either (actionable-signals-only: you
+wait, and screen failures reach the strip's `review` count as synthetic
+holds). A `proceed` is silent — no badge, no feed annotation; the happy path
+stays calm (ADR 0022).
+
+Six stations top-down: **Incoming** (a stacked distribution bar + legend —
 counts only, the PRs live in their terminal stations; shows the search as a
 code chip), **Dropped** (two side-by-side cards: pipeline-red — with a
-failing-check count — and draft), **Staging**, **Needs Human Review**, and the
-**Approval Feed**. The distribution bar partitions on **current standing**, so
+failing-check count — and draft), **Staging**, **Screening**, **Needs Human
+Review**, and the **Approval Feed**. The distribution bar partitions on **current standing**, so
 its Approved-by-tm3k segment is every dedup-member PR still in the pull — not
 just this cycle's approvals (see the three-approved-numbers doctrine).
 
@@ -399,11 +448,21 @@ PR-State refresh (ADR 0007) and the merge step (ADR 0016).
     ("team chores", "service-a — teammate_a").
   - `.config/settings.yaml` — the analytics constants; self-healing reseed on a
     stale schema (ADR 0010/0012).
+  - `.config/hooks.yaml` — Screens + Notifiers, declarative AI-species
+    fields; hand-edited, boot-loaded, preflight-validated; stable generated
+    `Id`s self-healed at boot, no CRUD (ADR 0023).
   - `.state/approvals.jsonl` — append-only; both the dedup set (loaded at
     startup) and the feed's source.
   - `.state/merges.jsonl` — append-only merge ledger (ADR 0016).
   - `.state/armed.json` — the persisted armed set; the first mutable per-PR
     state in tm3k.
+  - `.state/verdicts.jsonl` — append-only screen-run rows
+    (`screen_id, number, head, outcome: proceed|hold|error, reason, at`);
+    latest row per key wins (level-triggered), `error` rows are the persisted
+    attempt count so 3-strikes survives restarts (ADR 0022).
+  - `.state/hookfires.jsonl` — append-only Notifier fired-ledger
+    (`hook_id, number, point, at`), loaded at boot; what makes at-most-once
+    restart-safe (ADR 0021).
 - **Preflight (fail fast at boot)**: `gh` installed and authenticated; `@me`
   resolved once; `:8666` free; and **the configured repo visible to the active
   `gh` identity** — load-bearing because the search API returns an **empty
@@ -438,3 +497,15 @@ invocations: `docs/development.md`.
   today-scope, so a reversal *tomorrow* (notably the red false-positive bar) is
   seen by nobody. Accepted for the glance-tool purpose; a "recent reversals"
   view is a separate feature.
+- **Non-AI hook species** (exec/webhook — Slack pings, CI-runner screens) —
+  the kind interfaces are the seam; the contract gets designed against a real
+  consumer, not speculatively (ADR 0023).
+- **Outbound hook points & pre-approve Notifiers** — `pre_merge` would
+  second-guess the Arm; a pre-approve warning is an intervention-window
+  feature, not a notification (ADR 0021).
+- **Per-hook `Env` override & a hooks UI editor** — hooks.yaml stays
+  hand-edited and boot-loaded until either bites; until then hook `gh` side
+  effects post as the runtime identity (ADR 0023).
+- **Screen analytics** — verdicts.jsonl exists, but Analytics stays
+  approvals-only (ADR 0009); hold-rate / screen-efficacy views are a someday
+  concern.
