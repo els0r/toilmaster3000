@@ -148,7 +148,14 @@ func (s *Screener) dispatch(ctx context.Context, inst ScreenInstance, pr PRConte
 			delete(s.inflight, key)
 			s.mu.Unlock()
 		}()
-		s.sem <- struct{}{} // pool slot; queueing happens here, off-cycle
+		select {
+		case s.sem <- struct{}{}: // pool slot; queueing happens here, off-cycle
+		case <-ctx.Done():
+			// Shutdown while waiting for a slot: the run never started, no row
+			// is recorded — the next boot's consult re-dispatches on the miss
+			// (in-flight runs lost to a crash have the same story, ADR 0022).
+			return
+		}
 		defer func() { <-s.sem }()
 
 		runCtx, cancel := context.WithTimeout(ctx, inst.Spec.TimeoutOrDefault())
