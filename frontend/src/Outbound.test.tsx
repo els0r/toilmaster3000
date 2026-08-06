@@ -146,6 +146,54 @@ describe("Outbound funnel — Outgoing", () => {
     ).toBeInTheDocument();
   });
 
+  // The In Discussion stage is part of the rendered partition: its legend
+  // entry carries the count, and the seven displayed stage counts sum to the
+  // Outgoing total at a glance.
+  it("includes the In Discussion segment so legend counts sum to Outgoing", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 7,
+          draft: [outboundItem({ number: 1 })],
+          red: [outboundItem({ number: 2 })],
+          running: [outboundItem({ number: 3 })],
+          changes_requested: [outboundItem({ number: 4 })],
+          awaiting_approval: [outboundItem({ number: 5 })],
+          in_discussion: [
+            outboundItem({ number: 6, unresolved_threads: 1 }),
+            outboundItem({ number: 7, unresolved_threads: 4 }),
+          ],
+          ready: [],
+        })}
+      />,
+    );
+
+    expect(
+      within(screen.getByTestId("legend-in-discussion")).getByText("2"),
+    ).toBeInTheDocument();
+
+    const legendSum = [
+      "draft",
+      "red",
+      "running",
+      "changes-requested",
+      "awaiting",
+      "in-discussion",
+      "ready",
+    ].reduce(
+      (sum, key) =>
+        sum +
+        Number(
+          screen
+            .getByTestId(`legend-${key}`)
+            .querySelector(".legend-count")?.textContent,
+        ),
+      0,
+    );
+    expect(legendSum).toBe(7);
+    expect(screen.getByTestId("outgoing-total")).toHaveTextContent("7");
+  });
+
   // The derived authored search rides the snapshot's `search` field and shows as
   // a code chip so the operator can confirm which search produced the set.
   it("shows the snapshot's authored search as a code chip", () => {
@@ -308,6 +356,115 @@ describe("Outbound funnel — row markers", () => {
 
     const awaiting = screen.getByTestId("outbound-awaiting");
     expect(within(awaiting).getAllByText("breaking change")).toHaveLength(1);
+  });
+});
+
+describe("Outbound funnel — In Discussion station", () => {
+  // In Discussion (ADR 0019) is the third green sub-stage: approved but held
+  // by ≥1 unresolved review thread. It sits between Awaiting Approval and
+  // Ready — precedence names the primary blocker, and the merge step walking
+  // only Ready makes the stage partition itself the discussion gate.
+  it("renders In Discussion between Awaiting Approval and Ready from the in_discussion list", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 3,
+          awaiting_approval: [outboundItem({ number: 290 })],
+          in_discussion: [
+            outboundItem({
+              number: 291,
+              url: "https://github.com/o/r/pull/291",
+              unresolved_threads: 2,
+            }),
+          ],
+          ready: [outboundItem({ number: 292 })],
+        })}
+      />,
+    );
+
+    const card = screen.getByTestId("outbound-in-discussion");
+    expect(within(card).getByText("In Discussion")).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: /#291/ })).toHaveAttribute(
+      "href",
+      "https://github.com/o/r/pull/291",
+    );
+
+    // The station sits between its two green siblings in the funnel order.
+    const awaiting = screen.getByTestId("outbound-awaiting");
+    const ready = screen.getByTestId("outbound-ready");
+    expect(
+      awaiting.compareDocumentPosition(card) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      card.compareDocumentPosition(ready) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  // Each row names what holds it: its unresolved-thread count (≥1 by
+  // construction — zero threads is Ready's definition, not this stage's).
+  it("shows each row's unresolved-thread count", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 2,
+          in_discussion: [
+            outboundItem({ number: 293, unresolved_threads: 1 }),
+            outboundItem({ number: 294, unresolved_threads: 3 }),
+          ],
+        })}
+      />,
+    );
+
+    const card = screen.getByTestId("outbound-in-discussion");
+    expect(within(card).getByText(/1 unresolved/)).toBeInTheDocument();
+    expect(within(card).getByText(/3 unresolved/)).toBeInTheDocument();
+  });
+
+  // Arm-while-discussing is a valid state (like arm-while-red): the toggle
+  // rides the stage, and arming round-trips through the refetch so the fresh
+  // snapshot reflects the consent without a reload.
+  it("offers the Arm toggle and arming round-trips through the refetch", async () => {
+    const onArmChanged = vi.fn();
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 1,
+          in_discussion: [
+            outboundItem({ number: 295, unresolved_threads: 1 }),
+          ],
+        })}
+        onArmChanged={onArmChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "arm #295" }));
+
+    await waitFor(() => expect(mockArm).toHaveBeenCalledWith(295));
+    await waitFor(() => expect(onArmChanged).toHaveBeenCalledTimes(1));
+  });
+
+  // Armed ∧ In-Discussion is a valid state (hold, never disarm — ADR 0019):
+  // the armed badge rides the row here exactly as in every other stage, next
+  // to the thread count naming what holds the merge.
+  it("shows the armed badge on an armed row and not on a Withheld one", () => {
+    render(
+      <OutboundFunnel
+        outbound={outbound({
+          outgoing: 2,
+          in_discussion: [
+            outboundItem({ number: 296, armed: true, unresolved_threads: 2 }),
+            outboundItem({ number: 297, unresolved_threads: 1 }),
+          ],
+        })}
+      />,
+    );
+
+    const card = screen.getByTestId("outbound-in-discussion");
+    expect(within(card).getAllByText("armed")).toHaveLength(1);
+    expect(
+      within(card).getByRole("button", { name: "disarm #296" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -549,18 +706,19 @@ describe("Outbound funnel — diff pill", () => {
     render(
       <OutboundFunnel
         outbound={outbound({
-          outgoing: 6,
+          outgoing: 7,
           draft: [outboundItem({ number: 1 })],
           red: [outboundItem({ number: 2 })],
           running: [outboundItem({ number: 3 })],
           changes_requested: [outboundItem({ number: 4 })],
           awaiting_approval: [outboundItem({ number: 5 })],
-          ready: [outboundItem({ number: 6 })],
+          in_discussion: [outboundItem({ number: 6, unresolved_threads: 1 })],
+          ready: [outboundItem({ number: 7 })],
         })}
       />,
     );
 
-    for (const n of [1, 2, 3, 4, 5, 6]) {
+    for (const n of [1, 2, 3, 4, 5, 6, 7]) {
       expect(
         screen.getByRole("button", { name: `view diff for #${n}` }),
       ).toBeInTheDocument();
@@ -590,6 +748,7 @@ describe("Outbound funnel — loading and empty states", () => {
       "outbound-running",
       "outbound-changes-requested",
       "outbound-awaiting",
+      "outbound-in-discussion",
       "outbound-ready",
     ]) {
       expect(

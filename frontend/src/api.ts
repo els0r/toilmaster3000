@@ -138,11 +138,13 @@ export async function fetchPipeline(): Promise<Pipeline> {
 
 // Outbound is the live outbound funnel snapshot (generated from the backend's
 // Outbound DTO): the `outgoing` total of the raw authored pull plus its
-// partition into the six itemized stage lists (draft, red, running,
-// changes_requested, awaiting_approval, ready), the per-stage distribution
-// counts, and the derived authored `search` shown on the Outgoing station's
-// code chip. OutboundItem rows carry title_parts, the diff magnitude, and the
-// Ready station's `conflict` flag.
+// partition into the seven itemized stage lists (draft, red, running,
+// changes_requested, awaiting_approval, in_discussion, ready), the per-stage
+// distribution counts, and the derived authored `search` shown on the
+// Outgoing station's code chip. OutboundItem rows carry title_parts, the diff
+// magnitude, the `unresolved_threads` count (≥1 on in_discussion rows by
+// construction, 0 on ready rows by definition — ADR 0019), and the Ready
+// station's `conflict` flag.
 export type Outbound = components["schemas"]["Outbound"];
 export type OutboundItem = components["schemas"]["OutboundItem"];
 

@@ -32,6 +32,11 @@
   --error: #c92a2a;
   --error-bg: rgba(201, 42, 42, 0.09);
   --link: #2358d4;
+  /* In Discussion (outbound) — a teal between the green branch's two hues:
+     the hold sits in the neutral/green family (a conversation, not an
+     objection), yet stays distinguishable from awaiting (--pr-open) and
+     ready (--success-dot) in the Outgoing bar. */
+  --discussion: #0d9488;
 
   /* PR State bar — GitHub's own (Primer) lifecycle palette, used ONLY for the
      Approval Feed row's top bar. Kept distinct from --success/--error so the bar
@@ -103,6 +108,7 @@
     --error: #f1736b;
     --error-bg: rgba(241, 115, 107, 0.13);
     --link: #7aa2f7;
+    --discussion: #2dd4bf;
     /* GitHub's dark-mode (Primer) lifecycle palette. */
     --pr-open: #3fb950;
     --pr-merged: #a371f7;
@@ -647,6 +653,12 @@ textarea:focus {
   height: 5px;
   border-radius: var(--radius-full);
   background: var(--error);
+}
+/* Unresolved-thread count — the In Discussion station's hold marker. Neutral,
+   not error-toned: a discussion is a hold, not an objection (ADR 0019). */
+.thread-count {
+  color: var(--fg-2);
+  font-weight: var(--weight-medium);
 }
 /* Static diff-magnitude readout (outbound rows) — the same +add/−del/files
    figures as the DiffPill, without the clickable pill chrome (the on-demand
@@ -1874,6 +1886,9 @@ textarea:focus {
 }
 .dist-seg-awaiting {
   background: var(--pr-open);
+}
+.dist-seg-in-discussion {
+  background: var(--discussion);
 }
 .dist-seg-ready {
   background: var(--success-dot);
