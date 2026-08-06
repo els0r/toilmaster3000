@@ -29,6 +29,7 @@ import (
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
 	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/harness"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/els0r/toilmaster3000/internal/server"
@@ -43,6 +44,7 @@ const (
 	statePath    = ".state/approvals.jsonl"
 	mergesPath   = ".state/merges.jsonl"
 	armedPath    = ".state/armed.json"
+	verdictsPath = ".state/verdicts.jsonl"
 	rulesPath    = ".config/rules.yaml"
 	settingsPath = ".config/settings.yaml"
 	hooksPath    = ".config/hooks.yaml"
@@ -165,8 +167,9 @@ func run(ctx context.Context, cfg config) error {
 
 	// Boot-load and preflight-validate the hook config (ADR 0021/0023): bad
 	// config refuses startup naming the offending hook; an absent file means
-	// no hooks; hooks missing an Id get one self-healed into the file. Nothing
-	// fires yet — the runner and engine wiring are later slices.
+	// no hooks; hooks missing an Id get one self-healed into the file.
+	// Configured Screens gate the engine's approvals via the screener below;
+	// Notifiers do not fire yet — the fired-ledger is a later slice.
 	hooks, err := hook.Load(hooksPath)
 	if err != nil {
 		return fmt.Errorf("load hooks: %w", err)
@@ -175,7 +178,12 @@ func run(ctx context.Context, cfg config) error {
 		slog.Info("hooks loaded", "screens", len(hooks.Screens), "notifiers", len(hooks.Notifiers))
 	}
 
-	eng, err := engine.New(client, statePath, mergesPath, rules, arms, nil)
+	screener, err := buildScreener(hooks, cfg.repo, verdictsPath)
+	if err != nil {
+		return fmt.Errorf("build screener: %w", err)
+	}
+
+	eng, err := engine.New(client, statePath, mergesPath, rules, arms, screener)
 	if err != nil {
 		return fmt.Errorf("build engine: %w", err)
 	}
@@ -218,6 +226,35 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("serve: %w", err)
 	}
 	return nil
+}
+
+// buildScreener assembles the engine's screening dependency from the
+// validated hook config: one AI Screen species per configured Screen, all
+// over the claude harness adapter (validation allowlists no other harness in
+// MVP — a later adapter is one allowlist entry, its internal/harness
+// implementation, and a branch here; ADR 0023). repo is the configured
+// candidate-set slug the species passes to the adapter's per-PR `gh pr diff`
+// (taken here at construction — the engine leaves PRContext.Repo empty; see
+// harness.NewAIScreen). With zero configured Screens the screener is nil and
+// the engine behaves bit-for-bit as before screens existed: the verdict
+// store is not even opened.
+func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener, error) {
+	if len(hooks.Screens) == 0 {
+		return nil, nil
+	}
+	store, err := hook.NewVerdictStore(verdictsPath)
+	if err != nil {
+		return nil, fmt.Errorf("build verdict store: %w", err)
+	}
+	adapter := harness.NewClaude()
+	instances := make([]hook.ScreenInstance, 0, len(hooks.Screens))
+	for _, sc := range hooks.Screens {
+		instances = append(instances, hook.ScreenInstance{
+			Spec:   sc.Spec,
+			Screen: harness.NewAIScreen(sc.Spec, repo, adapter),
+		})
+	}
+	return hook.NewScreener(store, instances...), nil
 }
 
 // checkGhAuth verifies the gh CLI is installed and authenticated. It is the

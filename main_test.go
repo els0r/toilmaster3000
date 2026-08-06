@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/stretchr/testify/require"
 )
 
@@ -104,4 +106,32 @@ func TestCheckGhAuthPasses(t *testing.T) {
 	}
 	err := checkGhAuth(context.Background(), func(context.Context) error { return nil })
 	require.NoError(t, err)
+}
+
+// buildScreener wires the AI Screen species from validated hook config: zero
+// configured screens must yield a nil screener — bit-for-bit today's engine
+// behavior — and configured screens must yield a consulting screener.
+func TestBuildScreenerNilWithoutScreens(t *testing.T) {
+	s, err := buildScreener(hook.Config{}, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"))
+	require.NoError(t, err)
+	require.Nil(t, s)
+}
+
+func TestBuildScreenerNilWithNotifiersOnly(t *testing.T) {
+	cfg := hook.Config{Notifiers: []hook.NotifierConfig{{
+		Spec:  hook.Spec{ID: "n1", Name: "ping", Harness: "claude", Prompt: "p", Enabled: true},
+		Point: hook.PostApprove,
+	}}}
+	s, err := buildScreener(cfg, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"))
+	require.NoError(t, err)
+	require.Nil(t, s, "notifiers alone gate nothing — screens are the only screener input")
+}
+
+func TestBuildScreenerConstructsScreensOverTheClaudeAdapter(t *testing.T) {
+	cfg := hook.Config{Screens: []hook.ScreenConfig{{
+		Spec: hook.Spec{ID: "s1", Name: "security", Harness: "claude", Prompt: "vet it", Enabled: true},
+	}}}
+	s, err := buildScreener(cfg, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"))
+	require.NoError(t, err)
+	require.NotNil(t, s)
 }

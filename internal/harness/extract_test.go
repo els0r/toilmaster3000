@@ -72,8 +72,8 @@ func TestExtractVerdict(t *testing.T) {
 			wantErr: "no verdict document",
 		},
 		{
-			name: "empty result",
-			out:  func(t *testing.T) []byte { return envelope(t, "") },
+			name:    "empty result",
+			out:     func(t *testing.T) []byte { return envelope(t, "") },
 			wantErr: "no verdict document",
 		},
 		{
