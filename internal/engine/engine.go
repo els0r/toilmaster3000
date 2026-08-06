@@ -381,7 +381,8 @@ func (e *Engine) trackedChangedFiles(number int) (int, bool) {
 	}
 	for _, stage := range [][]OutboundItem{
 		e.outbound.Draft, e.outbound.Red, e.outbound.Running,
-		e.outbound.ChangesRequested, e.outbound.AwaitingApproval, e.outbound.Ready,
+		e.outbound.ChangesRequested, e.outbound.AwaitingApproval,
+		e.outbound.InDiscussion, e.outbound.Ready,
 	} {
 		for _, o := range stage {
 			if o.Number == number {

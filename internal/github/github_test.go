@@ -3,9 +3,12 @@ package github_test
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,6 +141,84 @@ JSON
 	require.Contains(t, string(got), "reviewed-by:@me updated:>=2026-06-22T00:00:00Z", "scoped to today's reviewed PRs by the since floor")
 	require.Contains(t, string(got), "number,state,mergedAt", "number/state/mergedAt requested in the --json arg")
 	require.Contains(t, string(got), "--limit 200", "bounded by a generous limit (truncation warned on)")
+}
+
+// G1d: UnresolvedThreads shells out to ONE `gh api graphql` search over the
+// authored pull — GraphQL is forced, not chosen: isResolved exists only in the
+// GraphQL reviewThreads connection (ADR 0019) — and decodes each PR node into
+// its raw reviewThreads connection (nodes + page info). Decode-only: the pure
+// UnresolvedCount judges the fold. One call regardless of pull size (the
+// cycle's third batched call — no per-PR N+1).
+func TestCLIUnresolvedThreadsDecodesIntoMap(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	argsFile := withFakeGh(t, `cat <<'JSON'
+{"data": {"search": {"nodes": [
+  {"number": 21, "reviewThreads": {"nodes": [{"isResolved": true}, {"isResolved": false}], "pageInfo": {"hasNextPage": false}}},
+  {"number": 22, "reviewThreads": {"nodes": [], "pageInfo": {"hasNextPage": true}}}
+]}}}
+JSON
+`)
+
+	threads, err := github.NewCLI(testRepo, testSearch).UnresolvedThreads(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, map[int]github.RawReviewThreads{
+		21: {Nodes: []github.ReviewThread{{IsResolved: true}, {IsResolved: false}}},
+		22: {Nodes: []github.ReviewThread{}, HasMorePages: true},
+	}, threads)
+
+	got, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	require.Equal(t, 1, bytes.Count(got, []byte("api graphql")), "threads for the whole pull ride exactly one GraphQL call")
+	require.NotContains(t, string(got), "pr list", "the threads call never forks the list decode (ADR 0019)")
+	require.Contains(t, string(got), "isResolved", "the resolution flag rides the query")
+	require.NotContains(t, string(got), "isOutdated", "outdated is ignored entirely — outdated is not resolved")
+	require.Contains(t, string(got), "repo:example/repo is:pr "+github.AuthoredSearch,
+		"the search scopes the SAME authored pull as ListAuthored, repo-qualified")
+}
+
+// G1f: a search result that FILLS the page is warned on (the ADR 0007
+// warn-at-limit pattern): PRs beyond the page are silently absent from the
+// map, so the undersized bound must surface in logs, never pass quietly.
+func TestCLIUnresolvedThreadsWarnsAtSearchPageLimit(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	// Exactly the search-page limit (100) of PR nodes: a full page.
+	nodes := make([]string, 0, 100)
+	for i := range 100 {
+		nodes = append(nodes, fmt.Sprintf(
+			`{"number": %d, "reviewThreads": {"nodes": [], "pageInfo": {"hasNextPage": false}}}`, i+1))
+	}
+	payload := `{"data": {"search": {"nodes": [` + strings.Join(nodes, ",") + `]}}}`
+	payloadFile := filepath.Join(t.TempDir(), "payload.json")
+	require.NoError(t, os.WriteFile(payloadFile, []byte(payload), 0o644))
+	withFakeGh(t, "cat "+payloadFile+"\n")
+
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	threads, err := github.NewCLI(testRepo, testSearch).UnresolvedThreads(context.Background())
+	require.NoError(t, err)
+	require.Len(t, threads, 100)
+	require.Contains(t, logs.String(), "unresolved-threads search hit the page limit",
+		"a full search page fires the warn-at-limit")
+}
+
+// G1e: a non-zero gh exit from the threads call surfaces as an error, so the
+// engine can fail closed (clear the outbound snapshot, merge nothing) instead
+// of reading an empty result as all-threads-resolved.
+func TestCLIUnresolvedThreadsError(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	withFakeGh(t, "echo 'graphql exploded' >&2\nexit 1\n")
+
+	_, err := github.NewCLI(testRepo, testSearch).UnresolvedThreads(context.Background())
+	require.Error(t, err)
 }
 
 // G6: Diff shells out to `gh api repos/{repo}/pulls/{n}/files?per_page=100` and

@@ -30,6 +30,16 @@ type Fake struct {
 	// additional list call per cycle (no N+1).
 	authoredCalls int
 
+	// threads are canned per-PR reviewThreads connections keyed by number,
+	// served WHOLE by UnresolvedThreads (the cycle's third batched call). A
+	// number with no entry reads as a PR with no review threads (zero
+	// unresolved). ThreadsErr, when set, makes UnresolvedThreads fail
+	// wholesale (to prove a failed threads call clears the outbound snapshot
+	// and skips ALL merging that cycle — fail closed, ADR 0019).
+	threads      map[int]RawReviewThreads
+	ThreadsErr   error
+	threadsCalls int
+
 	// Login is the login CurrentUser returns (the resolved @me token).
 	Login string
 	// CurrentUserErr, when set, makes CurrentUser fail (to prove preflight
@@ -154,6 +164,41 @@ func (f *Fake) AuthoredCallCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.authoredCalls
+}
+
+// SetThreads canns the raw reviewThreads connection UnresolvedThreads returns
+// for a PR number. Setting the zero RawReviewThreads (or never setting one)
+// reads as a PR with nothing unresolved — the two cases are one condition by
+// construction (ADR 0019).
+func (f *Fake) SetThreads(number int, raw RawReviewThreads) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.threads == nil {
+		f.threads = map[int]RawReviewThreads{}
+	}
+	f.threads[number] = raw
+}
+
+// ThreadsCallCount returns how many times UnresolvedThreads was invoked, so a
+// test can assert the threads ride one batched call per cycle (no N+1).
+func (f *Fake) ThreadsCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.threadsCalls
+}
+
+// UnresolvedThreads records the call and returns the WHOLE canned thread map
+// (or ThreadsErr), standing in for the batched `gh api graphql` search.
+func (f *Fake) UnresolvedThreads(_ context.Context) (map[int]RawReviewThreads, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.threadsCalls++
+	if f.ThreadsErr != nil {
+		return nil, f.ThreadsErr
+	}
+	out := make(map[int]RawReviewThreads, len(f.threads))
+	maps.Copy(out, f.threads)
+	return out, nil
 }
 
 // CurrentUser returns the configured Login (or CurrentUserErr), standing in for

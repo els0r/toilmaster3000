@@ -95,6 +95,15 @@ type GitHubClient interface {
 	// reviewDecision ride the single call (no N+1). Decode-only:
 	// ClassifyOutboundStage judges each PR into its stage.
 	ListAuthored(ctx context.Context) ([]PR, error)
+	// UnresolvedThreads pulls per-PR review-thread resolution for the whole
+	// authored pull — the cycle's third batched call (ADR 0019) — via one
+	// GraphQL search (isResolved exists nowhere else). Decode-only: each PR
+	// maps to its raw reviewThreads connection; the pure UnresolvedCount
+	// judges the fold. A PR absent from the map carries no review threads.
+	// The result is load-bearing for the outbound partition: a failed call
+	// makes the engine fail closed (clear the outbound snapshot, merge
+	// nothing), exactly like a failed ListAuthored.
+	UnresolvedThreads(ctx context.Context) (map[int]RawReviewThreads, error)
 	Approve(ctx context.Context, number int) error
 	CurrentUser(ctx context.Context) (string, error)
 	// CheckRepoVisible reports whether the configured repo is visible to the
@@ -329,6 +338,88 @@ func (c *CLI) PRStatesSince(ctx context.Context, since time.Time) (map[int]RawPR
 		states[it.Number] = it.RawPRState
 	}
 	return states, nil
+}
+
+// threadSearchPageLimit bounds the unresolved-threads search to one GraphQL
+// page — 100 is the search connection's maximum and comfortably above a
+// realistic authored pull. Hitting it is logged as a warning so an undersized
+// bound surfaces in logs instead of silently missing PRs' threads (the ADR
+// 0007 warn-at-limit pattern).
+const threadSearchPageLimit = 100
+
+// threadPageSize bounds each PR's fetched reviewThreads page. A PR carrying
+// more threads than this decodes with HasMorePages set, which UnresolvedCount
+// conservatively judges as HAVING unresolved threads — hold, never resolve on
+// a truncated fetch (ADR 0019).
+const threadPageSize = 100
+
+// unresolvedThreadsQuery is the one batched GraphQL search of the threads
+// call: per PR of the authored pull, the first page of reviewThreads nodes
+// (isResolved only — isOutdated is deliberately not requested: outdated is not
+// resolved) plus the connection's page info. type ISSUE is GitHub's search
+// type for issues AND pull requests; the is:pr qualifier in the search query
+// narrows it.
+var unresolvedThreadsQuery = fmt.Sprintf(
+	`query($q: String!) { search(query: $q, type: ISSUE, first: %d) { nodes { ... on PullRequest { number reviewThreads(first: %d) { nodes { isResolved } pageInfo { hasNextPage } } } } } }`,
+	threadSearchPageLimit, threadPageSize,
+)
+
+// UnresolvedThreads fetches per-PR review-thread resolution for the WHOLE
+// authored pull in ONE `gh api graphql` search — the cycle's third batched
+// call (ADR 0019). GraphQL is forced, not chosen: isResolved exists only in
+// the GraphQL reviewThreads connection (no `gh pr list --json` field carries
+// it). The search is the same authored pull ListAuthored sees, repo-qualified
+// for the global search endpoint. Decode-only: each PR node decodes into its
+// RawReviewThreads; the pure UnresolvedCount judges the fold. A full search
+// page is warned on (no silent truncation).
+func (c *CLI) UnresolvedThreads(ctx context.Context) (map[int]RawReviewThreads, error) {
+	search := fmt.Sprintf("repo:%s is:pr %s", c.repo, AuthoredSearch)
+	cmd := exec.CommandContext(ctx, "gh", "api", "graphql",
+		"-f", "query="+unresolvedThreadsQuery,
+		"-f", "q="+search,
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("gh api graphql (review threads): %w: %s", err, stderr.String())
+	}
+
+	// One search node carries the PR number alongside its reviewThreads page —
+	// the raw shape RawReviewThreads mirrors.
+	var out struct {
+		Data struct {
+			Search struct {
+				Nodes []struct {
+					Number        int `json:"number"`
+					ReviewThreads struct {
+						Nodes    []ReviewThread `json:"nodes"`
+						PageInfo struct {
+							HasNextPage bool `json:"hasNextPage"`
+						} `json:"pageInfo"`
+					} `json:"reviewThreads"`
+				} `json:"nodes"`
+			} `json:"search"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		return nil, fmt.Errorf("decode gh api graphql (review threads) output: %w", err)
+	}
+
+	nodes := out.Data.Search.Nodes
+	if len(nodes) == threadSearchPageLimit {
+		slog.Default().Warn("unresolved-threads search hit the page limit; some PRs' threads may be missing this cycle",
+			"limit", threadSearchPageLimit,
+		)
+	}
+	threads := make(map[int]RawReviewThreads, len(nodes))
+	for _, n := range nodes {
+		threads[n.Number] = RawReviewThreads{
+			Nodes:        n.ReviewThreads.Nodes,
+			HasMorePages: n.ReviewThreads.PageInfo.HasNextPage,
+		}
+	}
+	return threads, nil
 }
 
 // diffPageSize bounds the on-demand diff fetch to one page. The Diff card is a

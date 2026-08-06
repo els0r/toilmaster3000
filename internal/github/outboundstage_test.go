@@ -10,8 +10,11 @@ import (
 // TestClassifyOutboundStage pins the outbound funnel partition: every authored
 // PR folds into EXACTLY one stage, with the documented precedence
 // draft > not-green (red | running) > changes-requested > awaiting-approval >
-// ready (CONTEXT "Outbound", ADR 0016). mergeable is a merge precondition, not
-// a stage boundary — it never moves a PR between stages.
+// in-discussion > ready (CONTEXT "Outbound", ADR 0016/0019). mergeable is a
+// merge precondition, not a stage boundary — it never moves a PR between
+// stages. The unresolved-thread count is the fold's second input (ADR 0019):
+// it splits Ready from In Discussion and is inert below awaiting-approval —
+// precedence names the primary blocker.
 func TestClassifyOutboundStage(t *testing.T) {
 	checkRun := func(status, conclusion string) github.Check {
 		return github.Check{Typename: "CheckRun", Status: status, Conclusion: conclusion}
@@ -24,9 +27,10 @@ func TestClassifyOutboundStage(t *testing.T) {
 	running := []github.Check{checkRun("IN_PROGRESS", "")}
 
 	tests := []struct {
-		name string
-		pr   github.PR
-		want github.OutboundStage
+		name       string
+		pr         github.PR
+		unresolved int
+		want       github.OutboundStage
 	}{
 		{
 			name: "draft wins over everything (draft + red + changes-requested)",
@@ -98,10 +102,58 @@ func TestClassifyOutboundStage(t *testing.T) {
 			pr:   github.PR{Checks: green, ReviewDecision: "REVIEW_REQUIRED", Mergeable: "UNKNOWN"},
 			want: github.OutboundStageAwaitingApproval,
 		},
+		{
+			name:       "green + APPROVED + an unresolved thread is in discussion — the Discussion gate's stage (ADR 0019)",
+			pr:         github.PR{Checks: green, ReviewDecision: "APPROVED"},
+			unresolved: 1,
+			want:       github.OutboundStageInDiscussion,
+		},
+		{
+			name:       "green + APPROVED + zero unresolved threads is ready — the gate is open",
+			pr:         github.PR{Checks: green, ReviewDecision: "APPROVED"},
+			unresolved: 0,
+			want:       github.OutboundStageReady,
+		},
+		{
+			name:       "green + unapproved + unresolved threads sits in awaiting approval — precedence names the primary blocker",
+			pr:         github.PR{Checks: green, ReviewDecision: "REVIEW_REQUIRED"},
+			unresolved: 2,
+			want:       github.OutboundStageAwaitingApproval,
+		},
+		{
+			name:       "draft wins over unresolved threads",
+			pr:         github.PR{IsDraft: true, Checks: green, ReviewDecision: "APPROVED"},
+			unresolved: 3,
+			want:       github.OutboundStageDraft,
+		},
+		{
+			name:       "red wins over unresolved threads",
+			pr:         github.PR{Checks: red, ReviewDecision: "APPROVED"},
+			unresolved: 3,
+			want:       github.OutboundStageRed,
+		},
+		{
+			name:       "running wins over unresolved threads",
+			pr:         github.PR{Checks: running, ReviewDecision: "APPROVED"},
+			unresolved: 3,
+			want:       github.OutboundStageRunning,
+		},
+		{
+			name:       "changes-requested wins over unresolved threads — the disarm stage, not the hold stage",
+			pr:         github.PR{Checks: green, ReviewDecision: "CHANGES_REQUESTED"},
+			unresolved: 3,
+			want:       github.OutboundStageChangesRequested,
+		},
+		{
+			name:       "a conflicted in-discussion PR stays in discussion — mergeable never moves a stage",
+			pr:         github.PR{Checks: green, ReviewDecision: "APPROVED", Mergeable: "CONFLICTING"},
+			unresolved: 1,
+			want:       github.OutboundStageInDiscussion,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, github.ClassifyOutboundStage(tt.pr))
+			require.Equal(t, tt.want, github.ClassifyOutboundStage(tt.pr, tt.unresolved))
 		})
 	}
 }

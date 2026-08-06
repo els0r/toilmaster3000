@@ -3,7 +3,7 @@ package github
 // OutboundStage is the terminal bucket of one authored PR in the outbound
 // funnel partition (CONTEXT "Outbound"): every authored PR lands in EXACTLY one
 // stage, with precedence draft > not-green (red | running) > changes-requested
-// > awaiting-approval > ready.
+// > awaiting-approval > in-discussion > ready.
 type OutboundStage string
 
 const (
@@ -23,12 +23,19 @@ const (
 	// own stage, not a badge: the wait is on the author, not a reviewer.
 	OutboundStageChangesRequested OutboundStage = "changes_requested"
 	// OutboundStageAwaitingApproval is a green pipeline with no approval yet —
-	// waiting on a reviewer.
+	// waiting on a reviewer. Unresolved threads are inert here: precedence
+	// names the primary blocker, and that is the missing approval.
 	OutboundStageAwaitingApproval OutboundStage = "awaiting_approval"
-	// OutboundStageReady is a green pipeline with reviewDecision APPROVED —
-	// waiting only on the author (or, in a later slice, the armed merge). A
-	// conflicted Ready PR STAYS in Ready carrying its conflict state: mergeable
-	// is a merge precondition, never a stage boundary.
+	// OutboundStageInDiscussion is a green pipeline with reviewDecision
+	// APPROVED but at least one UNRESOLVED review thread — approved with nits,
+	// waiting on the conversation to close (ADR 0019). It sits between
+	// Awaiting Approval and Ready, and the merge step never walks it: the
+	// partition IS the Discussion gate.
+	OutboundStageInDiscussion OutboundStage = "in_discussion"
+	// OutboundStageReady is a green pipeline with reviewDecision APPROVED and
+	// zero unresolved review threads — waiting only on the author (or the
+	// armed merge). A conflicted Ready PR STAYS in Ready carrying its conflict
+	// state: mergeable is a merge precondition, never a stage boundary.
 	OutboundStageReady OutboundStage = "ready"
 )
 
@@ -57,13 +64,17 @@ const (
 	stateExpected = "EXPECTED"
 )
 
-// ClassifyOutboundStage folds one authored PR into its outbound stage. It is
-// the pure decision — no I/O — sibling to AllGreen and CollapsePRState: the gh
-// seam only decodes the PR, this function judges it. Precedence top-down:
-// draft > not-green (red | running) > changes-requested > awaiting-approval >
-// ready. mergeable is deliberately not consulted — it is a merge precondition,
-// not a stage boundary (a conflicted Ready PR stays in Ready).
-func ClassifyOutboundStage(pr PR) OutboundStage {
+// ClassifyOutboundStage folds one authored PR plus its unresolved-review-
+// thread count (judged by UnresolvedCount from the cycle's threads call, ADR
+// 0019) into its outbound stage. It is the pure decision — no I/O — sibling to
+// AllGreen and CollapsePRState: the gh seam only decodes, this function
+// judges. Precedence top-down: draft > not-green (red | running) >
+// changes-requested > awaiting-approval > in-discussion > ready. The
+// unresolved count only ever splits the approved tail — In Discussion vs
+// Ready — and is inert above it: precedence names the primary blocker.
+// mergeable is deliberately not consulted — it is a merge precondition, not a
+// stage boundary (a conflicted PR stays in its stage).
+func ClassifyOutboundStage(pr PR, unresolvedThreads int) OutboundStage {
 	if pr.IsDraft {
 		return OutboundStageDraft
 	}
@@ -77,6 +88,9 @@ func ClassifyOutboundStage(pr PR) OutboundStage {
 	case reviewDecisionChangesRequested:
 		return OutboundStageChangesRequested
 	case reviewDecisionApproved:
+		if unresolvedThreads > 0 {
+			return OutboundStageInDiscussion
+		}
 		return OutboundStageReady
 	default:
 		// REVIEW_REQUIRED, empty, or anything unrecognised: no approval yet.

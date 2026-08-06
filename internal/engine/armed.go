@@ -65,11 +65,15 @@ func (e *Engine) outboundStanding(number int) (inSnapshot, changesRequested bool
 			return true, true
 		}
 	}
+	// Every other stage is armable — In Discussion included: the hold is a
+	// wait on a counterparty, not an objection, so consent stays available
+	// (and stays standing) there (ADR 0019).
 	for _, stage := range [][]OutboundItem{
 		e.outbound.Draft,
 		e.outbound.Red,
 		e.outbound.Running,
 		e.outbound.AwaitingApproval,
+		e.outbound.InDiscussion,
 		e.outbound.Ready,
 	} {
 		for _, it := range stage {
@@ -92,7 +96,9 @@ func (e *Engine) outboundStanding(number int) (inSnapshot, changesRequested bool
 //
 // Both fold into one Retain (a single rewrite): keep = every authored number
 // EXCEPT those with changes requested. Arms on every other stage are left
-// alone — stickiness across pushes (arm-while-red) is the core use case.
+// alone — stickiness across pushes (arm-while-red) is the core use case, and
+// In Discussion HOLDS the armed merge without ever withdrawing consent
+// (ADR 0019: a nit thread is a conversation, not an objection).
 func (e *Engine) reconcileArmed(ob Outbound) {
 	keep := make(map[int]bool, ob.Outgoing)
 	for _, stage := range [][]OutboundItem{
@@ -100,6 +106,7 @@ func (e *Engine) reconcileArmed(ob Outbound) {
 		ob.Red,
 		ob.Running,
 		ob.AwaitingApproval,
+		ob.InDiscussion,
 		ob.Ready,
 	} {
 		for _, it := range stage {
