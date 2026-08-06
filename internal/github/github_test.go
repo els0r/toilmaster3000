@@ -105,6 +105,33 @@ JSON
 	require.Contains(t, string(got), "statusCheckRollup", "rollup requested in the same --json arg")
 }
 
+// G1d: ListCandidates pulls headRefOid in the SAME single gh pr list call and
+// decodes it into PR.HeadSHA — the head the Screen verdict store keys on
+// (ADR 0022/0023). Riding the existing batched call means screening adds no
+// gh call of its own.
+func TestCLIListCandidatesDecodesHeadRefOid(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	argsFile := withFakeGh(t, `cat <<'JSON'
+[
+  {"number": 11, "title": "chore: head", "url": "https://gh/pull/11", "author": {"login": "erin"}, "headRefOid": "deadbeefcafe"}
+]
+JSON
+`)
+
+	prs, err := github.NewCLI(testRepo, testSearch).ListCandidates(context.Background())
+	require.NoError(t, err)
+	require.Len(t, prs, 1)
+	require.Equal(t, "deadbeefcafe", prs[0].HeadSHA, "headRefOid decodes into PR.HeadSHA")
+
+	// The head rides the SAME single gh pr list --json call (no per-PR N+1).
+	got, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	require.Equal(t, 1, bytes.Count(got, []byte("pr list")), "candidate set is fetched in exactly one gh call")
+	require.Contains(t, string(got), "headRefOid", "head requested in the same --json arg")
+}
+
 // G1c: PRStatesSince shells out to a SINGLE `gh pr list` scoped by
 // `reviewed-by:@me updated:>=<since>` over `--state all`, and decodes the array
 // into a number->raw map — the decode-only batched seam the engine's tail

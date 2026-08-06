@@ -55,6 +55,12 @@ type PR struct {
 	// Ready PR stays in Ready carrying its conflict state. UNKNOWN means GitHub
 	// is still computing mergeability — retried naturally next cycle.
 	Mergeable string
+	// HeadSHA is gh's headRefOid from the same single gh list call: the commit
+	// the PR's head currently points at. Screen verdicts key on it
+	// (screen_id, number, head — ADR 0022), so a new push re-screens and an
+	// unchanged head reuses its stored verdict. Riding the batched call keeps
+	// screening free of per-PR fetches.
+	HeadSHA string
 }
 
 // FileDiff is one changed file of a PR, as the GitHub files API emits it: the
@@ -183,11 +189,14 @@ type ghListItem struct {
 	// Mergeable is gh's mergeability signal, requested only by the authored
 	// (outbound) list call; the inbound call leaves it empty.
 	Mergeable string `json:"mergeable"`
+	// HeadRefOid is the PR head's commit SHA, pulled in the same single list
+	// call — the per-head key of the Screen verdict store (ADR 0022).
+	HeadRefOid string `json:"headRefOid"`
 }
 
 // listJSONFields is the --json field set of the inbound candidate list call —
 // everything the cycle needs from ONE call (no per-PR N+1).
-const listJSONFields = "number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision"
+const listJSONFields = "number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision,headRefOid"
 
 // AuthoredSearch is the fixed derived outbound search: every open PR the
 // operator authors, drafts included (draft is an outbound stage, not a gate).
@@ -266,6 +275,7 @@ func (c *CLI) list(ctx context.Context, search, jsonFields string) ([]PR, error)
 			Checks:         it.StatusCheckRollup,
 			ReviewDecision: it.ReviewDecision,
 			Mergeable:      it.Mergeable,
+			HeadSHA:        it.HeadRefOid,
 		})
 	}
 	return prs, nil
