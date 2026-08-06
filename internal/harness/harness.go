@@ -31,3 +31,18 @@ type Request struct {
 type Adapter interface {
 	Screen(ctx context.Context, req Request) (hook.Verdict, error)
 }
+
+// Agent is the harness seam's side-effect half — the Notifier sibling of
+// Adapter (ADR 0023): one headless AI invocation run for its ACTIONS, not its
+// answer. Unlike Screen, nothing is extracted and nothing comes back to act
+// on: the agent itself holds the gh authority — it fetches the PR's diff and
+// posts its review comment / requests changes as the runtime identity — and
+// its authority ceiling (never approve, never merge) is prompt-enforced,
+// because tm3k cannot compel an agent holding gh auth (ADR 0023). The
+// returned transcript is logged by the caller and otherwise ignored. A
+// separate interface, not a second Adapter method: a screening-only adapter
+// stays a one-method implementation, and fakes script exactly the half they
+// exercise.
+type Agent interface {
+	Act(ctx context.Context, req Request) (transcript string, err error)
+}

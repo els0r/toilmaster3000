@@ -21,17 +21,22 @@ import (
 // failure surfaces as an error — a failed attempt for the caller's 3-strikes
 // path — never a fabricated verdict.
 type Claude struct {
-	// fetchDiff and invoke are the two process seams, injectable in tests so
+	// fetchDiff, invoke, and act are the process seams, injectable in tests so
 	// the real gh/claude CLIs never execute there (the internal/github fake
-	// precedent). Production wiring uses ghPRDiff and claudeInvoke.
+	// precedent). Production wiring uses ghPRDiff, claudeInvoke, and
+	// claudeActInvoke. act is separate from invoke because the two runs carry
+	// different authority: a screen run answers over a diff tm3k fetched, an
+	// act run holds the gh tool authority to post its own side effects
+	// (ADR 0023).
 	fetchDiff func(ctx context.Context, repo string, number int) (string, error)
 	invoke    func(ctx context.Context, model, prompt string) ([]byte, error)
+	act       func(ctx context.Context, model, prompt string) ([]byte, error)
 }
 
 // NewClaude returns the production claude adapter, shelling out to the real
 // gh and claude CLIs.
 func NewClaude() *Claude {
-	return &Claude{fetchDiff: ghPRDiff, invoke: claudeInvoke}
+	return &Claude{fetchDiff: ghPRDiff, invoke: claudeInvoke, act: claudeActInvoke}
 }
 
 // Screen runs one screen pass for the PR: diff -> prompt -> claude -> verdict.
@@ -51,6 +56,20 @@ func (c *Claude) Screen(ctx context.Context, req Request) (hook.Verdict, error) 
 		return hook.Verdict{}, fmt.Errorf("extract verdict: %w", err)
 	}
 	return v, nil
+}
+
+// Act runs one side-effecting agent pass for the PR (the Agent seam): compose
+// the notify prompt — carrying the never-approve/never-merge ceiling — and
+// run the claude CLI WITH the gh tool authority, so the agent fetches the
+// diff and posts its review itself as the runtime identity (ADR 0023). The
+// decoded result text is returned as the transcript for the caller to log;
+// nothing is extracted from it.
+func (c *Claude) Act(ctx context.Context, req Request) (string, error) {
+	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req))
+	if err != nil {
+		return "", err
+	}
+	return resultText(out)
 }
 
 // ghPRDiff fetches one PR's unified diff via a single `gh pr diff` call —
@@ -73,16 +92,34 @@ func ghPRDiff(ctx context.Context, repo string, number int) (string, error) {
 // pipes, and without the delay a kill could leave Run blocked on them.
 const claudeWaitDelay = 10 * time.Second
 
-// claudeInvoke runs one headless claude CLI pass: the prompt on stdin (a
-// composed prompt carries a whole diff — far beyond argv limits), the result
-// as the machine-readable JSON envelope on stdout that ExtractVerdict
-// decodes. CommandContext kills the CLI on cancellation (the screen's
-// timeout), so no run outlives its bound.
+// claudeInvoke is the screen run's production leg: a plain headless pass with
+// NO tool authority — the screen's diff is already in the prompt, and a judge
+// that can act would be more than a judge.
 func claudeInvoke(ctx context.Context, model, prompt string) ([]byte, error) {
+	return runClaude(ctx, model, prompt)
+}
+
+// claudeActInvoke is claudeInvoke's side-effecting sibling (the Agent seam's
+// production leg): the same headless run, plus the gh tool authority —
+// --allowedTools "Bash(gh:*)" — so the agent can fetch the diff and post its
+// review comment itself. The authority is the WHOLE gh CLI by design: tm3k
+// cannot compel an agent holding gh auth anyway, so narrowing the allowlist
+// would only feign a boundary the prompt ceiling actually carries (ADR 0023).
+func claudeActInvoke(ctx context.Context, model, prompt string) ([]byte, error) {
+	return runClaude(ctx, model, prompt, "--allowedTools", "Bash(gh:*)")
+}
+
+// runClaude runs one headless claude CLI pass: the prompt on stdin (a composed
+// prompt can carry a whole diff — far beyond argv limits), the result as the
+// machine-readable JSON envelope on stdout that resultText decodes.
+// CommandContext kills the CLI on cancellation (the hook's timeout), so no run
+// outlives its bound.
+func runClaude(ctx context.Context, model, prompt string, extraArgs ...string) ([]byte, error) {
 	args := []string{"-p", "--output-format", "json"}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
+	args = append(args, extraArgs...)
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(prompt)
 	var stdout, stderr bytes.Buffer

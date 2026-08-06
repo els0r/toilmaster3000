@@ -33,7 +33,7 @@ func NewAIScreen(spec hook.Spec, repo string, adapter Adapter) *AIScreen {
 // adapter failure — is a failed attempt for the Screener's 3-strikes path
 // (ADR 0022), never a verdict.
 func (s *AIScreen) Screen(ctx context.Context, pr hook.PRContext) (hook.Verdict, error) {
-	instructions, err := s.instructions()
+	instructions, err := resolveInstructions(s.spec)
 	if err != nil {
 		return hook.Verdict{}, err
 	}
@@ -49,13 +49,15 @@ func (s *AIScreen) Screen(ctx context.Context, pr hook.PRContext) (hook.Verdict,
 	})
 }
 
-// instructions resolves the operator's prompt: the inline Prompt, or the
-// PromptFile read now (validation guarantees exactly one is set).
-func (s *AIScreen) instructions() (string, error) {
-	if s.spec.PromptFile == "" {
-		return s.spec.Prompt, nil
+// resolveInstructions resolves a hook's operator prompt: the inline Prompt,
+// or the PromptFile read now — per run, so an edit takes effect without a
+// restart (validation guarantees exactly one is set). Shared by both AI
+// species.
+func resolveInstructions(spec hook.Spec) (string, error) {
+	if spec.PromptFile == "" {
+		return spec.Prompt, nil
 	}
-	data, err := os.ReadFile(s.spec.PromptFile)
+	data, err := os.ReadFile(spec.PromptFile)
 	if err != nil {
 		return "", fmt.Errorf("read prompt file: %w", err)
 	}
