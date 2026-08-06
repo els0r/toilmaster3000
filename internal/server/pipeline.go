@@ -26,6 +26,10 @@ type FunnelItem struct {
 	Additions    int `json:"additions"`
 	Deletions    int `json:"deletions"`
 	ChangedFiles int `json:"changed_files"`
+	// PendingScreens names the Screens still awaiting a verdict for the PR's
+	// current head — the Screening station's per-row signal (ADR 0022); empty on
+	// every other bucket (the FailingChecks pattern).
+	PendingScreens []string `json:"pending_screens"`
 }
 
 // Pipeline is the wire shape of the live Cycle Funnel snapshot served at
@@ -38,10 +42,15 @@ type FunnelItem struct {
 // not re-itemize them. The raw Incoming PR set is not retained anywhere; Incoming
 // is a count rendered as the distribution bar.
 type Pipeline struct {
-	Incoming          int          `json:"incoming"`
-	DroppedRed        []FunnelItem `json:"dropped_red"`
-	DroppedDraft      []FunnelItem `json:"dropped_draft"`
-	Staging           []FunnelItem `json:"staging"`
+	Incoming     int          `json:"incoming"`
+	DroppedRed   []FunnelItem `json:"dropped_red"`
+	DroppedDraft []FunnelItem `json:"dropped_draft"`
+	Staging      []FunnelItem `json:"staging"`
+	// Screening is the awaiting-verdict segment (ADR 0022): would-auto-approve
+	// PRs whose enabled Screens have no verdict yet for their current head, each
+	// row naming its pending screens. Transient by design; a segment of the
+	// partition like every other list.
+	Screening         []FunnelItem `json:"screening"`
 	ApprovedElsewhere []FunnelItem `json:"approved_elsewhere"`
 	// NeedsHumanReview and ApprovedByTm3k are count-only partition segments: the
 	// queue is itemized via /queue, and Approved-by-tm3k (the STANDING dedup-member
@@ -63,16 +72,21 @@ type Pipeline struct {
 // TitleParts parse-on-read (ADR 0006), mirroring queueItemToBody. See ADR 0002
 // for why the engine type does not cross the boundary directly.
 func funnelItemToBody(it engine.FunnelItem) FunnelItem {
+	pending := it.PendingScreens
+	if pending == nil {
+		pending = []string{} // JSON renders [] not null on non-screening buckets
+	}
 	return FunnelItem{
-		Number:        it.Number,
-		Title:         it.Title,
-		TitleParts:    titleParts(it.Title),
-		Author:        it.Author,
-		URL:           it.URL,
-		FailingChecks: it.FailingChecks,
-		Additions:     it.Additions,
-		Deletions:     it.Deletions,
-		ChangedFiles:  it.ChangedFiles,
+		Number:         it.Number,
+		Title:          it.Title,
+		TitleParts:     titleParts(it.Title),
+		Author:         it.Author,
+		URL:            it.URL,
+		FailingChecks:  it.FailingChecks,
+		Additions:      it.Additions,
+		Deletions:      it.Deletions,
+		ChangedFiles:   it.ChangedFiles,
+		PendingScreens: pending,
 	}
 }
 
@@ -95,6 +109,7 @@ func pipelineToBody(f engine.Funnel) Pipeline {
 		DroppedRed:        funnelItemsToBody(f.DroppedRed),
 		DroppedDraft:      funnelItemsToBody(f.DroppedDraft),
 		Staging:           funnelItemsToBody(f.Staging),
+		Screening:         funnelItemsToBody(f.Screening),
 		ApprovedElsewhere: funnelItemsToBody(f.ApprovedElsewhere),
 		NeedsHumanReview:  f.NeedsHumanReview,
 		ApprovedByTm3k:    f.ApprovedByTm3k,

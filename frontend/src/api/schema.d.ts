@@ -397,6 +397,7 @@ export interface components {
             failing_checks: number;
             /** Format: int64 */
             number: number;
+            pending_screens: string[] | null;
             title: string;
             title_parts: components["schemas"]["TitleParts"];
             url: string;
@@ -504,6 +505,7 @@ export interface components {
             incoming: number;
             /** Format: int64 */
             needs_human_review: number;
+            screening: components["schemas"]["FunnelItem"][] | null;
             search: string;
             staging: components["schemas"]["FunnelItem"][] | null;
         };
@@ -518,6 +520,7 @@ export interface components {
             /** Format: int64 */
             number: number;
             reasons: string[] | null;
+            screen_holds: components["schemas"]["ScreenHold"][] | null;
             title: string;
             title_parts: components["schemas"]["TitleParts"];
             url: string;
@@ -555,6 +558,10 @@ export interface components {
             scope_include?: string;
             type_exclude?: string;
             type_include?: string;
+        };
+        ScreenHold: {
+            reason: string;
+            screen: string;
         };
         Stat: {
             /** Format: int64 */

@@ -416,6 +416,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "pending_screens": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "title": {
             "type": "string"
           },
@@ -435,7 +444,8 @@
           "failing_checks",
           "additions",
           "deletions",
-          "changed_files"
+          "changed_files",
+          "pending_screens"
         ],
         "type": "object"
       },
@@ -792,6 +802,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "screening": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "search": {
             "type": "string"
           },
@@ -810,6 +829,7 @@
           "dropped_red",
           "dropped_draft",
           "staging",
+          "screening",
           "approved_elsewhere",
           "needs_human_review",
           "approved_by_tm3k",
@@ -849,6 +869,15 @@
               "null"
             ]
           },
+          "screen_holds": {
+            "items": {
+              "$ref": "#/components/schemas/ScreenHold"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "title": {
             "type": "string"
           },
@@ -868,7 +897,8 @@
           "additions",
           "deletions",
           "changed_files",
-          "reasons"
+          "reasons",
+          "screen_holds"
         ],
         "type": "object"
       },
@@ -952,6 +982,22 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "ScreenHold": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "screen": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "screen",
+          "reason"
         ],
         "type": "object"
       },
