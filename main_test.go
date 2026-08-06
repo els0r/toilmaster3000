@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -134,4 +135,30 @@ func TestBuildScreenerConstructsScreensOverTheClaudeAdapter(t *testing.T) {
 	s, err := buildScreener(cfg, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"))
 	require.NoError(t, err)
 	require.NotNil(t, s)
+}
+
+// The shipped example hook config must load through the real hook loader
+// (drift guard for field renames), and the draft security-screen prompt it
+// references must exist and carry its pending-operator-review marking (#40).
+func TestExampleHooksConfigLoads(t *testing.T) {
+	data, err := os.ReadFile("examples/hooks.yaml")
+	require.NoError(t, err)
+	// Load self-heals missing Ids into the file, so load a copy — the
+	// committed example must stay Id-less (the intended first-run UX).
+	path := filepath.Join(t.TempDir(), "hooks.yaml")
+	require.NoError(t, os.WriteFile(path, data, 0o644))
+
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Screens, 1)
+	require.Equal(t, "claude", cfg.Screens[0].Harness)
+	require.Equal(t, ".config/security-screen-prompt.md", cfg.Screens[0].PromptFile)
+	require.NotEmpty(t, cfg.Screens[0].ID, "boot must self-heal an Id into the entry")
+}
+
+func TestDraftSecurityScreenPromptIsMarkedPendingReview(t *testing.T) {
+	data, err := os.ReadFile("examples/security-screen-prompt.md")
+	require.NoError(t, err)
+	require.Contains(t, string(data), "DRAFT", "the prompt ships as a draft pending operator sign-off")
+	require.Contains(t, string(data), "untrusted", "the prompt must remind the screen the diff is untrusted data")
 }

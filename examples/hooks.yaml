@@ -1,0 +1,28 @@
+# Example hook set for toilmaster3000 — edit this for your setup.
+#
+# Hooks are opt-in: without a .config/hooks.yaml, tm3k runs no hooks at all
+# (ADR 0021/0023). Screens gate the pre-approve moment — every enabled Screen
+# must answer proceed before an Approve-Rule match is auto-approved; any hold
+# diverts the PR to the Needs-Human-Review queue. A Screen is defense-in-depth
+# against the malicious-chore gap: it raises an attack's cost, it does NOT
+# guarantee safety.
+#
+# Fields: Harness selects the adapter ("claude" is the only one in MVP);
+# Model is optional and passed through to the harness CLI; exactly one of
+# Prompt (inline instructions) or PromptFile (a path read at run time,
+# relative to the working directory) must be set; Timeout bounds one run
+# (absent means 10m). Leave Id out of new entries — a stable one is generated
+# and written back into this file at boot.
+#
+# Running a Screen shells out with your existing authentication: it fetches
+# each screened PR's diff via `gh pr diff` and runs the claude CLI headlessly.
+# Configuring the hook is the consent for those per-PR calls.
+#
+# This file ships as .config/hooks.yaml next to the binary if you opt in;
+# copy the referenced prompt file to .config/security-screen-prompt.md too.
+Screens:
+    - Name: security screen
+      Harness: claude
+      PromptFile: .config/security-screen-prompt.md
+      Timeout: 10m
+      Enabled: true
