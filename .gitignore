@@ -9,8 +9,9 @@ frontend/*.tsbuildinfo
 /dist/
 /toilmaster3000.tar.bz2
 
-# Local agent config
-.claude/
+# Local agent config (shared agent definitions in .claude/agents/ ARE tracked)
+.claude/*
+!.claude/agents/
 
 # Local CLI state (e.g. gh device id)
 .local/
@@ -22,3 +23,5 @@ frontend/*.tsbuildinfo
 .state/
 .config/rules.yaml
 .config/settings.yaml
+.config/hooks.yaml
+.config/security-screen-prompt.md
