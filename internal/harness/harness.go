@@ -26,8 +26,9 @@ type Request struct {
 // call — fetch the PR's diff, compose the prompt, run the harness, extract
 // the verdict structurally. An error is a failed attempt (the caller records
 // it on the 3-strikes path, ADR 0022), never a fabricated verdict in either
-// direction. Claude-only in MVP; each further adapter (Copilot, OpenCode) is
-// one implementation here plus its allowlist entry in the hook validator.
+// direction. Two MVP adapters, claude and copilot (ADR 0024); each further
+// adapter (OpenCode) is one implementation here plus its allowlist entry in
+// the hook validator.
 type Adapter interface {
 	Screen(ctx context.Context, req Request) (hook.Verdict, error)
 }

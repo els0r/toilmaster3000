@@ -1,9 +1,9 @@
 // Package harness owns AI harness invocation (ADR 0023): adapters behind a
-// small interface — claude-only in MVP — that fetch a PR's diff, compose the
-// screen prompt, run the harness headless, and extract the verdict
-// structurally. A run with no confident extractable verdict errors as a failed
-// attempt (ADR 0022's 3-strikes path); an adapter never fabricates a verdict
-// in either direction.
+// small interface — claude and copilot in MVP (ADR 0024) — that fetch a PR's
+// diff, compose the screen prompt, run the harness headless, and extract the
+// verdict structurally. A run with no confident extractable verdict errors as
+// a failed attempt (ADR 0022's 3-strikes path); an adapter never fabricates a
+// verdict in either direction.
 package harness
 
 import (
@@ -18,20 +18,26 @@ import (
 
 // ExtractVerdict decodes one claude CLI run's stdout (`claude -p
 // --output-format json`, a single result envelope) and extracts the Screen's
-// verdict structurally from the envelope's result field: the designated
-// location is a fenced code block carrying exactly the instructed JSON
-// document {"verdict": "proceed"|"hold", "reason": "..."}. Exactly one
-// well-formed document in the result is the verdict; anything else — none,
-// several (e.g. a second one echoed out of the diff), malformed, or
-// verdict-shaped text outside a fence — is an error, a failed attempt on the
-// 3-strikes path (ADR 0022). Prose is never scanned for keywords: "CAN
-// PROCEED" in agent chatter means nothing (ADR 0023).
+// verdict from the envelope's result field via ExtractVerdictText.
 func ExtractVerdict(output []byte) (hook.Verdict, error) {
 	result, err := resultText(output)
 	if err != nil {
 		return hook.Verdict{}, err
 	}
+	return ExtractVerdictText(result)
+}
 
+// ExtractVerdictText extracts the Screen's verdict structurally from one
+// harness run's result text — the harness-neutral half of extraction (claude
+// decodes its JSON envelope first; copilot's silent-mode stdout IS the result
+// text, ADR 0024). The designated location is a fenced code block carrying
+// exactly the instructed JSON document {"verdict": "proceed"|"hold",
+// "reason": "..."}. Exactly one well-formed document in the result is the
+// verdict; anything else — none, several (e.g. a second one echoed out of the
+// diff), malformed, or verdict-shaped text outside a fence — is an error, a
+// failed attempt on the 3-strikes path (ADR 0022). Prose is never scanned for
+// keywords: "CAN PROCEED" in agent chatter means nothing (ADR 0023).
+func ExtractVerdictText(result string) (hook.Verdict, error) {
 	var verdicts []hook.Verdict
 	for _, block := range fencedBlocks(result) {
 		if v, ok := decodeVerdictDocument(block); ok {
@@ -42,9 +48,9 @@ func ExtractVerdict(output []byte) (hook.Verdict, error) {
 	case 1:
 		return verdicts[0], nil
 	case 0:
-		return hook.Verdict{}, errors.New("no verdict document in claude result")
+		return hook.Verdict{}, errors.New("no verdict document in harness result")
 	default:
-		return hook.Verdict{}, fmt.Errorf("ambiguous claude result: %d verdict documents", len(verdicts))
+		return hook.Verdict{}, fmt.Errorf("ambiguous harness result: %d verdict documents", len(verdicts))
 	}
 }
 

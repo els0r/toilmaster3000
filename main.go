@@ -16,10 +16,12 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -201,6 +203,9 @@ func run(ctx context.Context, cfg config) error {
 	if err := checkGhAuth(ctx, execGhAuthStatus); err != nil {
 		return fmt.Errorf("preflight: gh auth: %w", err)
 	}
+	if err := checkHarnessBinaries(hooks, exec.LookPath); err != nil {
+		return fmt.Errorf("preflight: harness: %w", err)
+	}
 	selfLogin, err := resolveSelfLogin(ctx, client)
 	if err != nil {
 		return fmt.Errorf("preflight: resolve @me: %w", err)
@@ -234,16 +239,36 @@ func run(ctx context.Context, cfg config) error {
 	return nil
 }
 
+// harnessAdapter is the full harness seam — both legs. Every MVP adapter
+// (claude, copilot) implements both, so one selection serves Screens and
+// Notifiers alike.
+type harnessAdapter interface {
+	harness.Adapter
+	harness.Agent
+}
+
+// harnessFor returns the adapter behind a validated Spec's Harness
+// (ADR 0023/0024). Hook validation has already allowlisted the name, so an
+// unknown value here is a programming error — the error keeps that guarantee
+// visible instead of panicking.
+func harnessFor(name string) (harnessAdapter, error) {
+	switch name {
+	case "claude":
+		return harness.NewClaude(), nil
+	case "copilot":
+		return harness.NewCopilot(), nil
+	}
+	return nil, fmt.Errorf("unvalidated harness %q", name)
+}
+
 // buildScreener assembles the engine's screening dependency from the
-// validated hook config: one AI Screen species per configured Screen, all
-// over the claude harness adapter (validation allowlists no other harness in
-// MVP — a later adapter is one allowlist entry, its internal/harness
-// implementation, and a branch here; ADR 0023). repo is the configured
-// candidate-set slug the species passes to the adapter's per-PR `gh pr diff`
-// (taken here at construction — the engine leaves PRContext.Repo empty; see
-// harness.NewAIScreen). With zero configured Screens the screener is nil and
-// the engine behaves bit-for-bit as before screens existed: the verdict
-// store is not even opened.
+// validated hook config: one AI Screen species per configured Screen, each
+// over the adapter its Harness names (harnessFor; ADR 0023/0024). repo is the
+// configured candidate-set slug the species passes to the adapter's per-PR
+// `gh pr diff` (taken here at construction — the engine leaves PRContext.Repo
+// empty; see harness.NewAIScreen). With zero configured Screens the screener
+// is nil and the engine behaves bit-for-bit as before screens existed: the
+// verdict store is not even opened.
 func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener, error) {
 	if len(hooks.Screens) == 0 {
 		return nil, nil
@@ -252,9 +277,12 @@ func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener
 	if err != nil {
 		return nil, fmt.Errorf("build verdict store: %w", err)
 	}
-	adapter := harness.NewClaude()
 	instances := make([]hook.ScreenInstance, 0, len(hooks.Screens))
 	for _, sc := range hooks.Screens {
+		adapter, err := harnessFor(sc.Harness)
+		if err != nil {
+			return nil, err
+		}
 		instances = append(instances, hook.ScreenInstance{
 			Spec:   sc.Spec,
 			Screen: harness.NewAIScreen(sc.Spec, repo, adapter),
@@ -265,12 +293,12 @@ func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener
 
 // buildNotifierRunner assembles the engine's notification dependency from the
 // validated hook config — buildScreener's sibling: one AI Notifier species per
-// configured Notifier, all over the claude harness adapter's side-effect leg
-// (ADR 0023). repo is the configured candidate-set slug the species passes to
-// the agent (the engine leaves PRContext.Repo empty; the AIScreen precedent).
-// With zero configured Notifiers the runner is nil and the engine behaves
-// bit-for-bit as before Notifiers existed: the fired-ledger is not even
-// opened.
+// configured Notifier, each over the side-effect leg of the adapter its
+// Harness names (harnessFor; ADR 0023/0024). repo is the configured
+// candidate-set slug the species passes to the agent (the engine leaves
+// PRContext.Repo empty; the AIScreen precedent). With zero configured
+// Notifiers the runner is nil and the engine behaves bit-for-bit as before
+// Notifiers existed: the fired-ledger is not even opened.
 func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.NotifierRunner, error) {
 	if len(hooks.Notifiers) == 0 {
 		return nil, nil
@@ -279,9 +307,12 @@ func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.Notif
 	if err != nil {
 		return nil, fmt.Errorf("build fired-ledger: %w", err)
 	}
-	agent := harness.NewClaude()
 	instances := make([]hook.NotifierInstance, 0, len(hooks.Notifiers))
 	for _, nc := range hooks.Notifiers {
+		agent, err := harnessFor(nc.Harness)
+		if err != nil {
+			return nil, err
+		}
 		instances = append(instances, hook.NotifierInstance{
 			Spec:     nc.Spec,
 			Point:    nc.Point,
@@ -289,6 +320,34 @@ func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.Notif
 		})
 	}
 	return hook.NewNotifierRunner(ledger, instances...), nil
+}
+
+// checkHarnessBinaries verifies the harness CLI behind every enabled hook is
+// installed — the harness sibling of checkGhAuth (ADR 0024): a missing binary
+// must refuse startup, not burn failed attempts one screened PR at a time.
+// The harness name IS the binary name for every MVP adapter. Auth stays
+// runtime-checked: the harness CLIs have no offline auth probe, and a dead
+// login surfaces as failed attempts on the 3-strikes path — a hold, never
+// silence. lookPath is injected so the check is testable without the real
+// CLIs.
+func checkHarnessBinaries(hooks hook.Config, lookPath func(string) (string, error)) error {
+	needed := map[string]bool{}
+	for _, s := range hooks.Screens {
+		if s.Enabled {
+			needed[s.Harness] = true
+		}
+	}
+	for _, n := range hooks.Notifiers {
+		if n.Enabled {
+			needed[n.Harness] = true
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(needed)) {
+		if _, err := lookPath(name); err != nil {
+			return fmt.Errorf("%q: an enabled hook names it but the CLI is not installed: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // checkGhAuth verifies the gh CLI is installed and authenticated. It is the

@@ -164,6 +164,31 @@ Screens:
 	require.Equal(t, 2*time.Minute+30*time.Second, cfg.Screens[1].TimeoutOrDefault())
 }
 
+// TestLoadAcceptsCopilotHarness proves copilot is an allowlisted harness on
+// both hook kinds (ADR 0024) — the second adapter is one allowlist entry.
+func TestLoadAcceptsCopilotHarness(t *testing.T) {
+	path := writeHooks(t, `
+Screens:
+  - Id: aaaa1111
+    Name: security vet
+    Harness: copilot
+    Prompt: vet it
+    Enabled: true
+Notifiers:
+  - Id: bbbb2222
+    Name: review assist
+    Harness: copilot
+    Prompt: review it
+    Point: queue_entered
+    Enabled: true
+`)
+
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, "copilot", cfg.Screens[0].Harness)
+	require.Equal(t, "copilot", cfg.Notifiers[0].Harness)
+}
+
 // TestLoadRejectsBadConfig is the preflight table (the boot gate of ADR 0023):
 // each misconfiguration class refuses startup with a sentinel error whose
 // message names the offending hook, so the user can fix hooks.yaml without
@@ -181,11 +206,11 @@ func TestLoadRejectsBadConfig(t *testing.T) {
 			doc: `
 Screens:
   - Name: security vet
-    Harness: copilot
+    Harness: gemini
     Prompt: vet it
 `,
 			wantErr: hook.ErrUnknownHarness,
-			wantMsg: []string{"security vet", "copilot", "claude"},
+			wantMsg: []string{"security vet", "gemini", "claude", "copilot"},
 		},
 		{
 			name: "unknown harness on a notifier",

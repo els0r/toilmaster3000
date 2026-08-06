@@ -109,6 +109,54 @@ func TestCheckGhAuthPasses(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// checkHarnessBinaries refuses startup when an enabled hook names a harness
+// whose CLI is not installed (ADR 0024): a missing binary must fail boot with
+// the harness's name, not burn failed attempts one screened PR at a time.
+func TestCheckHarnessBinariesMissingBinaryRefusesStartup(t *testing.T) {
+	cfg := hook.Config{Screens: []hook.ScreenConfig{
+		{Spec: hook.Spec{Name: "security vet", Harness: "copilot", Enabled: true}},
+	}}
+
+	err := checkHarnessBinaries(cfg, func(string) (string, error) {
+		return "", exec.ErrNotFound
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "copilot")
+}
+
+// Only harnesses named by ENABLED hooks are looked up — a disabled hook's
+// missing CLI must not block boot, and each distinct harness is checked once.
+func TestCheckHarnessBinariesChecksOnlyEnabledHooks(t *testing.T) {
+	var looked []string
+	cfg := hook.Config{
+		Screens: []hook.ScreenConfig{
+			{Spec: hook.Spec{Name: "vet", Harness: "claude", Enabled: true}},
+			{Spec: hook.Spec{Name: "vet again", Harness: "claude", Enabled: true}},
+		},
+		Notifiers: []hook.NotifierConfig{
+			{Spec: hook.Spec{Name: "assist", Harness: "copilot", Enabled: false}},
+		},
+	}
+
+	err := checkHarnessBinaries(cfg, func(name string) (string, error) {
+		looked = append(looked, name)
+		return "/usr/local/bin/" + name, nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude"}, looked)
+}
+
+// No hooks, no lookups: the no-hooks boot stays bit-for-bit as before.
+func TestCheckHarnessBinariesNoHooksNoLookups(t *testing.T) {
+	err := checkHarnessBinaries(hook.Config{}, func(string) (string, error) {
+		t.Fatal("no lookup expected")
+		return "", nil
+	})
+	require.NoError(t, err)
+}
+
 // buildScreener wires the AI Screen species from validated hook config: zero
 // configured screens must yield a nil screener — bit-for-bit today's engine
 // behavior — and configured screens must yield a consulting screener.

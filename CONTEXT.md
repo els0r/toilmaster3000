@@ -140,7 +140,8 @@ disabling the screen.
 
 MVP species are AI-only (ADR 0023): declarative `Harness`/`Model`/`Prompt`
 entries in `.config/hooks.yaml`, realized by harness adapters
-(`internal/harness`, claude-only) that fetch the diff themselves and extract
+(`internal/harness` — claude and copilot, ADR 0024; each runs hermetic,
+tool-locked to its leg) that fetch the diff themselves and extract
 verdicts structurally — never fabricated in either direction. **A Screen is
 defense-in-depth, not a security boundary.** The review-assist Notifier may
 comment or request changes, **never approve** — that authority stays with

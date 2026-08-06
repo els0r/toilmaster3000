@@ -7,7 +7,7 @@
 # against the malicious-chore gap: it raises an attack's cost, it does NOT
 # guarantee safety.
 #
-# Fields: Harness selects the adapter ("claude" is the only one in MVP);
+# Fields: Harness selects the adapter ("claude" or "copilot" — ADR 0024);
 # Model is optional and passed through to the harness CLI; exactly one of
 # Prompt (inline instructions) or PromptFile (a path read at run time,
 # relative to the working directory) must be set; Timeout bounds one run
@@ -15,7 +15,8 @@
 # and written back into this file at boot.
 #
 # Running a Screen shells out with your existing authentication: it fetches
-# each screened PR's diff via `gh pr diff` and runs the claude CLI headlessly.
+# each screened PR's diff via `gh pr diff` and runs the harness CLI headlessly
+# (the copilot harness needs `copilot login` done once on this machine).
 # Configuring the hook is the consent for those per-PR calls.
 #
 # This file ships as .config/hooks.yaml next to the binary if you opt in;
@@ -36,7 +37,7 @@ Screens:
 # miss, never a double-post. Several Notifiers may share one point (e.g. one
 # review-assist per language) — each keeps its own once-per-PR entry.
 #
-# The review-assist below runs the claude CLI WITH the authority to use your
+# The review-assist below runs the harness CLI WITH the authority to use your
 # gh auth: the agent fetches the PR's diff and posts its own review comment
 # (or requests changes) as YOUR identity. Its ceiling — never approve, never
 # merge — is prompt-enforced, not code-enforced. It ships DISABLED: review

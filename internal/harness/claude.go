@@ -87,10 +87,11 @@ func ghPRDiff(ctx context.Context, repo string, number int) (string, error) {
 	return stdout.String(), nil
 }
 
-// claudeWaitDelay bounds how long claudeInvoke waits for output pipes after
-// the context kills the CLI: claude may spawn subprocesses that inherit the
-// pipes, and without the delay a kill could leave Run blocked on them.
-const claudeWaitDelay = 10 * time.Second
+// cliWaitDelay bounds how long a harness invocation waits for output pipes
+// after the context kills the CLI: both claude and copilot may spawn
+// subprocesses that inherit the pipes, and without the delay a kill could
+// leave Run blocked on them.
+const cliWaitDelay = 10 * time.Second
 
 // claudeInvoke is the screen run's production leg: a plain headless pass with
 // NO tool authority — the screen's diff is already in the prompt, and a judge
@@ -125,7 +126,7 @@ func runClaude(ctx context.Context, model, prompt string, extraArgs ...string) (
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.WaitDelay = claudeWaitDelay
+	cmd.WaitDelay = cliWaitDelay
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("claude -p: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}

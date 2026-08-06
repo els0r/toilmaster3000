@@ -13,8 +13,8 @@ import (
 // moment bad config can be caught.
 var (
 	// ErrUnknownHarness rejects a Harness outside the adapter allowlist —
-	// claude-only in MVP; a later adapter (Copilot, OpenCode) is one allowlist
-	// entry plus its internal/harness implementation.
+	// claude and copilot (ADR 0023/0024); a later adapter (OpenCode) is one
+	// allowlist entry plus its internal/harness implementation.
 	ErrUnknownHarness = errors.New("unknown harness")
 	// ErrMissingPrompt rejects a hook with neither Prompt nor PromptFile: an
 	// AI hook without instructions can do nothing.
@@ -35,9 +35,9 @@ var (
 	ErrMissingName = errors.New("missing hook name")
 )
 
-// knownHarnesses is the harness allowlist ErrUnknownHarness checks against.
-// Claude-only in MVP (ADR 0023); adding a harness is one entry here.
-var knownHarnesses = map[string]bool{"claude": true}
+// knownHarnesses is the harness allowlist ErrUnknownHarness checks against
+// (ADR 0023/0024); adding a harness is one entry here.
+var knownHarnesses = map[string]bool{"claude": true, "copilot": true}
 
 // validate runs the boot preflight over the whole config and returns the first
 // failure. The pre/post discipline itself needs no checking on the Screen side
