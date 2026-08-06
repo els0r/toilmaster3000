@@ -29,6 +29,7 @@ import (
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
 	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/els0r/toilmaster3000/internal/server"
 	"github.com/els0r/toilmaster3000/internal/settings"
@@ -44,6 +45,7 @@ const (
 	armedPath    = ".state/armed.json"
 	rulesPath    = ".config/rules.yaml"
 	settingsPath = ".config/settings.yaml"
+	hooksPath    = ".config/hooks.yaml"
 )
 
 // config is the resolved startup configuration: the candidate set (repo +
@@ -159,6 +161,18 @@ func run(ctx context.Context, cfg config) error {
 	arms, err := armed.NewStore(armedPath)
 	if err != nil {
 		return fmt.Errorf("build armed store: %w", err)
+	}
+
+	// Boot-load and preflight-validate the hook config (ADR 0021/0023): bad
+	// config refuses startup naming the offending hook; an absent file means
+	// no hooks; hooks missing an Id get one self-healed into the file. Nothing
+	// fires yet — the runner and engine wiring are later slices.
+	hooks, err := hook.Load(hooksPath)
+	if err != nil {
+		return fmt.Errorf("load hooks: %w", err)
+	}
+	if len(hooks.Screens)+len(hooks.Notifiers) > 0 {
+		slog.Info("hooks loaded", "screens", len(hooks.Screens), "notifiers", len(hooks.Notifiers))
 	}
 
 	eng, err := engine.New(client, statePath, mergesPath, rules, arms)
