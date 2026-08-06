@@ -169,10 +169,14 @@ authorizes the robot. See ADR 0016 for why tm3k merges itself rather than
 delegating to GitHub native auto-merge.
 - **"Staging" is inbound-only.** It keeps its existing meaning (eligible, matched
   no rule — the rules-gap bucket). Outbound never uses the word.
-- The outbound green-pipeline state splits into **two stages by what blocks the
-  merge**: **Awaiting Approval** — pipeline green but no approval yet (waiting on
-  a reviewer); **Ready** — pipeline green *and* approved (waiting only on you /
-  the merge).
+- The outbound green-pipeline state splits into **three stages by what blocks
+  the merge**: **Awaiting Approval** — pipeline green but no approval yet
+  (waiting on a reviewer); **In Discussion** — green *and* approved but ≥1
+  **unresolved review thread** (waiting on the conversation to close — see
+  Discussion gate); **Ready** — green, approved, zero unresolved threads
+  (waiting only on you / the merge). A green *unapproved* PR with unresolved
+  threads sits in **Awaiting Approval** — precedence names the primary blocker,
+  and threads normally resolve as part of review.
 - **Candidate set**: a **second `gh pr list` call per cycle** against the same
   global `--repo`, with a fixed derived search `is:open author:@me` — **drafts
   included** (unlike inbound, "In draft" is an outbound stage, not a gate).
@@ -185,7 +189,8 @@ delegating to GitHub native auto-merge.
   partition survive unchanged.
 - **Outbound funnel partition** (every authored PR in exactly one bucket; the
   partition doctrine carries over from the inbound Cycle Funnel). Precedence
-  top-down: **draft > not-green > changes-requested > awaiting-approval > ready**:
+  top-down: **draft > not-green > changes-requested > awaiting-approval >
+  in-discussion > ready**:
   1. **Outgoing** — the raw authored pull, rendered as a distribution bar
      (counts only), parallel to inbound Incoming.
   2. **Draft** — action: finish it.
@@ -197,10 +202,11 @@ delegating to GitHub native auto-merge.
   4. **Changes Requested** — green pipeline but `reviewDecision ==
      CHANGES_REQUESTED`; action: address the feedback. Its own stage, not a
      badge — the wait is on you, not a reviewer.
-  5. **Awaiting Approval / Ready** — the green stages (see above).
+  5. **Awaiting Approval / In Discussion / Ready** — the green stages (see
+     above).
 - **Merge mechanism — tm3k's own loop, not GitHub native auto-merge**: each
   cycle, an **Armed** PR that is green + approved (`reviewDecision == APPROVED`)
-  + mergeable is merged via `gh pr merge`. tm3k enforces *its* conditions exactly
+  + **zero unresolved review threads** + mergeable is merged via `gh pr merge`. tm3k enforces *its* conditions exactly
   (native auto-merge enforces branch protection's, which may not require review)
   and records the merge in its own ledger at the moment it happens. (ADR to
   follow.)
@@ -220,7 +226,16 @@ delegating to GitHub native auto-merge.
   Changes-Requested is an impossible state**. "Arm anywhere" thus narrows to
   "anywhere except Changes Requested": an open objection always requires fresh
   consent (re-arm) after re-approval. No transition memory needed
-  (level-triggered, not edge-triggered). Entries are cleaned up when the PR
+  (level-triggered, not edge-triggered). **In Discussion never disarms** — it
+  *holds* (the conflict-marker model, not the Changes-Requested model):
+  **Armed ∧ In-Discussion is a valid state**, the Arm toggle stays available
+  on the stage, and the first cycle the PR is observed with zero unresolved
+  threads (still green + approved + mergeable) it folds into Ready and merges
+  — including when the *reviewer's* resolve is what tips it, with nobody at
+  the keyboard; that is exactly what standing consent means. A nit thread is
+  a conversation, not an objection — only `CHANGES_REQUESTED` withdraws
+  consent; disarm-on-nit would reintroduce the re-arm toil the Arm exists to
+  remove. Entries are cleaned up when the PR
   leaves the pull as merged/closed.
 - **Merge mechanics — mirror `gh land`** (the org's landing extension at
   `panta/tools/gh-extensions/gh-land`), which tm3k **replicates rather than
@@ -239,11 +254,34 @@ delegating to GitHub native auto-merge.
     ADR 0008 on-demand diff fetch (rare, consented), which also guarantees the
     commit message uses the live PR description, not a stale copy from arm time.
 - **Ready (sharpened)** — the *stage* is pipeline green + `reviewDecision ==
-  APPROVED` (waiting only on you). The *merge* has one further precondition:
+  APPROVED` + **zero unresolved review threads** (waiting only on you). The
+  *merge* has one further precondition:
   `mergeable == MERGEABLE`. A conflicted Ready row stays in Ready with a
   **conflict marker** and never auto-merges until resolved — fixing the conflict
   is on you, which is exactly what Ready means. This keeps the stage partition
   total (no bucket-less PRs) while the merge stays gh-land-strict.
+- **Discussion gate (merge precondition)**: a PR with ≥1 **unresolved review
+  thread** is never auto-merged. Realized **structurally**: such a PR folds
+  into the **In Discussion** stage, out of Ready — and the merge step only
+  ever walks Ready, so the stage partition *is* the gate (no fourth clause
+  bolted onto the merge step). "Comment" here means **review threads only**,
+  because they are
+  GitHub's sole *resolvable* comment species: issue comments and review-summary
+  bodies have no resolve mechanism, so they must never gate (a bot comment or
+  an "LGTM" approval body would otherwise wedge the merge forever). Zero
+  comments and all-comments-resolved are therefore **one condition** — zero
+  *unresolved* threads. **Outdated ≠ resolved**: a thread whose commented
+  lines changed underneath it (GitHub's *outdated*) still holds — only the
+  explicit resolve click closes a conversation; code churn near a comment is
+  not agreement (`isOutdated` is ignored entirely). The gate is itself a
+  gentleman's gate: GitHub lets the *author* resolve any thread, so tm3k makes
+  closure **explicit** — it cannot force reviewer sign-off on the fix. Org
+  convention this implies: a nit that must block the merge lives in an
+  **inline thread**, not in the approval's summary text. In Discussion rides
+  `/outbound` only — **no heartbeat count, no tab badge** (the strip stays
+  actionable-signals-only; `ready` keeps meaning waiting-only-on-you).
+  Data note: `isResolved` exists **only** in GitHub's GraphQL `reviewThreads`
+  connection — no `gh pr list/view --json` field carries it.
 - **Breaking `!` on outbound**: the Arm **is** the human decision the inbound
   Invariant exists to guarantee — per-PR, explicit, yours. A breaking outbound
   row carries the existing breaking badge (arm with open eyes) but once armed
@@ -504,7 +542,7 @@ old links survive both renames.)*
 
 **Outbound station layout** (vertical, top→bottom, mirroring Inbound; every
 authored PR in exactly one station, precedence draft > not-green >
-changes-requested > awaiting/ready — see Outbound):
+changes-requested > awaiting/in-discussion/ready — see Outbound):
 1. **Outgoing** — the raw authored pull as a **distribution bar** + legend
    (counts only), parallel to Incoming. Shows the derived `author:@me` search as
    a code chip.
@@ -512,8 +550,9 @@ changes-requested > awaiting/ready — see Outbound):
 3. **Not green** — **two side-by-side cards**: pipeline red / checks running.
 4. **Changes Requested** — address the feedback. Never shows an Arm toggle
    (Armed ∧ Changes-Requested is impossible — see Outbound).
-5. **Awaiting Approval / Ready** — the green stages; Ready rows carry a
-   conflict marker when not `MERGEABLE`.
+5. **Awaiting Approval / In Discussion / Ready** — the green stages; Ready
+   rows carry a conflict marker when not `MERGEABLE`; In Discussion rows show
+   their unresolved-thread count.
 6. **Merged** — the today-scoped, read-only ledger station (from
    `merges.jsonl`), parallel to the Approval Feed.
 
@@ -717,8 +756,22 @@ Empty range → all zeros, deltas render "—".
   inbound search gets **`-author:@me`** appended at startup so the two pulls
   are disjoint. `mergeable` rides this call to compute Ready's conflict marker
   and the merge precondition.
+- **Threads fetch (third call per cycle):** one batched `gh api graphql`
+  search (`repo:<repo> is:pr is:open author:@me`) returning, per authored PR,
+  `number` + `reviewThreads(first:100){ isResolved }`, folded to a
+  `map[number]unresolvedCount` by a decode-only seam method
+  (`UnresolvedThreads(ctx)`). GraphQL is forced, not chosen: `isResolved`
+  exists **only** in the GraphQL `reviewThreads` connection — no
+  `gh pr list/view --json` field carries thread resolution. The pure stage
+  fold takes the count as an input; the seam never judges. **Fail-closed:** a
+  failed threads call clears the outbound snapshot and skips all merging that
+  cycle, exactly like a failed authored fetch — thread data is load-bearing
+  for the partition. **Truncation guards:** a PR reporting more thread pages
+  than fetched is treated as *having* unresolved threads (hold + warn), never
+  as resolved; the search page carries the ADR 0007-style warn-at-limit.
 - **Merge step (tail of the cycle):** for each **Armed** PR that is green +
-  `reviewDecision == APPROVED` + `mergeable == MERGEABLE`: fetch `title, body,
+  `reviewDecision == APPROVED` + zero unresolved review threads (the In
+  Discussion stage holds the rest out of Ready) + `mergeable == MERGEABLE`: fetch `title, body,
   reviews` via one `gh pr view` (the per-merge call, ADR 0008-style), construct
   the gh-land commit message, `gh pr merge -s -d -t … -b …` (one retry), and
   append to `merges.jsonl` **only on success**. An armed PR observed with
@@ -822,7 +875,7 @@ is indistinguishable from "saw no PRs." A failed candidate fetch records
 | `GET` | `/api/toilmaster3000/v1/analytics` | approval-history aggregates for a range (+ scope filter): totals, shares, switches-saved, by-type cohort, elapsed-aligned deltas, all-time scope list. Query: `range=today\|week\|month\|days`, `days=N` (for `days`), `scope=a,b` (repeatable/CSV) |
 | `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `cost_low`, `cost_high` (CHF per saved switch), `currency` |
 | `PUT` | `/api/toilmaster3000/v1/settings` | update the constants (full replace) |
-| `GET` | `/api/toilmaster3000/v1/outbound` | live **outbound funnel** snapshot: per-stage lists (draft, red, running, changes-requested, awaiting, ready incl. conflict/mergeable state), distribution counts, `armed` flag per row. Derived live each cycle like `/pipeline` (the Merged station reads `/merges`, not a per-cycle field) |
+| `GET` | `/api/toilmaster3000/v1/outbound` | live **outbound funnel** snapshot: per-stage lists (draft, red, running, changes-requested, in-discussion incl. unresolved-thread count, awaiting, ready incl. conflict/mergeable state), distribution counts, `armed` flag per row. Derived live each cycle like `/pipeline` (the Merged station reads `/merges`, not a per-cycle field) |
 | `POST` | `/api/toilmaster3000/v1/outbound/{number}/arm` | arm a PR (rejected while `reviewDecision == CHANGES_REQUESTED`) |
 | `DELETE` | `/api/toilmaster3000/v1/outbound/{number}/arm` | disarm a PR |
 | `GET` | `/api/toilmaster3000/v1/merges` | merge ledger, newest-first, **today only** (reads `merges.jsonl`; feeds the Merged station) |
