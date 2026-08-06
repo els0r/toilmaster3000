@@ -117,6 +117,7 @@ const emptyOutbound: Outbound = {
   running: [],
   changes_requested: [],
   awaiting_approval: [],
+  in_discussion: [],
   ready: [],
   distribution: {
     draft: 0,
@@ -124,6 +125,7 @@ const emptyOutbound: Outbound = {
     running: 0,
     changes_requested: 0,
     awaiting_approval: 0,
+    in_discussion: 0,
     ready: 0,
   },
   search: "is:open author:@me",
@@ -139,6 +141,7 @@ const outboundItem = (n: number): OutboundItem => ({
   deletions: 0,
   changed_files: 0,
   conflict: false,
+  unresolved_threads: 0,
   armed: false,
 });
 

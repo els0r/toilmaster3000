@@ -15,8 +15,9 @@ import (
 )
 
 // outboundServer builds a server whose engine has run one cycle over an
-// authored pull hitting every outbound stage, and returns the running server
-// URL.
+// authored pull hitting every outbound stage — In Discussion included (PR 18
+// is approved with two unresolved review threads) — and returns the running
+// server URL.
 func outboundServer(t *testing.T) string {
 	t.Helper()
 	fake := github.NewFake()
@@ -28,15 +29,20 @@ func outboundServer(t *testing.T) string {
 		{Number: 15, Title: "feat(web): pending", Author: "me", URL: "u15", Checks: greenChecks(), ReviewDecision: "REVIEW_REQUIRED", Additions: 40, Deletions: 2, ChangedFiles: 3},
 		{Number: 16, Title: "feat(cli)!: approved", Author: "me", URL: "u16", Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "CONFLICTING"},
 		{Number: 17, Title: "feat(sdk): approved too", Author: "me", URL: "u17", Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
+		{Number: 18, Title: "feat(gw): approved with nits", Author: "me", URL: "u18", Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
 	}
+	fake.SetThreads(18, github.RawReviewThreads{
+		Nodes: []github.ReviewThread{{IsResolved: false}, {IsResolved: false}, {IsResolved: true}},
+	})
 	eng, store := newEngine(t, fake)
 	eng.RunCycleOnce(context.Background())
 	srv := newTestServerFor(t, eng, store)
 	return srv.URL
 }
 
-// OB1 (tracer): GET /outbound returns the per-stage lists, the distribution
-// counts (summing to outgoing), the conflict flag on Ready rows, and
+// OB1 (tracer): GET /outbound returns the per-stage lists — in_discussion
+// included (ADR 0019) — the distribution counts (summing to outgoing), the
+// conflict flag on Ready rows, per-row unresolved-thread counts, and
 // parse-on-read title parts — the outbound wire shape (snake_case DTOs, ADR
 // 0002/0006).
 func TestOutboundSnapshotMapping(t *testing.T) {
@@ -45,7 +51,7 @@ func TestOutboundSnapshotMapping(t *testing.T) {
 	var body server.Outbound
 	getJSON(t, url+apiPrefix+"/outbound", &body)
 
-	require.Equal(t, 7, body.Outgoing, "outgoing is the raw authored pull")
+	require.Equal(t, 8, body.Outgoing, "outgoing is the raw authored pull")
 
 	require.Len(t, body.Draft, 1)
 	require.Equal(t, 11, body.Draft[0].Number)
@@ -57,7 +63,14 @@ func TestOutboundSnapshotMapping(t *testing.T) {
 	require.Equal(t, 14, body.ChangesRequested[0].Number)
 	require.Len(t, body.AwaitingApproval, 1)
 	require.Equal(t, 15, body.AwaitingApproval[0].Number)
+	require.Len(t, body.InDiscussion, 1)
+	require.Equal(t, 18, body.InDiscussion[0].Number)
 	require.Len(t, body.Ready, 2)
+
+	// The unresolved-thread count rides each row: the judged count on the
+	// in-discussion row, zero on a Ready row (that is what Ready means).
+	require.Equal(t, 2, body.InDiscussion[0].UnresolvedThreads)
+	require.Zero(t, body.Ready[0].UnresolvedThreads)
 
 	// Distribution counts partition Outgoing by construction.
 	require.Equal(t, 1, body.Distribution.Draft)
@@ -65,10 +78,18 @@ func TestOutboundSnapshotMapping(t *testing.T) {
 	require.Equal(t, 1, body.Distribution.Running)
 	require.Equal(t, 1, body.Distribution.ChangesRequested)
 	require.Equal(t, 1, body.Distribution.AwaitingApproval)
+	require.Equal(t, 1, body.Distribution.InDiscussion)
 	require.Equal(t, 2, body.Distribution.Ready)
 	sum := body.Distribution.Draft + body.Distribution.Red + body.Distribution.Running +
-		body.Distribution.ChangesRequested + body.Distribution.AwaitingApproval + body.Distribution.Ready
+		body.Distribution.ChangesRequested + body.Distribution.AwaitingApproval +
+		body.Distribution.InDiscussion + body.Distribution.Ready
 	require.Equal(t, body.Outgoing, sum)
+
+	// The heartbeat's ready keeps counting ONLY Ready — In Discussion has no
+	// heartbeat count, so the strip stays actionable-signals-only (ADR 0019).
+	var status server.CycleStatus
+	getJSON(t, url+apiPrefix+"/status", &status)
+	require.Equal(t, 2, status.ReadyCount, "ready excludes the in-discussion row")
 
 	// A conflicted Ready row stays in Ready carrying the conflict flag; a
 	// MERGEABLE one carries none. UNKNOWN (not conflicting) would carry none
@@ -123,7 +144,8 @@ func armedFlags(body server.Outbound) map[int]bool {
 	out := map[int]bool{}
 	for _, stage := range [][]server.OutboundItem{
 		body.Draft, body.Red, body.Running,
-		body.ChangesRequested, body.AwaitingApproval, body.Ready,
+		body.ChangesRequested, body.AwaitingApproval,
+		body.InDiscussion, body.Ready,
 	} {
 		for _, it := range stage {
 			out[it.Number] = it.Armed
@@ -219,7 +241,7 @@ func TestOutboundEmptyBeforeFirstCycle(t *testing.T) {
 	var raw map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&raw))
 	require.Equal(t, float64(0), raw["outgoing"])
-	for _, k := range []string{"draft", "red", "running", "changes_requested", "awaiting_approval", "ready"} {
+	for _, k := range []string{"draft", "red", "running", "changes_requested", "awaiting_approval", "in_discussion", "ready"} {
 		require.NotNil(t, raw[k], "%s renders [] not null", k)
 		require.Empty(t, raw[k], "%s is empty before the first cycle", k)
 	}

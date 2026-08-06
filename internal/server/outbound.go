@@ -26,6 +26,12 @@ type OutboundItem struct {
 	// stage boundary, so a conflicted Ready row stays in Ready carrying this
 	// flag. UNKNOWN (GitHub still computing) derives false, not a conflict.
 	Conflict bool `json:"conflict"`
+	// UnresolvedThreads is the PR's unresolved-review-thread count from the
+	// cycle's batched threads call — the Discussion-gate predicate (ADR
+	// 0019). It rides every row, whatever the stage (a draft with open nits
+	// carries its real count); >=1 on an in_discussion row is what put it
+	// there, and 0 on a ready row is what Ready means.
+	UnresolvedThreads int `json:"unresolved_threads"`
 	// Armed is the row's Armed/Withheld consent state (ADR 0016) — the badge
 	// riding the row in whatever stage it is in, orthogonal to the partition.
 	// Like PR State on the feed it is NOT snapshot data: the handler zips it in
@@ -43,15 +49,17 @@ type OutboundDistribution struct {
 	Running          int `json:"running"`
 	ChangesRequested int `json:"changes_requested"`
 	AwaitingApproval int `json:"awaiting_approval"`
+	InDiscussion     int `json:"in_discussion"`
 	Ready            int `json:"ready"`
 }
 
 // Outbound is the wire shape of the live outbound funnel snapshot served at
-// /outbound: the six itemized stage lists plus the distribution counts that
+// /outbound: the seven itemized stage lists — in_discussion between
+// awaiting_approval and ready (ADR 0019) — plus the distribution counts that
 // partition Outgoing. Snake_case server-owned DTO (ADR 0002); the engine's
 // Outbound never crosses the boundary directly. Like /pipeline it is derived
 // live each cycle, never persisted — the zero snapshot (fresh restart, or a
-// failed outbound fetch) renders as empty lists + zero counts.
+// failed outbound or threads fetch) renders as empty lists + zero counts.
 type Outbound struct {
 	Outgoing         int                  `json:"outgoing"`
 	Draft            []OutboundItem       `json:"draft"`
@@ -59,6 +67,7 @@ type Outbound struct {
 	Running          []OutboundItem       `json:"running"`
 	ChangesRequested []OutboundItem       `json:"changes_requested"`
 	AwaitingApproval []OutboundItem       `json:"awaiting_approval"`
+	InDiscussion     []OutboundItem       `json:"in_discussion"`
 	Ready            []OutboundItem       `json:"ready"`
 	Distribution     OutboundDistribution `json:"distribution"`
 	// Search is the fixed derived authored search (github.AuthoredSearch),
@@ -75,16 +84,17 @@ type Outbound struct {
 // directly.
 func outboundItemToBody(it engine.OutboundItem, armed bool) OutboundItem {
 	return OutboundItem{
-		Number:       it.Number,
-		Title:        it.Title,
-		TitleParts:   titleParts(it.Title),
-		Author:       it.Author,
-		URL:          it.URL,
-		Additions:    it.Additions,
-		Deletions:    it.Deletions,
-		ChangedFiles: it.ChangedFiles,
-		Conflict:     it.Mergeable == github.MergeableConflicting,
-		Armed:        armed,
+		Number:            it.Number,
+		Title:             it.Title,
+		TitleParts:        titleParts(it.Title),
+		Author:            it.Author,
+		URL:               it.URL,
+		Additions:         it.Additions,
+		Deletions:         it.Deletions,
+		ChangedFiles:      it.ChangedFiles,
+		Conflict:          it.Mergeable == github.MergeableConflicting,
+		UnresolvedThreads: it.UnresolvedThreads,
+		Armed:             armed,
 	}
 }
 
@@ -99,7 +109,7 @@ func outboundItemsToBody(items []engine.OutboundItem, armed map[int]bool) []Outb
 }
 
 // outboundToBody converts the engine's live outbound snapshot to its wire DTO
-// (ADR 0002). The six lists are itemized with parse-on-read title parts; the
+// (ADR 0002). The seven lists are itemized with parse-on-read title parts; the
 // distribution counts are the list lengths, so they sum to Outgoing by
 // construction. armed is the engine's LIVE armed set, zipped onto each row
 // (the PR-State precedent) so a fresh toggle shows without waiting a cycle.
@@ -111,6 +121,7 @@ func outboundToBody(ob engine.Outbound, armed map[int]bool) Outbound {
 		Running:          outboundItemsToBody(ob.Running, armed),
 		ChangesRequested: outboundItemsToBody(ob.ChangesRequested, armed),
 		AwaitingApproval: outboundItemsToBody(ob.AwaitingApproval, armed),
+		InDiscussion:     outboundItemsToBody(ob.InDiscussion, armed),
 		Ready:            outboundItemsToBody(ob.Ready, armed),
 		Distribution: OutboundDistribution{
 			Draft:            len(ob.Draft),
@@ -118,6 +129,7 @@ func outboundToBody(ob engine.Outbound, armed map[int]bool) Outbound {
 			Running:          len(ob.Running),
 			ChangesRequested: len(ob.ChangesRequested),
 			AwaitingApproval: len(ob.AwaitingApproval),
+			InDiscussion:     len(ob.InDiscussion),
 			Ready:            len(ob.Ready),
 		},
 	}
