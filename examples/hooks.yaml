@@ -26,3 +26,26 @@ Screens:
       PromptFile: .config/security-screen-prompt.md
       Timeout: 10m
       Enabled: true
+
+# Notifiers announce completed facts at post-points and can never block or
+# divert the engine: queue_entered (rules routed a PR to Needs-Human-Review —
+# the review-assist's home), screen_held (a Screen's hold diverted it; kept
+# separate so a just-screened PR never auto-receives a second AI pass), and
+# post_approve (an approval succeeded). Each Notifier fires once per PR EVER
+# (persisted fired-ledger, at-most-once): a failed notification is a logged
+# miss, never a double-post. Several Notifiers may share one point (e.g. one
+# review-assist per language) — each keeps its own once-per-PR entry.
+#
+# The review-assist below runs the claude CLI WITH the authority to use your
+# gh auth: the agent fetches the PR's diff and posts its own review comment
+# (or requests changes) as YOUR identity. Its ceiling — never approve, never
+# merge — is prompt-enforced, not code-enforced. It ships DISABLED: review
+# the referenced prompt before enabling, then copy it to
+# .config/go-review-prompt.md and flip Enabled to true.
+Notifiers:
+    - Name: go review assist
+      Harness: claude
+      PromptFile: .config/go-review-prompt.md
+      Point: queue_entered
+      Timeout: 10m
+      Enabled: false

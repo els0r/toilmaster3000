@@ -186,6 +186,32 @@ func TestExampleHooksConfigLoads(t *testing.T) {
 	require.Equal(t, ".config/security-screen-prompt.md", cfg.Screens[0].PromptFile)
 	require.NotEmpty(t, cfg.Screens[0].ID, "boot must self-heal an Id into the entry")
 
+	// The example Notifier entry: the Go review-assist, attached to
+	// queue_entered (the review-assist's home, ADR 0021) and shipped disabled
+	// — enabling it is the operator's explicit act, after reviewing the
+	// prompt it references.
+	require.Len(t, cfg.Notifiers, 1)
+	n := cfg.Notifiers[0]
+	require.Equal(t, "claude", n.Harness)
+	require.Equal(t, hook.QueueEntered, n.Point)
+	require.Equal(t, ".config/go-review-prompt.md", n.PromptFile)
+	require.False(t, n.Enabled, "the example ships opt-in: disabled until the operator reviews and flips it")
+	require.NotEmpty(t, n.ID, "boot must self-heal an Id into the entry")
+}
+
+// The shipped Go review-assist prompt must carry the authority ceiling and
+// the untrusted-data reminder in the operator-visible instructions too (the
+// composition appends tm3k's contract regardless, but the example the
+// operator copies and edits must model it), and must tell the operator to
+// review it before enabling.
+func TestGoReviewPromptCarriesCeilingAndUntrustedReminder(t *testing.T) {
+	data, err := os.ReadFile("examples/go-review-prompt.md")
+	require.NoError(t, err)
+	prompt := string(data)
+	require.Contains(t, prompt, "review before enabling", "the example is explicit opt-in: the operator reviews it first")
+	require.Contains(t, prompt, "never approve", "the ceiling is stated where the operator will edit")
+	require.Contains(t, prompt, "never merge")
+	require.Contains(t, prompt, "untrusted", "the prompt must remind the assist the PR content is untrusted data")
 }
 
 func TestSecurityScreenPromptIsSignedOff(t *testing.T) {
