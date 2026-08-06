@@ -6,11 +6,11 @@ import { DiffPill } from "./DiffPill";
 import { DistributionStation, StationCard } from "./Station";
 import { clock, timeAgo, useNow } from "./time";
 
-// SEGMENTS are the six terminal stages that partition Outgoing, in funnel order
-// (precedence draft > not-green > changes-requested > awaiting/ready). Each has
-// a stable class hook for its color and a human label for the legend; the
-// counts come from the snapshot's distribution block, which sums to Outgoing by
-// construction.
+// SEGMENTS are the seven terminal stages that partition Outgoing, in funnel
+// order (precedence draft > not-green > changes-requested > awaiting >
+// in-discussion > ready). Each has a stable class hook for its color and a
+// human label for the legend; the counts come from the snapshot's
+// distribution block, which sums to Outgoing by construction.
 const SEGMENTS: {
   key: string;
   label: string;
@@ -32,6 +32,11 @@ const SEGMENTS: {
     key: "awaiting",
     label: "awaiting approval",
     count: (o) => o.distribution.awaiting_approval,
+  },
+  {
+    key: "in-discussion",
+    label: "in discussion",
+    count: (o) => o.distribution.in_discussion,
   },
   { key: "ready", label: "ready", count: (o) => o.distribution.ready },
 ];
@@ -175,6 +180,20 @@ export function OutboundFunnel({
         renderAction={armToggle}
       />
 
+      {/* In Discussion (ADR 0019): approved but held by ≥1 unresolved review
+          thread — a hold on a counterparty's conversation, not an objection.
+          The merge step walks only Ready, so this stage IS the discussion
+          gate. */}
+      <StationCard
+        testid="outbound-in-discussion"
+        title="In Discussion"
+        note="waiting on the conversation"
+        items={outbound.in_discussion ?? []}
+        emptyNote="None — no open discussions."
+        renderMeta={discussionMeta}
+        renderAction={armToggle}
+      />
+
       <StationCard
         testid="outbound-ready"
         title="Ready"
@@ -252,6 +271,22 @@ function outboundMeta(item: OutboundItem): ReactNode {
           <ArmedBadge />
         </>
       )}
+    </>
+  );
+}
+
+// discussionMeta extends the shared meta with the In Discussion station's
+// defining datum: the unresolved-thread count holding the merge (≥1 by
+// construction — zero is Ready's definition). Neutral-toned, not the error
+// styling — a discussion is a hold, not an objection (ADR 0019).
+function discussionMeta(item: OutboundItem): ReactNode {
+  return (
+    <>
+      {outboundMeta(item)}
+      <span className="sep">·</span>
+      <span className="thread-count tnum">
+        {item.unresolved_threads} unresolved
+      </span>
     </>
   );
 }
