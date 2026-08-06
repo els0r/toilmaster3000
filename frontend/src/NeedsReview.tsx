@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { approveQueueItem, type QueueItem } from "./api";
-import { BreakingBadge } from "./Badges";
+import { BreakingBadge, ScreenHoldChips } from "./Badges";
 import { DiffPill } from "./DiffPill";
 import { PrRow } from "./PrRow";
 
@@ -61,12 +61,18 @@ export function NeedsReview({
       ) : (
         <div className="pr-list">
           {queue.map((q) => {
-            // The breaking badge represents the breaking_change reason, so the
-            // reason chips exclude it: an Approve-tied breaking PR shows the
-            // badge without an orphan breaking_change chip.
-            const reasonChips = (q.reasons ?? []).filter(
-              (r) => r !== REASON_BREAKING,
-            );
+            // Chip kind derives from structure, not string-sniffing: rule
+            // reasons XOR screen holds (disjoint by construction, ADR 0022) —
+            // a held row's reasons are exactly its screen_holds mirrored, so
+            // it renders screen chips and a rule-routed row renders rule
+            // chips. The breaking badge represents the breaking_change
+            // reason, so the rule chips exclude it: an Approve-tied breaking
+            // PR shows the badge without an orphan breaking_change chip.
+            const screenHolds = q.screen_holds ?? [];
+            const reasonChips =
+              screenHolds.length > 0
+                ? []
+                : (q.reasons ?? []).filter((r) => r !== REASON_BREAKING);
             return (
               <PrRow
                 key={q.number}
@@ -74,9 +80,9 @@ export function NeedsReview({
                 meta={
                   <>
                     <DiffPill item={q} />
-                    {(q.title_parts.breaking || reasonChips.length > 0) && (
-                      <span className="sep">·</span>
-                    )}
+                    {(q.title_parts.breaking ||
+                      reasonChips.length > 0 ||
+                      screenHolds.length > 0) && <span className="sep">·</span>}
                     {q.title_parts.breaking && <BreakingBadge />}
                     {reasonChips.map((reason) => (
                       <span key={reason} className="badge-breaking">
@@ -84,6 +90,9 @@ export function NeedsReview({
                         {reason}
                       </span>
                     ))}
+                    {screenHolds.length > 0 && (
+                      <ScreenHoldChips holds={screenHolds} number={q.number} />
+                    )}
                   </>
                 }
                 action={
