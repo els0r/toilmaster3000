@@ -1,0 +1,145 @@
+package hook
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+// VerdictKey identifies one screen run's subject: which Screen judged which
+// PR at which head. Per-head keying is the whole invalidation story (ADR
+// 0022): a new push changes the key, so the store misses and the PR
+// re-screens; an unchanged head keeps hitting its stored verdict — across
+// cycles and restarts alike.
+type VerdictKey struct {
+	ScreenID string
+	Number   int
+	Head     string
+}
+
+// VerdictRecord is one screen-run row: the engine's read-model and the
+// on-disk shape of one line in verdicts.jsonl (the json tags serve that disk
+// format, the approvals.jsonl idiom). Outcome is proceed|hold|error — error
+// is a recorded failed attempt, never a Screen's verdict (ADR 0022).
+type VerdictRecord struct {
+	ScreenID string    `json:"screen_id"`
+	Number   int       `json:"number"`
+	Head     string    `json:"head"`
+	Outcome  Outcome   `json:"outcome"`
+	Reason   string    `json:"reason"`
+	At       time.Time `json:"at"`
+}
+
+// key projects a record onto its store key.
+func (r VerdictRecord) key() VerdictKey {
+	return VerdictKey{ScreenID: r.ScreenID, Number: r.Number, Head: r.Head}
+}
+
+// VerdictStore owns the persisted screen verdicts: append-only
+// verdicts.jsonl on disk, the latest row per key in memory (latest wins —
+// the level-triggered read the cycle consults, ADR 0022). Append-only keeps
+// the error-attempt history on disk for the 3-strikes fold of a later slice;
+// this store only ever serves the latest row. Mirrors the armed store: a
+// mutex-guarded map, loaded at construction, appended under lock.
+type VerdictStore struct {
+	path string
+
+	mu     sync.Mutex
+	latest map[VerdictKey]VerdictRecord
+}
+
+// NewVerdictStore constructs a VerdictStore backed by the given
+// verdicts.jsonl path and loads it, folding the rows latest-wins. A missing
+// file is the first-run case: the empty store, nothing written until the
+// first verdict.
+func NewVerdictStore(path string) (*VerdictStore, error) {
+	s := &VerdictStore{path: path, latest: map[VerdictKey]VerdictRecord{}}
+	if err := s.load(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Latest returns the latest row for the (screenID, number, head) key (locked
+// read). A missing key means no run has completed for this head — never
+// proceed (never-fire-on-no-signal, ADR 0021).
+func (s *VerdictStore) Latest(screenID string, number int, head string) (VerdictRecord, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.latest[VerdictKey{ScreenID: screenID, Number: number, Head: head}]
+	return rec, ok
+}
+
+// Append appends one row to verdicts.jsonl and makes it the key's latest,
+// creating the .state directory if needed. The in-memory map is updated only
+// after the write succeeds, so memory never claims a verdict the disk lost
+// (the next cycle re-dispatches on the miss).
+func (s *VerdictStore) Append(rec VerdictRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.appendLine(rec); err != nil {
+		return fmt.Errorf("persist verdict %s #%d@%s: %w", rec.ScreenID, rec.Number, rec.Head, err)
+	}
+	s.latest[rec.key()] = rec
+	return nil
+}
+
+// load reads verdicts.jsonl into the latest-wins map; a missing file is the
+// empty store. Runs at construction, before the store is shared.
+func (s *VerdictStore) load() error {
+	f, err := os.Open(s.path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read verdicts.jsonl: %w", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var rec VerdictRecord
+		if err := json.Unmarshal(line, &rec); err != nil {
+			return fmt.Errorf("parse verdicts.jsonl line: %w", err)
+		}
+		// File order is append order, so overwriting realizes latest-wins.
+		s.latest[rec.key()] = rec
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read verdicts.jsonl: %w", err)
+	}
+	return nil
+}
+
+// appendLine writes one record as a JSON line, creating the parent directory
+// and file if needed. Callers hold s.mu.
+func (s *VerdictStore) appendLine(rec VerdictRecord) error {
+	if dir := filepath.Dir(s.path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	line, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
