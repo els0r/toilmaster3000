@@ -547,6 +547,15 @@
               "null"
             ]
           },
+          "in_discussion": {
+            "items": {
+              "$ref": "#/components/schemas/OutboundItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "outgoing": {
             "format": "int64",
             "type": "integer"
@@ -589,6 +598,7 @@
           "running",
           "changes_requested",
           "awaiting_approval",
+          "in_discussion",
           "ready",
           "distribution",
           "search"
@@ -607,6 +617,10 @@
             "type": "integer"
           },
           "draft": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "in_discussion": {
             "format": "int64",
             "type": "integer"
           },
@@ -629,6 +643,7 @@
           "running",
           "changes_requested",
           "awaiting_approval",
+          "in_discussion",
           "ready"
         ],
         "type": "object"
@@ -667,6 +682,10 @@
           "title_parts": {
             "$ref": "#/components/schemas/TitleParts"
           },
+          "unresolved_threads": {
+            "format": "int64",
+            "type": "integer"
+          },
           "url": {
             "type": "string"
           }
@@ -681,6 +700,7 @@
           "deletions",
           "changed_files",
           "conflict",
+          "unresolved_threads",
           "armed"
         ],
         "type": "object"

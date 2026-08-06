@@ -433,6 +433,7 @@ export interface components {
             changes_requested: components["schemas"]["OutboundItem"][] | null;
             distribution: components["schemas"]["OutboundDistribution"];
             draft: components["schemas"]["OutboundItem"][] | null;
+            in_discussion: components["schemas"]["OutboundItem"][] | null;
             /** Format: int64 */
             outgoing: number;
             ready: components["schemas"]["OutboundItem"][] | null;
@@ -447,6 +448,8 @@ export interface components {
             changes_requested: number;
             /** Format: int64 */
             draft: number;
+            /** Format: int64 */
+            in_discussion: number;
             /** Format: int64 */
             ready: number;
             /** Format: int64 */
@@ -468,6 +471,8 @@ export interface components {
             number: number;
             title: string;
             title_parts: components["schemas"]["TitleParts"];
+            /** Format: int64 */
+            unresolved_threads: number;
             url: string;
         };
         PRDiffBody: {

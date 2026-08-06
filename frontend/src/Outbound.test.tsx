@@ -59,6 +59,7 @@ const outboundItem = (over: Partial<OutboundItem> = {}): OutboundItem => ({
   deletions: 2,
   changed_files: 1,
   conflict: false,
+  unresolved_threads: 0,
   armed: false,
   ...over,
 });
@@ -71,6 +72,7 @@ const outbound = (over: Partial<Outbound> = {}): Outbound => {
     running: [],
     changes_requested: [],
     awaiting_approval: [],
+    in_discussion: [],
     ready: [],
     distribution: {
       draft: 0,
@@ -78,6 +80,7 @@ const outbound = (over: Partial<Outbound> = {}): Outbound => {
       running: 0,
       changes_requested: 0,
       awaiting_approval: 0,
+      in_discussion: 0,
       ready: 0,
     },
     search: "is:open author:@me",
@@ -92,6 +95,7 @@ const outbound = (over: Partial<Outbound> = {}): Outbound => {
       running: base.running?.length ?? 0,
       changes_requested: base.changes_requested?.length ?? 0,
       awaiting_approval: base.awaiting_approval?.length ?? 0,
+      in_discussion: base.in_discussion?.length ?? 0,
       ready: base.ready?.length ?? 0,
     };
   }
