@@ -33,31 +33,52 @@ type HoldDetail struct {
 // the gated action may fire). Empty on both counts means proceed.
 type Disposition struct {
 	// Pending are the enabled screens with no verdict for the key — no row,
-	// or an error latest row (a failed attempt is no verdict; the consult
-	// re-dispatches it). A missing verdict is never proceed (ADR 0021).
+	// or an error latest row short of the attempt cap (a failed attempt is no
+	// verdict; the consult re-dispatches it). A missing verdict is never
+	// proceed (ADR 0021).
 	Pending []ScreenInstance
-	// Holds carries EVERY screen whose latest row is a hold, in config order
-	// (the reasons-list doctrine, ADR 0022).
+	// Holds carries EVERY holding screen, in config order (the reasons-list
+	// doctrine, ADR 0022): a stored hold verdict, or the synthesized
+	// screen-unavailable hold of a struck-out key.
 	Holds []HoldDetail
 }
 
+// maxScreenAttempts bounds the no-verdict path (ADR 0022 decision 5): the
+// third consecutive failed attempt for a key stops the retries and synthesizes
+// a hold, so a broken harness summons a human instead of burning a paid run
+// every cycle forever. Hardcoded like the pool size — no config surface until
+// a need shows.
+const maxScreenAttempts = 3
+
 // FoldVerdicts is the pure conjunctive fold of ADR 0022 — the screening
-// sibling of AllGreen: it only judges, over the configured screens and a
-// lookup of each screen's latest stored row for the PR-head under consult.
-// Disabled screens never gate: they need no verdict and any stale hold of
-// theirs is ignored.
-func FoldVerdicts(screens []ScreenInstance, latest func(screenID string) (VerdictRecord, bool)) Disposition {
+// sibling of AllGreen: it only judges, over the configured screens, a lookup
+// of each screen's latest stored row for the PR-head under consult, and the
+// key's trailing error streak. Disabled screens never gate: they need no
+// verdict and any stale hold (stored or synthetic) of theirs is ignored —
+// which is exactly how disable + restart releases holds.
+//
+// Three failed attempts synthesize a hold carrying the last error — never
+// silent limbo, never a walk-through. The synthesized hold is a FOLD OUTPUT,
+// not a stored row: the store keeps only honest attempt history, so a
+// disabled screen's synthetic hold vanishes with the screen and a new push
+// (fresh key) starts a fresh streak.
+func FoldVerdicts(screens []ScreenInstance, latest func(screenID string) (VerdictRecord, bool), errorStreak func(screenID string) int) Disposition {
 	var d Disposition
 	for _, inst := range screens {
 		if !inst.Spec.Enabled {
 			continue
 		}
 		rec, ok := latest(inst.Spec.ID)
-		if !ok || rec.Outcome == Errored {
+		switch {
+		case !ok:
 			d.Pending = append(d.Pending, inst)
-			continue
-		}
-		if rec.Outcome == Hold {
+		case rec.Outcome == Errored && errorStreak(inst.Spec.ID) >= maxScreenAttempts:
+			// Struck out: the bounded no-verdict path ends in front of a human
+			// with the last error as its reason (ADR 0022 decision 5).
+			d.Holds = append(d.Holds, HoldDetail{Screen: inst.Spec.Name, Reason: "screen unavailable: " + rec.Reason})
+		case rec.Outcome == Errored:
+			d.Pending = append(d.Pending, inst)
+		case rec.Outcome == Hold:
 			d.Holds = append(d.Holds, HoldDetail{Screen: inst.Spec.Name, Reason: rec.Reason})
 		}
 	}
@@ -112,9 +133,14 @@ func NewScreener(store *VerdictStore, screens ...ScreenInstance) *Screener {
 // what the store already knows. A holding disposition dispatches nothing:
 // the PR is bound for a human, so further paid runs would be waste.
 func (s *Screener) Consult(ctx context.Context, pr PRContext) Disposition {
-	disp := FoldVerdicts(s.screens, func(screenID string) (VerdictRecord, bool) {
-		return s.store.Latest(screenID, pr.Number, pr.HeadSHA)
-	})
+	disp := FoldVerdicts(s.screens,
+		func(screenID string) (VerdictRecord, bool) {
+			return s.store.Latest(screenID, pr.Number, pr.HeadSHA)
+		},
+		func(screenID string) int {
+			return s.store.ErrorStreak(screenID, pr.Number, pr.HeadSHA)
+		},
+	)
 	if len(disp.Holds) == 0 {
 		for _, inst := range disp.Pending {
 			s.dispatch(ctx, inst, pr)
