@@ -65,6 +65,12 @@ const (
 	// Hold diverts the PR to Needs-Human-Review (divert, never drop —
 	// Invariant-family; ADR 0022).
 	Hold Outcome = "hold"
+	// Errored is a recorded failed attempt (crash, timeout, no extractable
+	// verdict) — a verdict-store row outcome, never a Screen's verdict. The
+	// level-triggered consult reads it as "still no verdict" and re-dispatches;
+	// the persisted rows are the attempt count the 3-strikes fold of a later
+	// slice reads (ADR 0022).
+	Errored Outcome = "error"
 )
 
 // Verdict is a Screen's structured judgement: the outcome plus the reason the
