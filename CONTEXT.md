@@ -4,999 +4,437 @@ A single-workstation tool that eliminates the toil of approving trivial PRs.
 It replaces two hand-rolled bash auto-approvers (`auto-approve.sh`,
 `auto-approve-service-a.sh`). Runs on `localhost:8666`; never leaves this machine.
 
+**How to read this file.** This is the domain model: the glossary that names
+things and the doctrines that constrain them. Each entry states *what* a thing
+is and *which decisions bind it*, then points at the ADR in `docs/adr/` that
+holds the mechanics and the rationale. The wire contract of record is the
+committed `openapi.json` (ADR 0003); per-package layout is
+`docs/architecture.md`. When a new decision crystallises, it lands here as a
+lean entry **plus** an ADR — the full mechanism lives in the ADR, never inline.
+
+## Doctrines
+
+Cross-cutting principles the entries below reference by name.
+
+- **Funnel partition** — every PR in a pull lands in **exactly one** terminal
+  bucket, and the branch precedence in the cycle loop *is* the partition, so
+  segment counts sum to the raw pull by construction. Holds independently for
+  the inbound Cycle Funnel and the outbound stages.
+- **Gate vs Invariant** (ADR 0005) — a Gate **drops** a PR from consideration
+  entirely (never approved, never queued, never shown); an Invariant **diverts**
+  a ready PR to the human queue. Filter vs reroute — never conflate them.
+- **Today-scoping & the cadence seam** — live surfaces are per-cycle snapshots
+  (recomputed, never persisted); ledger surfaces are today-scoped (local
+  midnight, workstation timezone) reads of persisted history. The same word can
+  carry a different scope per surface — there are deliberately **three
+  "approved" numbers**: the funnel bar's *standing* count (dedup members still
+  in the pull, any day), the heartbeat's *this-cycle* count, and the feed's
+  *today* count. Labels disambiguate; do not "unify" them.
+- **One batched call per concern** — everything the cycle needs rides a fixed
+  set of batched `gh` calls; per-PR calls are sanctioned only for rare,
+  user-consented actions (the Diff card, ADR 0008; the moment-of-merge view,
+  ADR 0016). ADR 0007 records the N+1 this doctrine exists to prevent.
+- **Decode vs judge** — the `gh` seam only decodes GitHub's raw shapes; pure,
+  table-tested folds do the judging (`AllGreen`, `CollapsePRState`, the stage
+  folds). Never let the seam grow an opinion.
+- **Consent model** — inbound autonomy is *rule-driven* (a match approves);
+  outbound autonomy is *consent-driven* (only an explicit per-PR **Arm**
+  authorizes a merge; no rules, no matching). Only `CHANGES_REQUESTED`
+  withdraws consent (ADR 0016, 0019).
+- **Engine-performed changes mutate the snapshots in place** (ADR 0018) — a
+  change the engine itself performed (manual approve, robot merge) is applied
+  to its published snapshots atomically with the ledger write; a change it
+  merely *expects* is honest staleness for the next cycle to resolve.
+- **Fail closed on load-bearing data** — a failed inbound fetch skips the whole
+  cycle; a failed outbound or threads fetch clears the outbound snapshot and
+  skips all merging that cycle. The robot never acts on stale data (ADR 0016,
+  0019).
+
 ## Glossary
 
-### Approval Feed
-A UI panel. A **read-only, observational** view of PRs that have been approved —
-both auto-approvals and manual approvals made from the Needs-Human-Review queue —
-with the approval timestamp. The user glances to verify the robot behaved; it has
-**no action buttons**. Every entry carries a GitHub link.
-- **Today-scoped** — the feed shows only approvals from the current local day
-  (`approved_at ≥ local midnight`, workstation timezone). It answers "what did
-  the robot do *today*," not full history. Consequence: the ~27 seeded historical
-  approvals (past timestamps) never render — they live on only as the dedup set —
-  and the feed empties itself across midnight as each poll re-filters. The card
-  badge counts today's entries (= what is shown). The empty state is "No
-  approvals yet today."
-- **Per-entry shape** — each entry carries parsed **`title_parts`** (rendered as a
-  type icon + scope pills + clean description; see ADR 0006) and a server-derived
-  **`manual`** flag. An auto-approval shows the matched rule name in a chip; a
-  **manual** entry shows a "manual override" badge **plus** the reasons (the
-  `matched_rule` with the `"human approval: "` prefix stripped), so the feed still
-  self-documents *why* a human stepped in.
+### Inbound / Outbound (directions)
+**Inbound**: PRs others author, flowing toward your approval — verb `approve`,
+autonomy rule-driven. **Outbound**: PRs you author, flowing toward merge — verb
+`merge`, autonomy consent-driven (the Arm). Each PR lives on exactly one side:
+tm3k appends `-author:@me` to the configured inbound search at startup, so the
+two pulls are disjoint by construction. "Staging" is an inbound-only word.
 
-> Note: the user originally called this an "inbox," but that term implies items
-> awaiting human action. Since approval is autonomous, "feed" is the precise
-> term for this panel; the actionable panel is the Needs-Human-Review queue.
+### Candidate set — Incoming vs Eligible
+The inbound pull: one `gh pr list` per cycle against the global
+`--repo`/`TM3K_REPO` + `--search`/`TM3K_SEARCH` (flag overrides env; both
+required; not per-rule). Two scopes, two names — do not conflate:
+- **Incoming** — the **raw** pull, every PR the search returned this cycle,
+  before any gate. The Cycle Funnel's parent set.
+- **Eligible candidate** — an Incoming PR that passed both Gates. Only eligible
+  candidates reach Rule evaluation.
 
-### PR State
-The **live GitHub lifecycle** of an already-approved PR, surfaced on each Approval
-Feed entry so the user can see what became of the robot's approval. Three values,
-collapsed from GitHub's `(state, merged)` pair into one enum and rendered in
-GitHub's own palette:
-- **`open`** (green) — `state=OPEN`. Approved, not yet merged.
-- **`merged`** (purple) — `state=CLOSED` **and** `merged=true`. The happy outcome.
-- **`closed`** (red) — `state=CLOSED` **and** `merged=false`. Closed *without*
-  merging — a PR the robot approved that a human then rejected/abandoned. This is
-  a deliberately-surfaced signal (a robot **false-positive**), not a greyed-out
-  edge case.
-
-Distinct from the **approval moment** the feed record captures (immutable,
-append-only): PR State keeps changing *after* approval, so it is fetched
-out-of-band and is volatile (see Engine / fetch + the wire field below).
-
-**Rendering** — a **2px full-width colored bar at the top edge of each feed row**,
-in GitHub's own (Primer) palette, added as new design tokens (light / dark):
-`open` green `#1a7f37`/`#3fb950`, `merged` purple `#8250df`/`#a371f7`, `closed`
-red `#cf222e`/`#f85149`. **`unknown` renders no bar** (the row looks as it does
-today); the existing 1px gray `border-bottom` divider stays as the row separator.
-Deliberately **color-only, no label** — accepted because tm3k is a single-user
-workstation tool (the red/green color-blind clash is an acknowledged trade for a
-calmer feed, not an oversight). The bar coexists with the new-approval flash
-overlay. The four-value `state` enum makes the frontend switch exhaustive.
-
-### Needs Human Review (queue)
-A UI panel, **actionable**. Lists PRs **blocked from auto-approval** and routed
-here for a human decision. A PR lands here for one or more reasons (see
-**Reasons** below): it matched ≥1 enabled **Review Rule**, and/or an enabled
-**Approve Rule** matched but the breaking-change **Invariant** blocked it. Each
-entry has a GitHub link and an **Approve** button: clicking it is an explicit
-human override that runs `gh pr review --approve`, records the approval to the
-feed, and drops the item from the queue next cycle (it's now in the dedup set).
-The feed entry's `matched_rule` is **`human approval: <reasons joined>`** (e.g.
-`human approval: osixpatch, breaking_change`) — formatted from the queue item's
-`reasons` so the feed self-documents why a human stepped in (replaces the old
-fixed `manual (breaking override)` string).
-- **Derived live, not persisted** — recomputed each cycle from the candidate
-  set; an item leaves naturally when its PR merges/closes or stops matching.
-- **Diff magnitude** — each item carries **`additions`**, **`deletions`**, and
-  **`changed_files`**, the most decision-relevant fact for a human triaging the
-  queue (a 40-line fix vs a 1000-line refactor). All three ride the single cycle
-  fetch (see Engine) — no extra `gh` call. Rendered as the **Diff pill**: one
-  clickable pill showing green-bold `+N`, red-bold `−M`, and a muted `K files`.
-  Shown on PR rows across the queue, Staging, and the outbound stations (ADR
-  0015, ADR 0017) — not the feed (diff size is noise when merely verifying the
-  robot behaved).
-- **Diff pill / Diff card** — the Diff pill (see Diff magnitude) is clickable;
-  clicking it opens the **Diff card**, a modal that fetches and renders the PR's
-  changes per-file (filename · status · `+N −M`, collapsible — files ≤ 40 changed
-  lines start open, larger ones collapsed) so a human can skim the change without
-  leaving tm3k. It is a skim aid, **not** a GitHub mirror: the card shows at most
-  one page of files (banner: "showing first N of M files"), renders no preview
-  for binary / over-large files (which GitHub omits the patch for), and always
-  carries an **Open on GitHub** escape hatch. The diff is fetched on demand via a
-  per-PR `gh` call — the one sanctioned exception to the no-per-PR-call rule (ADR
-  0007), because it is user-triggered, not per-cycle (ADR 0008).
-- **Title parts** — each item carries parsed **`title_parts`** (type icon + scope
-  pills + clean description; see ADR 0006), rendered by the same component the
-  feed uses.
-- **Breaking badge (display fact)** — the queue shows a "breaking change" badge
-  whenever **`title_parts.breaking`** is true (any `!` title), *independent* of
-  whether `breaking_change` is a queueing reason. The reason chips render
-  **`reasons` minus `breaking_change`** (the badge represents it), so an
-  Approve-tied breaking PR shows the badge without an orphan chip. This widens the
-  UI meaning of "breaking" to a display fact; the `breaking_change` **reason**
-  stays Approve-tied (see Reasons + Matching semantics).
-- **No Dismiss action in MVP.**
-- **Reasons** — entry shape carries a **`reasons` list** (not a single reason): a
-  PR can be queued for several reasons at once. Built per cycle as: the **name of
-  every enabled Review Rule that matches** (all matches, not first), PLUS
-  `"breaking_change"` **iff** an enabled Approve Rule also matched and the title
-  is breaking. So `chore(osixpatch/approve)!: …` queues with
-  `["osixpatch", "breaking_change"]`. `breaking_change` stays tied to an
-  Approve-Rule match (a breaking PR matching only a Review Rule lists just the
-  Review Rule name).
-
-### Auto-approval
-The backend autonomously approves every PR matching a filtering condition **that
-is not already approved**, within ~1 minute of it appearing. No human is in the
-loop for the happy path. This mirrors the existing scripts exactly — with one
-narrowing: a PR GitHub already reports as `APPROVED` by someone other than tm3k is
-**left alone** (soft dedup), not re-approved (see Approved elsewhere; ADR 0013).
-The toil this removes — the click — is already gone once anyone has approved.
+### Eligibility (Gates)
+Two hard-wired Gates — core principles, not user-configurable Rules — evaluated
+after the dedup skip and **before** parse, Rules, and the breaking-change
+Invariant (ADR 0005):
+- **Ready-for-Review Gate** — draft PRs are dropped.
+- **All-Green Gate** — eligible only if the pure fold `github.AllGreen` holds:
+  **at least one** check rollup entry and every entry passes
+  (`SKIPPED`/`NEUTRAL` count as pass). **Empty pipeline ⇒ not eligible** — an
+  auto-approver must never fire on no signal. A pending pipeline blocks
+  harmlessly: the set is recomputed each cycle, so the PR becomes eligible when
+  checks finish.
 
 ### Rule
-A named, enable/disable-able matching condition for PRs. Modelled as a Go struct
-**and** managed by the user through the UI (name, define, toggle). Rules persist
-across restarts. Every Rule has a **class** that determines what a match *does*:
+A named, enable/disable-able matching condition, persisted across restarts and
+managed in the UI. Every Rule has a **class** determining what a match *does*
+(ADR 0004):
+- **Approve Rule** — match ⇒ auto-approve. Approve Rules are OR'd.
+- **Review Rule** — match ⇒ route to Needs-Human-Review, never auto-approve.
+  The user-configurable, softer sibling of the breaking-change Invariant;
+  surfaced as the separate "Human Review Always" card, identical editor.
 
-- **Approve Rule** — match → **auto-approve**. A PR is auto-approved if **any**
-  enabled Approve Rule matches it (Approve Rules are OR'd). The two existing
-  scripts become the first two Approve Rules (e.g. "team chores",
-  "service-a — teammate_a").
-- **Review Rule** — match → **route to Needs-Human-Review, never auto-approve**.
-  A user-configurable, softer sibling of the breaking-change **Invariant**: where
-  the Invariant is a hard-wired global block, a Review Rule is a named condition
-  the user defines to gate the robot's blast radius (e.g. an osixpatch approval
-  gate, or a large-diff PR). This is the rule-shaped realization of the deferred
-  **Constraint** (see below). Surfaced in the UI as a separate **"Human Review
-  Always"** card. The matching editor is **identical** to the Approve Rule editor.
-
-_Avoid_: "rule class" as a user-facing term — say Approve Rule / Review Rule.
-
-A Rule predicates over three things:
-1. **Author** — include / exclude lists (`@me` is a magic token resolved via
-   `gh api user`).
-2. **Parsed conventional-commit title parts** — separate conditions on `type`,
-   `scope`, and `description` (see below). This decomposition is required from
-   v1, not raw-title regex.
-3. **Diff size** — total changed lines (`additions + deletions`), gated by an
-   optional **`DiffMin`/`DiffMax`** pair (parallel to the title parts'
-   Include/Exclude idiom). Both are `int` with **`0 ⇒ unconstrained`** (mirrors
-   the `"" ⇒ unconstrained`" string idiom); matches when `DiffMin ≤ size ≤
-   DiffMax`. Shared by **both** Rule classes — the predicate vocabulary is
-   identical across Approve and Review Rules; only the *outcome* of a match
-   differs. **Validation:** the empty-rule guard counts diff (a rule constraining
-   only `DiffMin`/`DiffMax` is valid; the rejection message is class-neutral),
-   and `DiffMin ≤ DiffMax` is enforced when both are non-zero (`ErrInvalidDiffRange`).
+The predicate vocabulary is identical across both classes — only the outcome
+differs. A Rule predicates over: **Author** (include/exclude lists, `@me`
+resolved via `gh api user`), **parsed title parts** (separate Include/Exclude
+regex per `type`/`scope`/`description` — decomposed from v1, never raw-title
+regex), and **Diff size** (`DiffMin`/`DiffMax` over `additions + deletions`,
+`0 ⇒ unconstrained`, `DiffMin ≤ DiffMax` enforced; the empty-rule guard counts
+diff). *Avoid "rule class" as a user-facing term — say Approve Rule / Review
+Rule.*
 
 ### Conventional-commit title
-A PR title parsed into `type(scope)!?: description` (e.g.
-`chore(team/service-b): Add hooks` → type=`chore`, scope=
-`team/service-b`, description=`Add hooks`). Parsing must be tolerant:
-scopes can be comma/slash-separated and mixed-case
-(`chore(Team,networking,routing/...)`), and some titles are malformed.
-A PR whose title does not parse as a conventional commit is treated as a
-non-match (cannot be auto-approved).
+A PR title parsed into `type(scope)!?: description`. Parsing must be tolerant:
+comma/slash-separated, mixed-case scopes (`chore(Team,networking,routing/...)`),
+malformed titles exist. A title that does not parse is a **non-match for
+everything** — never auto-approved *and* never queued (the parse-gate is
+uniform across both Rule classes, ADR 0004). Consequence, accepted: a
+malformed-title PR with a huge diff is invisible to a diff-based Review Rule —
+conventional commits are mandatory to be seen by the robot at all.
 
-### Outbound (direction)
-The second direction: PRs **you author**, flowing toward merge — as opposed to
-the **Inbound** direction (PRs others author, flowing toward your approval).
-Where inbound's verb is `approve` and its autonomy is rule-driven, outbound's
-verb is **`merge`** and its autonomy is **consent-driven**: no rules, no
-matching — a per-PR human decision (the **Arm**) is the only thing that
-authorizes the robot. See ADR 0016 for why tm3k merges itself rather than
-delegating to GitHub native auto-merge.
-- **"Staging" is inbound-only.** It keeps its existing meaning (eligible, matched
-  no rule — the rules-gap bucket). Outbound never uses the word.
-- The outbound green-pipeline state splits into **three stages by what blocks
-  the merge**: **Awaiting Approval** — pipeline green but no approval yet
-  (waiting on a reviewer); **In Discussion** — green *and* approved but ≥1
-  **unresolved review thread** (waiting on the conversation to close — see
-  Discussion gate); **Ready** — green, approved, zero unresolved threads
-  (waiting only on you / the merge). A green *unapproved* PR with unresolved
-  threads sits in **Awaiting Approval** — precedence names the primary blocker,
-  and threads normally resolve as part of review.
-- **Candidate set**: a **second `gh pr list` call per cycle** against the same
-  global `--repo`, with a fixed derived search `is:open author:@me` — **drafts
-  included** (unlike inbound, "In draft" is an outbound stage, not a gate).
-  No new required config.
-- **Overlap eliminated at the search**: tm3k appends **`-author:@me`** to the
-  configured *inbound* search at startup, so your own PRs never enter the inbound
-  funnel (they previously sat in inbound Staging as unmatchable noise — the seed
-  rule's `AuthorsExclude: ["@me"]` guard becomes redundant but harmless). Each PR
-  lives on exactly one tab; the Incoming = raw-pull doctrine and the funnel
-  partition survive unchanged.
-- **Outbound funnel partition** (every authored PR in exactly one bucket; the
-  partition doctrine carries over from the inbound Cycle Funnel). Precedence
-  top-down: **draft > not-green > changes-requested > awaiting-approval >
-  in-discussion > ready**:
-  1. **Outgoing** — the raw authored pull, rendered as a distribution bar
-     (counts only), parallel to inbound Incoming.
-  2. **Draft** — action: finish it.
-  3. **Not green** — split into two side-by-side cards, **pipeline red** (≥1
-     check failed) and **checks running** (none failed, ≥1 pending) — an author
-     must distinguish "go fix CI" from "wait". (Outbound cannot *drop* pending
-     PRs the way the inbound All-Green Gate does — they are yours, they must be
-     shown.)
-  4. **Changes Requested** — green pipeline but `reviewDecision ==
-     CHANGES_REQUESTED`; action: address the feedback. Its own stage, not a
-     badge — the wait is on you, not a reviewer.
-  5. **Awaiting Approval / In Discussion / Ready** — the green stages (see
-     above).
-- **Merge mechanism — tm3k's own loop, not GitHub native auto-merge**: each
-  cycle, an **Armed** PR that is green + approved (`reviewDecision == APPROVED`)
-  + **zero unresolved review threads** + mergeable is merged via `gh pr merge`. tm3k enforces *its* conditions exactly
-  (native auto-merge enforces branch protection's, which may not require review)
-  and records the merge in its own ledger at the moment it happens. (ADR to
-  follow.)
-- **Armed / Withheld (canonical terms; verbs Arm / Disarm)**: a per-PR flag
-  **orthogonal to the funnel partition** — a badge riding the row, never a
-  stage. **Default: Withheld** — tm3k never merges a PR you didn't explicitly
-  arm (the gentleman's-agreement approval — "approved, but please address X" —
-  must never merge on its own). The Arm/Disarm toggle is available on **every**
-  outbound row regardless of stage: arm a red or draft PR and it merges
-  automatically the first cycle it satisfies all conditions.
-- **Arm lifecycle**: the armed set is **persisted** in `.state/` (the first
-  mutable per-PR state in tm3k) and survives restarts; new pushes do **not**
-  clear it (arm-while-red is the core use case). One event disarms:
-  **Changes Requested, level-triggered** — an armed PR observed with
-  `reviewDecision == CHANGES_REQUESTED` is disarmed that cycle, and the Arm
-  button is absent on the Changes Requested stage, so **Armed ∧
-  Changes-Requested is an impossible state**. "Arm anywhere" thus narrows to
-  "anywhere except Changes Requested": an open objection always requires fresh
-  consent (re-arm) after re-approval. No transition memory needed
-  (level-triggered, not edge-triggered). **In Discussion never disarms** — it
-  *holds* (the conflict-marker model, not the Changes-Requested model):
-  **Armed ∧ In-Discussion is a valid state**, the Arm toggle stays available
-  on the stage, and the first cycle the PR is observed with zero unresolved
-  threads (still green + approved + mergeable) it folds into Ready and merges
-  — including when the *reviewer's* resolve is what tips it, with nobody at
-  the keyboard; that is exactly what standing consent means. A nit thread is
-  a conversation, not an objection — only `CHANGES_REQUESTED` withdraws
-  consent; disarm-on-nit would reintroduce the re-arm toil the Arm exists to
-  remove. Entries are cleaned up when the PR
-  leaves the pull as merged/closed.
-- **Merge mechanics — mirror `gh land`** (the org's landing extension at
-  `panta/tools/gh-extensions/gh-land`), which tm3k **replicates rather than
-  invokes** (gh-land is interactive and operates on the locally checked-out
-  branch; tm3k has neither — the Arm is the confirm prompt, given in advance):
-  - `gh pr merge <number> --repo … -s -d -t "<PR title>" -b "<PR body>\nApproved
-    by: <reviewers>"` — squash; delete branch; commit subject = PR title; commit
-    body = PR description + an `Approved by:` trailer listing every reviewer
-    with an APPROVED review (deduped, `_osag`/`app/` prefixes stripped).
-  - Preconditions (gh-land parity): not draft, `reviewDecision == APPROVED`,
-    `mergeable == MERGEABLE` (UNKNOWN = GitHub still computing → simply not
-    Ready this cycle, retried naturally); one retry on a failed merge call.
-  - **Data sourcing by cadence**: `mergeable` rides the once-per-cycle outbound
-    list call (needed to compute Ready). `body` + `reviews` are fetched in one
-    `gh pr view` **at the moment of merge** — a per-PR call sanctioned like the
-    ADR 0008 on-demand diff fetch (rare, consented), which also guarantees the
-    commit message uses the live PR description, not a stale copy from arm time.
-- **Ready (sharpened)** — the *stage* is pipeline green + `reviewDecision ==
-  APPROVED` + **zero unresolved review threads** (waiting only on you). The
-  *merge* has one further precondition:
-  `mergeable == MERGEABLE`. A conflicted Ready row stays in Ready with a
-  **conflict marker** and never auto-merges until resolved — fixing the conflict
-  is on you, which is exactly what Ready means. This keeps the stage partition
-  total (no bucket-less PRs) while the merge stays gh-land-strict.
-- **Discussion gate (merge precondition)**: a PR with ≥1 **unresolved review
-  thread** is never auto-merged. Realized **structurally**: such a PR folds
-  into the **In Discussion** stage, out of Ready — and the merge step only
-  ever walks Ready, so the stage partition *is* the gate (no fourth clause
-  bolted onto the merge step). "Comment" here means **review threads only**,
-  because they are
-  GitHub's sole *resolvable* comment species: issue comments and review-summary
-  bodies have no resolve mechanism, so they must never gate (a bot comment or
-  an "LGTM" approval body would otherwise wedge the merge forever). Zero
-  comments and all-comments-resolved are therefore **one condition** — zero
-  *unresolved* threads. **Outdated ≠ resolved**: a thread whose commented
-  lines changed underneath it (GitHub's *outdated*) still holds — only the
-  explicit resolve click closes a conversation; code churn near a comment is
-  not agreement (`isOutdated` is ignored entirely). The gate is itself a
-  gentleman's gate: GitHub lets the *author* resolve any thread, so tm3k makes
-  closure **explicit** — it cannot force reviewer sign-off on the fix. Org
-  convention this implies: a nit that must block the merge lives in an
-  **inline thread**, not in the approval's summary text. In Discussion rides
-  `/outbound` only — **no heartbeat count, no tab badge** (the strip stays
-  actionable-signals-only; `ready` keeps meaning waiting-only-on-you).
-  Data note: `isResolved` exists **only** in GitHub's GraphQL `reviewThreads`
-  connection — no `gh pr list/view --json` field carries it.
-- **Breaking `!` on outbound**: the Arm **is** the human decision the inbound
-  Invariant exists to guarantee — per-PR, explicit, yours. A breaking outbound
-  row carries the existing breaking badge (arm with open eyes) but once armed
-  merges like any other. The inbound Invariant is unchanged (it guards
-  pattern-matched rules — a different risk profile from per-PR consent).
-- **Merge ledger**: append-only **`.state/merges.jsonl`** (number, title, url,
-  merged_at, approved-by reviewers), written **only on successful merge** — the
-  exact analog of `approvals.jsonl` (merge first, append on success; failures
-  retry next cycle). Required for any Merged display at all: a merged PR leaves
-  the `is:open` pull immediately, so live data can never show it. The outbound
-  funnel ends in a **today-scoped, read-only Merged station** (same cadence seam
-  as the Approval Feed). Today-scoping was **reaffirmed against a station-level
-  range picker**: the funnel is the glance surface, and the only temporal
-  question it answers is "what landed today" — the live stations upstream carry
-  no time scope at all (they *are* the body of work heading to merge).
-  Range-scoped merge history is an Analytics-tab concern (see Deferred).
-  Analytics integration: deferred, its own decision.
+### Auto-approval
+The engine autonomously approves every eligible, rule-matching PR **that is not
+already approved**, within a cycle of it appearing; no human in the happy path.
+The narrowing is the soft dedup (see Approved elsewhere, ADR 0013).
+
+### Approved elsewhere
+An Incoming PR GitHub already reports `APPROVED` by someone other than tm3k
+(detected via `reviewDecision` on the cycle fetch; number absent from
+`approvals.jsonl`). Soft dedup (ADR 0013): tm3k **does not re-approve and
+records nothing** — the toil is already gone, and recording it would
+double-count saved switches across the team's multiple instances. Shown as a
+highlighted "approved elsewhere" row in the funnel's approved stage: a PR
+deliberately left alone, not actioned. Invisible to Analytics — correct, it was
+not *your* saved switch.
+
+### Needs Human Review (queue)
+The actionable inbound panel: PRs **blocked from auto-approval** and routed
+here for a human decision. Derived live each cycle, never persisted. Each entry
+carries:
+- **`reasons` list** (not a single reason): the name of **every** enabled
+  Review Rule that matched, plus `"breaking_change"` iff an enabled Approve
+  Rule matched and the title is breaking (ADR 0004).
+- **Breaking badge as a display fact**: shown whenever `title_parts.breaking`,
+  independent of whether `breaking_change` is a queueing reason; reason chips
+  render `reasons` minus `breaking_change` (the badge represents it).
+- **Diff magnitude** (`additions`/`deletions`/`changed_files`, riding the cycle
+  fetch) rendered as the clickable **Diff pill** → **Diff card** modal (a skim
+  aid, not a GitHub mirror; the sanctioned on-demand per-PR fetch — ADR 0008,
+  widened to Staging and outbound by ADR 0015/0017). Not shown on the feed —
+  diff size is noise when merely verifying the robot behaved.
+- An **Approve** button: an explicit human override (`gh pr review --approve`)
+  recorded to the feed as `matched_rule: "human approval: <reasons joined>"`
+  and removed from the queue snapshot immediately (ADR 0018).
+
+No Dismiss action in MVP (see Deferred).
+
+### Staging
+**Eligible, but matched no Rule** — the rules-gap bucket the user actively
+drains. Each row carries two buttons, **[+ Approve rule]** and **[+ Human-review
+rule]**: a shortcut into the normal Rules CRUD (same `POST /rules`, same editor
+and validation — not a new code path) opening the full editor with `Class`
+preset and a draft pre-filled **deliberately broad** from the parsed title —
+`TypeInclude` anchored (`^<type>$`), `ScopeInclude` the first scope
+**un-anchored** (anchoring would break multi-scope titles), author/diff/excludes
+blank — so one rule drains the whole type+scope cohort, not one author at a
+time. The PR leaves Staging next cycle, when the new rule matches it. Design
+goal: Staging grows thinner over time. *(Unparseable-title eligible PRs also
+land here; no rule can drain them — an accepted wart under the
+conventional-commits-everywhere assumption.)*
+
+### Cycle Funnel (inbound)
+The Inbound tab's model of one cycle: **Incoming** is the parent set and every
+Incoming PR lands in exactly one terminal stage (funnel partition):
+
+```
+INCOMING = Dropped:draft + Dropped:pipeline-red + Staging
+         + Needs-Human-Review + Approved-by-tm3k + Approved-elsewhere
+```
+
+Five stations top-down: **Incoming** (a stacked distribution bar + legend —
+counts only, the PRs live in their terminal stations; shows the search as a
+code chip), **Dropped** (two side-by-side cards: pipeline-red — with a
+failing-check count — and draft), **Staging**, **Needs Human Review**, and the
+**Approval Feed**. The distribution bar partitions on **current standing**, so
+its Approved-by-tm3k segment is every dedup-member PR still in the pull — not
+just this cycle's approvals (see the three-approved-numbers doctrine).
+
+**Cadence seam, accepted:** stations 1–4 are a live per-cycle snapshot; station
+5 is today-scoped and persisted — a deliberately wider scope, so the funnel
+does not strictly sum across station 5.
+
+### Approval Feed
+The read-only, observational ledger panel: approvals tm3k made (auto and
+manual), newest-first, **today-scoped** (`approved_at ≥ local midnight`) — it
+answers "what did the robot do *today*", empties itself across midnight, and
+the seeded historical approvals never render (they live on only as the dedup
+set). **No action buttons**; every entry links to GitHub. Entries carry
+server-parsed `title_parts` (ADR 0006) and a server-derived `manual` flag: auto
+shows the matched rule in a chip; manual shows a "manual override" badge plus
+the reasons, so the feed self-documents why a human stepped in. *(Named "feed",
+not "inbox" — nothing here awaits action.)*
+
+### PR State
+The **live GitHub lifecycle** of an already-approved PR, surfaced on each feed
+entry: `open` (green) / `merged` (purple — the happy outcome) / `closed` (red —
+closed *without* merging: a deliberately-surfaced robot **false-positive**
+signal, not a greyed-out edge case). Volatile and never persisted — distinct
+from the immutable approval moment; refreshed each cycle by one batched search
+call with keep-last-known semantics (ADR 0007; accepted one-cycle index lag).
+Rendered as a 2px full-width bar at the row's top edge in GitHub's Primer
+palette; `unknown` renders no bar. Deliberately color-only, no label — the
+red/green clash is an acknowledged single-user trade for a calmer feed.
+
+### Rule Draft
+The editable projection of a Rule while open in the editor: every field the raw
+text the user types (`"" ⇒ unconstrained`), deliberately a different shape from
+the wire Rule. The editor exposes the **full predicate vocabulary**, and every
+editor surface (rows, validation, round-trip, summary) derives from **one
+descriptor-list definition** — the structural fix for the editor that once
+silently hid the three title-part excludes (ADR 0020).
+
+### Outbound stages & the Arm
+Every authored PR sits in exactly one stage (funnel partition; precedence
+top-down): **Outgoing** (the raw pull as a distribution bar; shows the derived
+`author:@me` search) > **Draft** (an outbound *stage*, not a gate — your PRs
+must be shown) > **Not green** (two cards: pipeline red vs checks running — "go
+fix CI" vs "wait") > **Changes Requested** (green but
+`reviewDecision == CHANGES_REQUESTED`; the wait is on you) > the three green
+stages split **by what blocks the merge**: **Awaiting Approval** (no approval
+yet) > **In Discussion** (approved but ≥1 unresolved review thread, ADR 0019) >
+**Ready** (green + approved + zero unresolved threads — waiting only on you).
+A green unapproved PR with unresolved threads sits in Awaiting Approval —
+precedence names the primary blocker. Plus **Merged**, the today-scoped ledger
+station (from `merges.jsonl`).
+
+**Armed / Withheld** (verbs Arm / Disarm): a persisted per-PR flag
+(`.state/armed.json`) orthogonal to the partition — a badge riding the row,
+never a stage. **Default Withheld**: tm3k never merges a PR you didn't
+explicitly arm (a gentleman's-agreement approval must never merge on its own).
+Arm anywhere **except Changes Requested**: an armed PR observed
+`CHANGES_REQUESTED` is disarmed that cycle (level-triggered, no transition
+memory), so Armed ∧ Changes-Requested is an impossible state and an open
+objection always requires fresh consent. **In Discussion holds, never disarms**
+(Armed ∧ In-Discussion is valid): the first cycle the threads read zero it
+merges — including when the reviewer's resolve tips it with nobody at the
+keyboard; that is what standing consent means (ADR 0019). New pushes do not
+clear the arm (arm-while-red is the core use case); entries are cleaned up when
+the PR leaves the pull merged/closed.
+
+**Merge**: each cycle, an Armed PR that is green + `APPROVED` + zero unresolved
+review threads + `mergeable == MERGEABLE` is merged in tm3k's own loop —
+replicating `gh land` (squash, delete branch, commit = PR title + live-fetched
+body + `Approved by:` trailer), not GitHub native auto-merge (ADR 0016). A
+conflicted Ready row stays in Ready with a **conflict marker** and never
+auto-merges — fixing the conflict is on you, which is what Ready means. The
+**Discussion gate** is realized structurally: the merge step only walks Ready,
+so the stage partition *is* the gate. Threads are the only resolvable comment
+species, so only they gate (a bot comment or "LGTM" body would otherwise wedge
+the merge forever); **outdated ≠ resolved** — only the explicit resolve click
+closes a conversation. Org convention this implies: a nit that must block the
+merge lives in an **inline thread**, not the approval's summary text.
+
+**Breaking `!` outbound**: the Arm *is* the human decision the inbound
+Invariant guarantees — the row carries the breaking badge (arm with open eyes)
+but once armed merges like any other. The inbound Invariant is unchanged.
+
+**Merge ledger**: append-only `.state/merges.jsonl`, written only on successful
+merge — required for any Merged display at all (a merged PR leaves the
+`is:open` pull immediately). The Merged station is today-scoped and read-only;
+range-scoped merge history is an Analytics-tab concern (see Deferred), never a
+station-level control.
 
 ## Invariants
 
 ### Breaking changes are NEVER auto-approved
-A hard, global block that overrides all rules: if a PR's conventional-commit
-title carries the breaking-change marker `!` (e.g. `feat(service-a)!: ...` or
-`chore!: ...`), it is **never auto-approved**, regardless of which rules match —
-instead it goes to the Needs-Human-Review queue, where it can be **manually**
-approved. Evaluated before/around the OR-of-rules. v1 detects the title `!` only;
-the `BREAKING CHANGE:` body footer is a possible later enhancement (would require
-fetching PR bodies, which the candidate-set call does not currently pull).
+A hard, global block overriding all rules: a conventional-commit title carrying
+`!` is never auto-approved — it goes to Needs-Human-Review, where only a
+**manual** override can approve it. v1 detects the title `!` only; the
+`BREAKING CHANGE:` body footer would require fetching PR bodies (see Deferred).
 
 ## Matching semantics
 
-Each title part (`type`, `scope`, `description`) has an optional **Include**
-regex and optional **Exclude** regex, matched **case-insensitively**. A part
-with neither is unconstrained. A rule matches when author include/exclude pass
-AND, for every part, Include (if set) matches AND Exclude (if set) does not.
-Regex is the single operator (subsumes equals/contains/one-of); validated by
-compiling server-side.
+Each title part has optional **Include** and **Exclude** regexes, matched
+case-insensitively; a part with neither is unconstrained. A rule matches when
+author include/exclude pass AND every part's Include (if set) matches AND
+Exclude (if set) does not. Regex is the single operator (subsumes
+equals/contains/one-of); validated by compiling server-side.
 
-**Attribution:** when several enabled rules match a PR, it is approved once
-(dedup by number) and `matched_rule` records the **first matching enabled rule
-in `rules.yaml` order**.
+**Evaluation order per candidate** (ADR 0004, 0005): dedup skip → Gates
+(drop) → parse (non-parse ⇒ non-match for everything) → **Review Rules first**
+(collect every matching enabled Review Rule's name; any ⇒ queue, never
+approve) → Approve path (first matching enabled Approve Rule; breaking title ⇒
+Invariant adds `breaking_change` to reasons) → non-empty `reasons` ⇒ queue with
+all reasons; else Approve match ⇒ approve; else Staging.
 
-### Evaluation order (per candidate)
-After the dedup skip, the **Eligibility Gates** run first: if the PR is a draft
-(Ready-for-Review Gate) or its pipeline is not all-green (All-Green Gate), it is
-**dropped** — logged (`gate: draft|not_all_green`), counted toward the cycle's
-`dropped` total, and skipped before the title is even parsed. A dropped PR never
-parses, never matches, never queues. Then, for a surviving (eligible) candidate,
-the title is parsed and the diff size is known. **The
-parse-gate is uniform across both Rule classes:** a title that does not parse as
-a conventional commit is a non-match for everything — never auto-approved AND
-never queued by a Review Rule. (Consequence: a malformed-title PR with a huge
-diff is *not* caught by a diff-based Review Rule; conventional commits are
-mandatory to be seen by the robot at all.) For a parsed title: then:
-1. **Review Rules first.** Collect the name of every enabled **Review Rule** that
-   matches. If any matched, route the PR to Needs-Human-Review — **never
-   auto-approve** — regardless of whether an Approve Rule also matches. A Review
-   Rule match alone is sufficient to queue (it expands the queue beyond
-   "Approve-matched-but-breaking").
-2. **Approve path.** Find the first enabled **Approve Rule** that matches. If one
-   does and the title is breaking, the breaking-change **Invariant** blocks it:
-   add `breaking_change` to the reasons. Otherwise, if no Review Rule queued it,
-   auto-approve (attributed to that first Approve Rule).
-3. If `reasons` is non-empty → queue with all reasons; else if an Approve Rule
-   matched and not breaking → approve; else skip.
+**Attribution**: approved once (dedup by number); `matched_rule` records the
+first matching enabled rule in `rules.yaml` order.
 
-A Review Rule is the realized form of what this section used to call the deferred
-**Constraint** — a non-title predicate (diff size) that blocks approval and
-diverts to Needs-Human-Review — now generalized into a user-configurable,
-named Rule class rather than a single hard-wired threshold.
-
-### Candidate set
-The PRs the backend pulls once per cycle via a single `gh` call:
-the configured **search** (e.g. `is:open team-review-requested:owner/team`)
-against the configured **repo** (e.g. `owner/name`). Repo and search are
-**global** — supplied at startup via `--repo`/`TM3K_REPO` and
-`--search`/`TM3K_SEARCH` (a flag overrides its env var; both are required) —
-not per-rule.
-
-**Two scopes, two names (do not conflate):**
-- **Incoming** — the **raw** pull, *every* PR the search returned this cycle,
-  before any gate runs. This is what `github.ListCandidates()` returns and what
-  the **Cycle Funnel** (see below) visualizes as its parent set.
-- **Eligible candidate** — an Incoming PR that **passed both Gates** (see
-  Eligibility). Only eligible candidates reach Rule evaluation; ineligible ones
-  are dropped before any Rule or Invariant runs.
-
-Each enabled Rule is applied as an in-process Go predicate over the eligible
-candidates; a PR is approved if any enabled rule matches (minus already-approved
-ones). *(Historical note: this section once called the eligible subset "the
-candidate set"; the Cycle Funnel made the raw-vs-eligible distinction load-bearing,
-so "Incoming" now names the raw pull precisely.)*
-
-### Eligibility (Gates)
-A PR must be **eligible** to be a candidate at all. Eligibility is composed of
-hard-wired **Gates** — core principles, **not** user-configurable Rules. A PR
-that fails any Gate is **dropped entirely**: never auto-approved, never queued,
-never shown anywhere in the UI. This is the key distinction from the
-breaking-change **Invariant**, which *routes a ready PR to the queue* — a Gate
-*removes* the PR from consideration, an Invariant *diverts* it.
-
-Gates are evaluated **before** everything else (before Rules, before the
-breaking-change Invariant). The two Gates:
-
-- **Ready-for-Review Gate** — draft PRs are dropped. tm3k only ever deals with
-  PRs marked Ready for Review.
-- **All-Green Gate** — a PR is eligible only if its pipeline is **all green**.
-  Computed in-process from the `statusCheckRollup` array (fetched on the single
-  list call). Each entry folds into one of three buckets:
-  - **pass** — `CheckRun` completed with `SUCCESS`/`SKIPPED`/`NEUTRAL`;
-    `StatusContext` `SUCCESS`.
-  - **fail** — `CheckRun` `FAILURE`/`CANCELLED`/`TIMED_OUT`/`ACTION_REQUIRED`/
-    `STARTUP_FAILURE`/`STALE`; `StatusContext` `FAILURE`/`ERROR`.
-  - **pending** — `CheckRun` not yet `COMPLETED`; `StatusContext`
-    `PENDING`/`EXPECTED`.
-
-  **All-Green = at least one entry AND every entry is `pass`** (zero fails, zero
-  pendings). Two deliberate calls:
-  - **Empty pipeline ⇒ NOT eligible.** "All green" requires a pipeline that ran
-    and passed, not the vacuous "nothing ran." This closes the new-PR window
-    where checks haven't registered yet (an auto-approver must never fire on no
-    signal). Cost: a genuinely check-less repo never auto-approves — acceptable,
-    `repo` always runs CI.
-  - **Pending blocks harmlessly.** A still-running pipeline isn't eligible this
-    cycle; since the candidate set is recomputed from scratch every cycle, the PR
-    becomes eligible automatically once checks finish. No persistent "waiting"
-    state — it is simply not a candidate yet.
-
-### Cycle Funnel (the queues view)
-A UI surface that makes **every Incoming PR of the latest cycle visible**, where
-before only approvals (persisted) and the Needs-Human-Review queue (live) were
-shown — dropped and uncovered PRs existed only in logs and counts. It models one
-cycle as a **funnel**: **Incoming** is the parent set, and every Incoming PR lands
-in **exactly one** terminal stage downstream. The stages partition Incoming, so
-the counts reconcile *for this cycle*:
-
-```
-INCOMING (raw pull, this cycle)
-  = Dropped:draft + Dropped:pipeline-red + Staging + Needs-Human-Review
-    + Approved-by-tm3k + Approved-elsewhere
-```
-
-The Incoming **distribution bar** partitions on **current standing**, so its
-**Approved-by-tm3k** segment is *every* dedup-member PR still in the pull — not
-just this cycle's new approvals — split visually from the highlighted
-**Approved-elsewhere** segment. This means there are **three distinct "approved"
-numbers**, deliberately at different scopes (the cadence-seam doctrine, same word
-labeled): the bar's *standing* count (dedup members in the pull, any day), the
-heartbeat's *this-cycle* count (`approvedThisCycle`), and the ledger's *today*
-count (station 5). A PR tm3k approved on a prior day but still open sits in the
-**Approved-by-tm3k** segment, is **not** itemized (it's done — in the ledger if
-today, history otherwise), and keeps Incoming honest as "everything we saw."
-
-The five stages:
-1. **Incoming** — the raw pull (see Candidate set).
-2. **Dropped** — PRs an Eligibility Gate removed, split into **two side-by-side
-   sub-queues**: **draft** (Ready-for-Review Gate) and **pipeline red** (All-Green
-   Gate). These were previously only a combined `dropped` count + per-PR log line.
-3. **Staging** — **eligible, but matched no Rule** (`evaluateRules` returned no
-   reasons and no Approve match). **Genuinely new — invisible before.** This is the
-   stage the user actively drains: each Staging PR carries two actions —
-   **[+ Human Review rule]** and **[+ Approve rule]** (see Staging actions) — that
-   author a Rule which moves the PR (and its like) out of Staging next cycle. The
-   design goal is for Staging to **grow thinner over time** as the robot/human take
-   over more PRs for a named, deliberate reason. *(Unparseable-title eligible PRs
-   also land here; no rule can drain them, an accepted wart under the
-   conventional-commits-everywhere assumption — they should not occur.)*
-4. **Needs Human Review** — the existing queue (matched a Review Rule, or an
-   Approve Rule blocked by the breaking-change Invariant). Unchanged.
-5. **Approval Feed** — the existing today-scoped, persisted feed (`approvals.jsonl`,
-   PR State bars). Reused **unchanged**.
-
-**Cadence seam (accepted, documented):** stages 1–4 are a **live per-cycle
-snapshot** (recomputed each cycle from Incoming, never persisted — like the queue
-today). Stage 5 is **today-scoped and persisted** — a deliberately *wider* scope
-than the single cycle. So the funnel does not strictly sum across stage 5: a PR
-approved earlier today and since merged is in the feed but gone from this cycle's
-Incoming. This seam already exists today (the live queue sits beside the
-today-scoped feed); the funnel extends it, it does not introduce it.
-
-### Approved elsewhere (funnel sub-state)
-An Incoming PR that GitHub reports as **already approved by someone other than
-tm3k** — a human, or (increasingly) a **teammate's tm3k instance**. Detected by
-adding **`reviewDecision`** to the cycle fetch (rides the same single `gh pr list`
-call, no N+1): a PR with `reviewDecision == APPROVED` whose number is **absent
-from `approvals.jsonl`** was approved elsewhere.
-- **Behavior — existing approval is a soft dedup.** When GitHub already says
-  `APPROVED`, the toil is already gone, so tm3k **does not add a redundant
-  approval** and **records nothing to `approvals.jsonl`** (the feed stays the
-  robot's *own* ledger). The PR shows as a **highlighted "approved elsewhere" row**
-  in the funnel's approved stage — a PR tm3k **deliberately left alone**, not one
-  it actioned.
-- **Analytics consequence (correct).** Approved-elsewhere PRs never enter
-  `approvals.jsonl`, so they are **invisible to Analytics** — right, they were not
-  *your* saved switches. This prevents double-counting now that multiple tm3k
-  instances run on the team.
-
-### Staging actions (drain a PR with a rule)
-Each Staging row carries two buttons — **[+ Approval rule]** and **[+ Human-review
-rule]** — that open the **full shipped rule editor** (see Rule Draft) with `Class`
-preset by the button and a draft **pre-filled broad, from the PR's parsed title**:
-- **`TypeInclude` = `^<type>$`** (anchored — `type` is a single `\w+` token).
-- **`ScopeInclude` = `<first scope>`, UN-anchored** (a substring regex against the
-  raw `c.Scope` string — anchoring would break matching on multi-scope titles like
-  `team/service-b`; this mirrors the seed `service-a — teammate_a`).
-- **Author, Diff, all Excludes left blank.** Deliberately **broad** (type+scope,
-  no author) so one rule drains the **whole type+scope cohort** at once — staging
-  thins faster and rules don't proliferate one-author-at-a-time. The user narrows
-  (add author/diff) before saving if they want.
-- An auto-generated **name** (`<scope|type> auto-approve` / `… review`) and a
-  back-reference to the originating PR, both editable.
-
-The buttons are a **shortcut into the normal Rules CRUD**, not a new code path:
-they reuse `POST /rules` and the same editor/validation. The PR leaves Staging
-**next cycle**, when the new rule matches it (into approve or human-review). The
-editor keeps the **complete predicate vocabulary** (all six title-part
-include/exclude + `DiffMin`/`DiffMax`); the design mockup's thinner modal is **not**
-adopted.
-
-### UI layout (tabs)
-The app is **four tabs** under a persistent heartbeat strip (see Cycle status):
-- **Inbound** *(renamed from Pipeline)* — the **Cycle Funnel** (see above): the
-  daily-glance surface, rendered as a **vertical top-down funnel** of five
-  numbered stations on a connecting spine. Replaces and subsumes the former
-  **Review** tab (the Needs-Human-Review queue and Approval Feed are now
-  stations 4 and 5 of the funnel). Carries a **staging-count badge** (the
-  actionable signal — uncovered PRs awaiting a rule) so it stays visible from
-  the other tabs.
-- **Outbound** — the authored-PR funnel (see Outbound). Same vertical-funnel
-  idiom; carries a **ready-count badge** (PRs waiting only on you), mirroring
-  Inbound's staging badge.
-- **Rules** — the Rules section (the occasional-config surface).
-- **Analytics** — the approval-history dashboard (the look-back surface; see
-  Analytics).
-
-**Pipeline station layout** (vertical, top→bottom, anti-clutter by design):
-1. **Incoming** — a single **stacked distribution bar** (not a PR list): the raw
-   pull partitioned into its terminal stages as colored segments + a legend with
-   counts. The actual PRs live in their terminal stations below, so Incoming stays
-   a one-glance summary. Shows the configured filter expression as a code chip.
-2. **Dropped** — **two side-by-side cards**, pipeline-red and draft.
-3. **Staging** — amber-themed; each row carries the two rule-creation buttons.
-4. **Needs Human Review** — the existing queue (Approve button + Diff pill retained).
-5. **Approval ledger** — the existing today-scoped feed (PR State bars retained;
-   approved-elsewhere rows highlighted — see Cycle Funnel).
-
-The design mockup (`toilmaster3000.dc.html` in the Claude Design project) is
-**orientation, not authority**: where it simplified away Q1-agreed behavior
-(it hid already-approved/approved-elsewhere PRs and omitted PR State bars), the
-agreed model wins.
-
-The surfaces have different cadences (Inbound and Outbound watched constantly,
-Rules and Analytics touched rarely), so they are not co-scrolled. The active tab
-lives in the **URL hash** (`#inbound` / `#outbound` / `#rules` / `#analytics`,
-default Inbound) — a reload keeps your place and each tab is linkable, with no
-router dependency. *(`#review` and `#pipeline` both redirect to `#inbound` so
-old links survive both renames.)*
-
-**Outbound station layout** (vertical, top→bottom, mirroring Inbound; every
-authored PR in exactly one station, precedence draft > not-green >
-changes-requested > awaiting/in-discussion/ready — see Outbound):
-1. **Outgoing** — the raw authored pull as a **distribution bar** + legend
-   (counts only), parallel to Incoming. Shows the derived `author:@me` search as
-   a code chip.
-2. **Draft** — finish it.
-3. **Not green** — **two side-by-side cards**: pipeline red / checks running.
-4. **Changes Requested** — address the feedback. Never shows an Arm toggle
-   (Armed ∧ Changes-Requested is impossible — see Outbound).
-5. **Awaiting Approval / In Discussion / Ready** — the green stages; Ready
-   rows carry a conflict marker when not `MERGEABLE`; In Discussion rows show
-   their unresolved-thread count.
-6. **Merged** — the today-scoped, read-only ledger station (from
-   `merges.jsonl`), parallel to the Approval Feed.
-
-Every station-2–5 row carries the **Arm/Disarm toggle** (except Changes
-Requested) and the armed state as a badge riding the row.
-
-### Rules section (UI)
-The actionable config surface (the Rules tab): lists rules, lets the user
-create/name/edit/enable/disable them. Rendered as **two cards** fed by one
-`GET /rules`, split by `Class`:
-- the **Approve Rules** card, and
-- a separate **"Human Review Always"** card for Review Rules.
-The editor is **identical** in both. **`Class` is implied by the card** (the
-card's "Add" sets `class`), not an editable field — so a rule **cannot be
-reclassified in place**; moving it between cards means delete + recreate (a known
-MVP limitation, not a bug — the redesign's modal carries **no behavior/class
-toggle**, upholding ADR 0005). The `/rules` CRUD endpoints are reused unchanged
-with `class` added to `RuleBody` (snake_case wire).
-
-The editor exposes the **full predicate vocabulary** the model defines: author
-include/exclude, **Include and Exclude** for each title part (type, scope,
-description), and the `DiffMin`/`DiffMax` pair — every predicate a rule can carry
-is visible and editable. (This replaces an earlier editor that hid the three
-title-part *excludes* and carried them through invisibly on edit; a partially-
-exposed rule reads as complete when it is not.)
-
-### Rule Draft
-The **editable projection of a Rule** while it is open in the editor modal: the
-same predicate vocabulary, but every field held as the **raw text the user
-types** — authors as a comma-separated string, each title part as a regex
-string, the diff bounds as numeric-input strings (`"" ⇒ unconstrained`). The
-Draft and the wire **Rule** are deliberately different shapes: the Draft is what
-a human edits, the Rule is what crosses the wire. Saving maps a Rule Draft back
-onto a Rule — dropping empty predicates and stamping the card-implied `Class`.
-
-The predicate vocabulary is named **once**, matching the model's three kinds
-(Author, Title parts, Diff size): the six title-part include/exclude fields as a
-single descriptor list, Author and Diff size as their own small mappings. The
-modal rows, the per-field regex validation, the constrains-nothing guard, the
-Draft↔Rule round-trip, and the row summary all **read from that one definition**
-rather than each re-listing the fields. Consequence: a predicate added to the
-model reaches the editor by adding **one descriptor** — there is no second place
-to forget, which is the structural form of the bug that once let the editor
-silently hide the three title-part excludes. Validation note: authors are **not**
-regex-checked on the client (only the six title-part regexes are); author
-patterns are validated server-side, and diff `0` is treated as unconstrained
-(same as empty), not as a constraining bound.
+*(Historical: a Review Rule is the realized form of the once-deferred
+"Constraint"; "Incoming" now names what an older revision called "the candidate
+set".)*
 
 ## Analytics
 
-The **Analytics tab** is a look-back dashboard over the **approval history** — the
-durable record in `approvals.jsonl`. It answers "how much toil did the robot save,
-and on what." Its cadence is occasional (lean-back), not live: fetched on tab-open
-and on each control change (debounced), **not** on the 10s poll timer.
+A look-back dashboard over **approval history only** — computed exclusively
+from `approvals.jsonl`, the one durable history (ADR 0009). Auto vs Human
+Review is the `matched_rule` prefix split (`"human approval: "`); the two
+partition all recorded approvals, shares sum to 100%. Queue-but-never-approved
+and dropped PRs are invisible — an accepted undercount of true review burden,
+by design. Lean-back cadence: fetched on tab-open and control change
+(debounced), not on the poll timer.
 
-### Approval history (the only analyzable signal)
-Analytics is computed **exclusively from `approvals.jsonl`** — the one durable
-history tm3k keeps. Two consequences fix the whole feature's meaning:
-- The **Needs-Human-Review queue is never persisted** (derived live each cycle) and
-  **dropped PRs** exist only in logs. So analytics can describe **approvals**, not
-  the full review burden. A PR that hit the queue but was closed/merged by someone
-  else — or still sits there — was never approved, so it is **invisible** to
-  analytics. Accepted: this is an *approval*-history view, no new persistence.
-- Within the log, **auto vs human is the `matched_rule` prefix**: an entry whose
-  `matched_rule` starts with `"human approval: "` is a **Human Review** approval (a
-  human stepped in via the queue Approve button); everything else is
-  **Auto-approved**. The two partition all recorded approvals — `auto + human =
-  total`, so their shares sum to 100%.
+- **Time ranges** (workstation-local): today / this week (ISO Monday) / this
+  month / last X days. **Deltas are elapsed-aligned** — the current partial
+  period compares against the *same elapsed slice* of the prior period, never
+  partial-vs-full; zero baseline renders "new", never ∞ (ADR 0011 — do not
+  "simplify" back to full-period comparison).
+- **Stats row**: Auto-approved (count + share), Human Review (count + share;
+  shares not delta'd), and the headline **Context switches saved** = the
+  auto-approved count (a manual approval is a switch the human *did* take).
+  Money is a **range**, `count × [CostLow, CostHigh]`, rendered as the
+  read-only money pill — never a single point (ADR 0012); the constants live in
+  the Settings tab.
+- **By-Type cohort**: the fixed Conventional Commits type set in spec order,
+  all rows shown even at zero, plus a trailing `other` bucket (the parser
+  accepts any `\w+` type; "permitted" means the spec set, not tm3k-enforced).
+  Each row: count + share + auto/human split — the signal is *which types still
+  pull a human in*. No per-type delta (jumpy at low counts).
+- **Scope filter**: multi-select OR over every scope ever seen in the log
+  (all-time union, case-folded, comma/slash-split so one PR can match several);
+  scopes the entire view.
+- **Aggregation is server-side** in `GET …/analytics`; the tz / month-clamp /
+  elapsed math is table-driven-tested Go. The frontend is a pure renderer.
 
-### Time range (lightweight Grafana-style picker)
-Four selectable ranges, all in **workstation-local time** (same local-midnight
-basis as the Approval Feed):
-- **today** — local midnight → now.
-- **this week** — **Monday** 00:00 (ISO 8601) → now.
-- **this month** — calendar 1st 00:00 → now.
-- **last X days** — rolling `X×24h` ending now (includes today's partial).
+## UI structure
 
-The three named ranges are **in-progress** (partial) when viewed.
+Five tabs under the persistent **heartbeat strip**, active tab in the URL hash
+(`#inbound` / `#outbound` / `#rules` / `#analytics` / `#settings`, default
+inbound; retired hashes `#review`/`#pipeline` redirect to `#inbound`):
 
-### Previous period (elapsed-aligned delta)
-Every headline stat carries a **relative change vs the previous period**, computed
-**like-for-like**: only the *elapsed slice* of the current period is compared
-against the **same elapsed slice** of the prior period — never partial-vs-full.
-- **today** vs **yesterday 00:00 → same clock time**.
-- **this week** vs **last week, Monday → same weekday+clock offset**.
-- **this month** vs **last month, day-1 → same day-of-month+clock offset**;
-  **clamped** when the current day-of-month has no counterpart (e.g. viewing on the
-  31st caps last month at its final instant).
-- **last X days** is already equal-length, so its previous period is the
-  immediately-preceding `X×24h` window — like-for-like for free.
+- **Inbound** — the Cycle Funnel, vertical stations on a spine; carries the
+  **staging-count badge** (the inbound actionable signal).
+- **Outbound** — the authored funnel, same idiom; carries the **ready-count
+  badge**. Every station-2–5 row has the Arm/Disarm toggle **except** Changes
+  Requested, and armed state rides the row as a badge.
+- **Rules** — two cards fed by one `GET /rules`, split by class: Approve Rules
+  and "Human Review Always". `Class` is implied by the card's Add button, not
+  editable — reclassifying in place means delete + recreate (ADR 0004; a known
+  MVP limitation, not a bug).
+- **Analytics** — the look-back dashboard.
+- **Settings** — the analytics assumption constants (ADR 0010/0012).
 
-A delta is the **%-change of the count** `(now − prev)/prev`, rendered as an
-up/down arrow + color + `±N%`. **Zero baseline** (prev = 0) renders **"new"**
-(or **"—"** when both are zero) — never ∞ or a divide-by-zero. The delta label
-names the aligned comparison (e.g. "vs last week, Mon–Wed aligned").
+The **heartbeat strip** shows the last cycle's time, outcome, and counts —
+`approved` (last cycle — the live pulse), `staging`, `review`, `dropped`
+(Eligibility-Gate removals; the insurance against silent
+approving-nothing-because-a-decode-bug, ADR 0005), `ready`, and `merged`
+(**today**, not last cycle — a deliberate asymmetry with `approved`: merges
+leave the pull immediately and are rare against the cadence, so a per-cycle
+count would read 0 on nearly every glance; the strip's `merged` and the Merged
+station read through the same filter so they can never disagree). In Discussion
+has **no** heartbeat count — the strip stays actionable-signals-only; `ready`
+keeps meaning waiting-only-on-you.
 
-### Stats row
-Three headline stats for the selected range (+ scope filter), each with a delta:
-- **Auto-approved** — count + **share** (% of total approvals in range).
-- **Human Review** — count + share. (Shares are shown for the current range but
-  **not** delta'd — a share-point delta beside a count delta misreads.)
-- **Context switches saved** — *the headline value*. **`count = the Auto-approved
-  count`** (each auto-approval is one interruption the human did not take; a Human
-  Review approval is a switch the human *did* take, so it is **not** saved). Shown
-  two ways: the raw count, and **money as a range** = `count × [CostLow, CostHigh]`
-  (prefixed with `Currency`) — a low/high band, never a single point, because the
-  per-switch cost is a wide distribution, not a number (see the Zurich research).
-  The band is rendered as the **money pill**: the count-scaled `CHF570 – CHF1486`
-  on top with the per-switch basis `CHF10–26 / switch` beneath; an empty range
-  collapses to a single `CHF0`. The per-switch constants are **not** edited here —
-  the pill is read-only; they live in the Settings tab. *There is no time/hours
-  figure:* dropping the single hourly-rate (for a direct per-switch franc band)
-  detached money from an `hours × rate` chain, so the "X.Xh saved" line is gone and
-  money stands alone.
-
-### By-Type cohort
-A breakdown of the range's approvals **by conventional-commit type**. The type axis
-is the **fixed Conventional Commits set** — `feat, fix, chore, docs, style,
-refactor, perf, test, build, ci, revert` — rendered in that order, **all rows
-shown** even at zero (zeros dimmed), honoring "the set is bounded." A trailing
-**`other`** bucket catches any non-standard `\w+` type the parser accepted (tm3k
-does **not** restrict types — the parser's type is `\w+`; "permitted" means the
-*spec* set, not a tm3k-enforced one). Each row shows **count + % of range total +
-the auto/human split** (`55 auto / 4 human`) — the actionable signal is *which
-types still pull a human in*. **No per-type delta** (jumpy at low counts).
-
-### Scope filter
-A **multi-select (OR)** filter over **scopes**. Options enumerate **every scope
-ever seen** in the log (all-time union via `splitScopes`, case-folded) — a stable
-list independent of the selected range, presented as a searchable control (the real
-log already holds 45+ distinct scopes). A PR matches when its scope set contains
-**any** selected scope (a title's scope is comma/slash-split into multiple scopes —
-`chore(team/service-b)` → `team`, `service-b` — so one PR can match several). The
-filter scopes the **entire view** — stats row, By-Type cohort, and all deltas
-recompute for the selected scopes. Default: **All scopes** (no filter).
-
-### Aggregation (server-side)
-All analytics math runs **server-side** in a new `GET …/analytics` handler: it
-reads the full `approvals.jsonl`, parses each title (reusing the
-conventional-commit parser + `splitScopes`), computes the range and
-elapsed-aligned previous-period boundaries (Go owns the tz / month-clamp / elapsed
-math — table-driven tested, per the project's "test weight on pure logic" ethos),
-buckets by type, applies the scope filter, and returns aggregates + the all-time
-scope list as a DTO (ADR 0002, snake_case wire; titles parsed on read, ADR 0006).
-The frontend is a **pure renderer** — range + scope live in component/URL state and
-trigger a debounced re-fetch; the correctness-critical date logic never leaves Go.
-Empty range → all zeros, deltas render "—".
+The design mockup (`toilmaster3000.dc.html`, Claude Design project) is
+**orientation, not authority**: where it simplified away agreed behavior, the
+agreed model wins.
 
 ## Engine
 
-- **GitHub access:** shell out to the `gh` CLI (reuses existing auth; no PAT).
-  - Fetch (once/cycle): `gh pr list --repo example/repo --search
-    "is:open team-review-requested:example/team"
-    --json number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision`
-    (author from `author.login`). **`reviewDecision`** rides the **same single
-    call** (no N+1): `PR` carries `ReviewDecision string`
-    (`APPROVED`/`CHANGES_REQUESTED`/`REVIEW_REQUIRED`/empty), feeding the
-    **approved-elsewhere** funnel sub-state (a PR `APPROVED` but absent from
-    `approvals.jsonl` was approved by someone other than tm3k — soft-dedup, see
-    Cycle Funnel). `additions`/`deletions`/`changedFiles` come back
-    in the **same single call** (no per-PR N+1); `PR` carries them **separately**
-    and the matcher sums `additions + deletions` for the diff-size predicate.
-    `additions`/`deletions`/`changedFiles` are also surfaced on `QueueItem` for
-    the queue's diff-magnitude line (`PR` carries `ChangedFiles int`).
-    `isDraft` and `statusCheckRollup` ride the **same single call** to feed the
-    Eligibility Gates with no extra N+1 — `PR` carries `IsDraft bool` and
-    `Checks []Check` (one `Check` per rollup entry: `{Typename, Status,
-    Conclusion, State}`). The all-green verdict is the pure, table-driven-tested
-    `github.AllGreen(checks)`; the CLI seam only decodes, it does not judge.
-  - Approve: `gh pr review --repo … --approve <number>`.
-  - **PR-State refresh (out-of-band):** at the **tail of every cycle** (after
-    find→approve, on every cycle even one that approved nothing), refresh the
-    **PR State** of **today's feed entries only** via **one batched call**
-    (ADR 0007 — was per-PR `gh pr view`, an N+1 that did not survive a higher
-    cadence): `gh pr list --repo … --state all --search "reviewed-by:@me
-    updated:>=<startOfLocalDay>" --json number,state,mergedAt --limit 200`. The
-    bot only ever *approves*, so `reviewed-by:@me` ≡ approved-by-me; the seam
-    returns a `map[number]raw` superset and the **engine intersects it against
-    today's feed numbers locally**. Each `(state, mergedAt)` pair collapses to the
-    `open|merged|closed` enum: `OPEN→open`, `CLOSED` with a non-null
-    `mergedAt`→`merged`, `CLOSED` with null `mergedAt`→`closed`. Result held in an
-    **in-memory `map[number]state`**, never persisted (see PR State), and updated
-    **in-place** — a number absent from a result **keeps its last-known state**
-    (never reset to unknown). Failure is **all-or-nothing**: a failed call is
-    **logged once and skipped** (keeps all last-known state), never aborts the
-    cycle. Trade-off (ADR 0007): GitHub search is eventually-consistent, so a PR
-    approved *this* cycle may read `unknown` for one cycle before resolving —
-    cosmetic, self-healing, and the window shrinks as cadence rises. The `--limit
-    200` is guarded by a **warning logged when the result hits the limit** (no
-    silent truncation).
-- **`gh` seam:** a `GitHubClient` interface (`ListCandidates() []PR`,
-  `Approve(number) error`, `PRStatesSince(since) (map[number]raw, error)`) — real
-  impl shells out to `gh`; a fake impl backs tests so the engine is testable
-  without network. `PRStatesSince` is **decode-only** (returns GitHub's raw
-  `{state, mergedAt}` per number); the engine intersects against today's feed, and
-  the pure, table-tested **`github.CollapsePRState(state, mergedAt)`** does the
-  judging into `open|merged|closed` — same decode-vs-judge split as `AllGreen`.
-- **Outbound fetch (second call per cycle):** `gh pr list --repo … --search
-  "is:open author:@me" --json …,mergeable,reviewDecision,…` — drafts included
-  (no `draft:false` filter; Draft is an outbound *stage*, not a gate). The
-  inbound search gets **`-author:@me`** appended at startup so the two pulls
-  are disjoint. `mergeable` rides this call to compute Ready's conflict marker
-  and the merge precondition.
-- **Threads fetch (third call per cycle):** one batched `gh api graphql`
-  search (`repo:<repo> is:pr is:open author:@me`) returning, per authored PR,
-  `number` + `reviewThreads(first:100){ isResolved }`, folded to a
-  `map[number]unresolvedCount` by a decode-only seam method
-  (`UnresolvedThreads(ctx)`). GraphQL is forced, not chosen: `isResolved`
-  exists **only** in the GraphQL `reviewThreads` connection — no
-  `gh pr list/view --json` field carries thread resolution. The pure stage
-  fold takes the count as an input; the seam never judges. **Fail-closed:** a
-  failed threads call clears the outbound snapshot and skips all merging that
-  cycle, exactly like a failed authored fetch — thread data is load-bearing
-  for the partition. **Truncation guards:** a PR reporting more thread pages
-  than fetched is treated as *having* unresolved threads (hold + warn), never
-  as resolved; the search page carries the ADR 0007-style warn-at-limit.
-- **Merge step (tail of the cycle):** for each **Armed** PR that is green +
-  `reviewDecision == APPROVED` + zero unresolved review threads (the In
-  Discussion stage holds the rest out of Ready) + `mergeable == MERGEABLE`: fetch `title, body,
-  reviews` via one `gh pr view` (the per-merge call, ADR 0008-style), construct
-  the gh-land commit message, `gh pr merge -s -d -t … -b …` (one retry), and
-  append to `merges.jsonl` **only on success**. An armed PR observed with
-  `CHANGES_REQUESTED` is **disarmed** instead (level-triggered — see Outbound).
-  A failed *outbound fetch* clears the outbound snapshot and **skips all
-  merging that cycle** — the robot never merges on stale data.
-- **Loop:** single goroutine, `runCycle(); sleep(60s); repeat` (sleep *after* —
-  a slow cycle can never overlap itself). Not a Ticker.
-- **Failure semantics:** approve first, append to `approvals.jsonl` only on
-  success (failed approvals retry next cycle). One PR's failure is logged and
-  skipped, never aborts the cycle. A failed candidate fetch skips the whole
-  cycle (approves nothing).
-- **Funnel snapshot (live, never persisted):** each cycle, alongside rebuilding
-  `queue`, the engine retains what it used to discard — the **dropped-red**,
-  **dropped-draft**, **staging**, and **approved-elsewhere** lists, plus the
-  **distribution counts** and **approvedThisCycle** (see Cycle Funnel). Held in
-  one in-memory snapshot replaced under lock at cycle end (same lifecycle as
-  `queue`: empty after restart until the first cycle, current as of the last
-  completed cycle). **Incoming PR objects are not hoarded** — Incoming renders as
-  the distribution bar (counts), so only the four terminal lists + counts are
-  kept. A failed fetch clears the snapshot (nothing evaluated). Exposed at
-  `GET /pipeline`; the dropped-red items carry a **count of non-passing checks**
-  ("N checks failing"), folded cheaply from the `statusCheckRollup` already in hand.
+Shells out to the `gh` CLI (reuses your auth; no PAT) behind the decode-only
+`GitHubClient` seam; a fake backs the engine tests. Per cycle, three batched
+calls — inbound list (all rule/gate/funnel fields including `reviewDecision`,
+`isDraft`, `statusCheckRollup`, diff counts — no N+1), outbound list
+(+`mergeable`), and the GraphQL unresolved-threads search (GraphQL is forced:
+`isResolved` exists nowhere else — ADR 0019) — then two tail steps: the batched
+PR-State refresh (ADR 0007) and the merge step (ADR 0016).
 
-### Cycle status (UI)
-A small status line (the persistent **heartbeat strip** atop all tabs) showing
-the last cycle's time, outcome (`OK` / `gh error: …`), and counts (e.g.
-`approved 3, staging 6, review 2, dropped 5, ready 2, merged 1`), so a glance
-confirms the robot is alive — not just that it approved things. **`staging`**
-joins the strip as the new actionable signal (uncovered PRs awaiting a rule),
-beside `approved`/`review` (queue)/`dropped`. The **outbound pair** rides the
-same strip: **`ready`** (PRs waiting only on you — the outbound actionable
-signal, parallel to `staging`) and **`merged`** (merges **today**, not last
-cycle — a **deliberate asymmetry** with `approved`: a merged PR leaves the
-`is:open` pull immediately and merges are rare against a 60s cadence, so a
-per-cycle count would read `0` on nearly every glance — noise pretending to be
-signal. Today-scoping makes the strip's `merged` equal the Merged station's
-row count; both read through the same `todaysMerges` filter so they can never
-disagree); both ride `/status` so every tab shows them. The heartbeat's **`approved` count is the last
-cycle's** (the live pulse) — deliberately a different scope from the
-**today-scoped** Approval Feed, so "approved 3" in the strip and N rows in the
-feed are the same word at two scopes (cycle vs day), disambiguated by labels
-(the feed card reads "today · read-only"). The
-**`dropped`** count is the number of candidates the Eligibility Gates removed
-this cycle (draft or not-all-green, combined into one count; the per-PR `gate`
-reason lives in the logs). It is cheap insurance against the scariest
-auto-approver failure mode — *silently* approving nothing because a
-`statusCheckRollup` decode bug marks everything not-green; without the count that
-is indistinguishable from "saw no PRs." A failed candidate fetch records
-`dropped 0` (nothing was evaluated), parallel to `approved`/`queue`.
+- **Loop**: one goroutine, `RunCycleOnce(); sleep; repeat` — sleep *after*, so
+  a slow cycle can never overlap itself; never a Ticker. Default interval 5m,
+  floor 1m (`--poll-interval`/`TM3K_POLL_INTERVAL`). The frontend polls its
+  live endpoints every 10s.
+- **Failure semantics**: act first, append the ledger only on success (failed
+  approvals/merges retry next cycle). One PR's failure is logged and skipped,
+  never aborts the cycle. Fetch failures fail closed (see Doctrines).
+- **Funnel snapshots** (inbound and outbound): rebuilt each cycle, replaced
+  under one lock, never persisted — empty after restart until the first cycle,
+  then current as of the last completed cycle, plus the engine's own actions
+  since (ADR 0018). Incoming PR objects are not hoarded: the bar renders
+  counts; only terminal lists are kept. A failed fetch clears the snapshot.
 
-## HTTP API & serving
+## Wire, persistence, operational
 
-- **Single Go binary** `go:embed`s the built React app (`frontend/dist`); serves
-  SPA + API on `localhost:8666`. Dev uses the vite dev server proxying to the Go
-  API.
-- **Framework:** stdlib `net/http` mux (Go 1.22+ routing) + **huma v2** for
-  request/response validation and a generated **OpenAPI** spec. Handlers are
-  typed Go structs with huma tags. (Supersedes the initial "plain vanilla
-  handlers" intent — see ADR 0001.)
-- **Validation split:** huma covers *structural* validation (required fields,
-  types). *Semantic* guards stay in service code: regex-compiles and the
-  reject-empty-rule check (these can't be expressed as schema tags).
-- **Prefix:** `/api/toilmaster3000/v1` (verbose but unambiguous).
-- **Wire casing:** the REST API JSON is **snake_case everywhere**, regardless of
-  on-disk format (PascalCase YAML, snake_case JSONL).
-- **Wire boundary (DTOs everywhere):** the wire shape is owned exclusively by
-  `server`-side DTOs (`server.Approval`, `server.QueueItem`, `server.CycleStatus`,
-  `RuleBody`). Engine/domain and on-disk types **never appear on the wire** —
-  each handler maps through a named converter (`approvalToBody`, `queueItemToBody`,
-  `cycleStatusToBody`, `ruleToBody`). The snake_case convention is shared across
-  the boundary **by agreement**, not by reusing a struct: `engine.Approval`'s json
-  tags exist for the `approvals.jsonl` disk format, and `server.Approval`
-  independently chooses the same casing for the wire. The two being byte-identical
-  today is deliberate decoupling, not redundancy — see ADR 0002. (Do not collapse
-  the DTOs into the engine types; that re-leaks wire concerns into the engine.)
-  - **Shared DTO sub-struct:** `server.TitleParts {type, scopes[], breaking,
-    description}` rides **both** `server.Approval` and `server.QueueItem`,
-    computed in the converters at response time (**parse-on-read**, never
-    persisted — see ADR 0006). Sharing a *server-owned* DTO type across handlers
-    does not violate ADR 0002 (which forbids reusing *engine/domain* types).
-  - **Added wire fields:** `server.Approval` gains `title_parts`, a
-    server-derived **`manual bool`** (from the `matched_rule` prefix), and a
-    server-derived **`state`** enum (`open|merged|closed|unknown`, the live **PR
-    State**); `server.QueueItem` gains `title_parts`, `additions`, `deletions`,
-    and `changed_files`. The raw `title` stays on both as source of truth.
-    - **`state` is sourced outside the `engine.Approval` record.** Unlike the
-      other derived fields (computed purely from the record), `state` is read
-      from the engine's in-memory `map[number]state` and zipped into the feed by
-      `approvalToBody` under one lock. `engine.Approval` and `approvals.jsonl`
-      stay **frozen** — PR State is volatile and never persisted (see PR State /
-      Engine). Default when the map has no entry yet: `unknown`.
-
-| method | path | purpose |
-|---|---|---|
-| `GET` | `/api/toilmaster3000/v1/status` | cycle status: `last_run`, `outcome`, counts (approved / staging / in queue / dropped / **ready / merged**; `merged` is **today-scoped**, all others per-cycle) — `staging` and the outbound pair ride `/status` so the always-polled heartbeat strip shows them from every tab without fetching `/pipeline` or `/outbound` |
-| `GET` | `/api/toilmaster3000/v1/approvals` | feed, newest-first, **today only** (`approved_at ≥ local midnight`; reads `approvals.jsonl`) |
-| `GET` | `/api/toilmaster3000/v1/queue` | Needs-Human-Review items (derived live) |
-| `POST` | `/api/toilmaster3000/v1/queue/{number}/approve` | manual override approve |
-| `GET` | `/api/toilmaster3000/v1/pipeline` | live **Cycle Funnel** snapshot: `dropped_red[]`, `dropped_draft[]`, `staging[]`, `approved_elsewhere[]`, distribution counts, `approved_this_cycle`. Derived live each cycle, never persisted (stations 4–5 reuse `/queue` + `/approvals`) |
-| `GET` | `/api/toilmaster3000/v1/analytics` | approval-history aggregates for a range (+ scope filter): totals, shares, switches-saved, by-type cohort, elapsed-aligned deltas, all-time scope list. Query: `range=today\|week\|month\|days`, `days=N` (for `days`), `scope=a,b` (repeatable/CSV) |
-| `GET` | `/api/toilmaster3000/v1/settings` | analytics assumption constants: `cost_low`, `cost_high` (CHF per saved switch), `currency` |
-| `PUT` | `/api/toilmaster3000/v1/settings` | update the constants (full replace) |
-| `GET` | `/api/toilmaster3000/v1/outbound` | live **outbound funnel** snapshot: per-stage lists (draft, red, running, changes-requested, in-discussion incl. unresolved-thread count, awaiting, ready incl. conflict/mergeable state), distribution counts, `armed` flag per row. Derived live each cycle like `/pipeline` (the Merged station reads `/merges`, not a per-cycle field) |
-| `POST` | `/api/toilmaster3000/v1/outbound/{number}/arm` | arm a PR (rejected while `reviewDecision == CHANGES_REQUESTED`) |
-| `DELETE` | `/api/toilmaster3000/v1/outbound/{number}/arm` | disarm a PR |
-| `GET` | `/api/toilmaster3000/v1/merges` | merge ledger, newest-first, **today only** (reads `merges.jsonl`; feeds the Merged station) |
-| `GET` | `/api/toilmaster3000/v1/prs/{number}/diff` | on-demand per-file diff for the Diff card — resolves a PR tracked in the queue, Staging, or the outbound snapshot; untracked → 404 (ADR 0015, ADR 0017) |
-| `GET` | `/api/toilmaster3000/v1/rules` | list rules |
-| `POST` | `/api/toilmaster3000/v1/rules` | create a rule |
-| `PUT` | `/api/toilmaster3000/v1/rules/{id}` | update / enable / disable (full replace) |
-| `DELETE` | `/api/toilmaster3000/v1/rules/{id}` | delete a rule |
-
-- Each rule has a **stable generated `id`** (not derived from the user-editable
-  name), stored in `rules.yaml`.
-- **Polling:** backend cycles every 60s; frontend polls `status` + `approvals` +
-  `queue` every 10s; rules refetched after a mutation.
-
-## Persistence
-
-Repo is self-contained (will be relocated later). Layout:
-`toilmaster3000/{main.go, internal/, frontend/, docs/adr/, CONTEXT.md,
-.config/, .state/}`.
-
-- **`.config/rules.yaml`** — rule definitions (both classes in one flat `Rules:`
-  list), loaded at startup, rewritten on every UI edit. YAML keys are
-  **PascalCase** (e.g. `Name`, `Enabled`, `TypeInclude`, `Class`, `DiffMin`,
-  `DiffMax`). A **`Class`** field (`approve` | `review`) discriminates the two
-  Rule classes; an **empty/absent `Class` is treated as `approve`**, so the
-  existing two seeds and any pre-existing file need **no migration** (the next
-  mutation rewrites them with explicit `Class: approve`). (One non-stdlib
-  dependency: a YAML lib.)
-- **`.state/approvals.jsonl`** — append-only log, **one approval per line**. Serves as
-  both the dedup set (numbers loaded into memory at startup) and the Approval
-  Feed's data source. Record shape (**snake_case**):
-  `{ number, title, author, url, matched_rule, approved_at }`.
-- **`.state/merges.jsonl`** — append-only merge ledger, **one merge per line**,
-  written only on successful merge (the outbound analog of `approvals.jsonl`).
-  Record shape (snake_case): `{ number, title, url, merged_at, approved_by[] }`.
-  Feeds the Merged station (today-scoped).
-- **`.state/armed.json`** — the persisted **armed set** (PR numbers), the first
-  mutable per-PR state in tm3k. Rewritten on every Arm/Disarm toggle and on
-  cleanup (a PR leaving the pull as merged/closed, or a level-triggered
-  disarm). Loaded at startup so arms survive restarts.
-- **`.config/settings.yaml`** — the analytics assumption constants, the **first
-  non-rule persisted state** in tm3k. PascalCase YAML (matching `rules.yaml`):
-  `CostLow: 10`, `CostHigh: 26`, `Currency: "CHF"` — the low/high CHF cost of one
-  saved context switch (Zurich research: `10 min × CHF1.00/min gross` …
-  `23 min × CHF1.15/min loaded`). Loaded at startup, rewritten on `PUT /settings`,
-  seeded with those defaults on first run. **Self-healing migration:** a file
-  missing the cost keys (the pre-range `MinutesPerSwitch`/`HourlyRate` schema, or a
-  zeroed file) is reseeded to the full defaults on load, so the headline can never
-  come back `CHF0 – CHF0`. Drives the Context-switches-saved **money range** (see
-  Analytics); the constants are edited only in the Settings tab.
-- **Seeding (rules):** on first run (no `.config/rules.yaml`), write two starter
-  default rules (both enabled) as editable examples, so the tool does something
-  sensible out of the box:
-  - `team chores` — `AuthorsExclude: ["@me"]`, `TypeInclude: "^chore$"`,
-    `ScopeExclude: "renovate"`.
-  - `service-a — teammate_a` — `AuthorsInclude: ["teammate_a"]`, `ScopeInclude: "service-a"`.
-
-## Operational
-
-- **Preflight (fail fast at boot, clear message):** verify `gh` is installed and
-  authenticated (`gh auth status`); resolve the `@me` token once via
-  `gh api user`; **verify the configured repo is visible to the active `gh`
-  identity** (`gh repo view <repo>` or equivalent — fail with a message naming
-  the active account and the repo); exit if `:8666` is already in use. A broken
-  `gh` exits hard rather than silently approving nothing. The repo-visibility
-  check exists because the per-cycle pulls go through GitHub's **search API,
-  which returns an empty result — not an error — for a repo the identity cannot
-  see**: without the boot check, a wrong active account (e.g. a personal
-  account active while the repo needs the EMU work account) yields perpetual
-  `outcome: ok` with zero counts everywhere — the silent-blindness failure mode
-  the `dropped` count cannot catch because it lives below the fetch. *(Boot-time
-  only, decided: no per-cycle re-check — visibility lost after boot is out of
-  scope for now.)*
-- **Concurrency:** one mutex-guarded in-memory store (rules, dedup set, last
-  cycle status, latest queue snapshot); HTTP reads are locked reads. **All
-  approvals — auto and manual — flow through one locked `approve()` path**
-  (check dedup → `gh` → append JSONL under lock), making the
-  manual-approve-vs-cycle race safe.
+- **Serving**: a single Go binary `go:embed`s the built React app
+  (`frontend/dist`); SPA + API on `localhost:8666`. stdlib mux + **huma v2**
+  (ADR 0001): huma does structural validation, semantic guards (regex compile,
+  empty-rule check) stay in service code. Prefix `/api/toilmaster3000/v1`.
+- **The endpoint inventory is `openapi.json`** — generated from the Go DTOs,
+  committed, and drift-guarded by `make check` (ADR 0003). This file does not
+  duplicate it.
+- **Wire boundary**: snake_case everywhere, owned exclusively by server-side
+  DTOs mapped through named converters; engine/domain/disk types never cross
+  the wire, and identical-looking DTO/engine pairs are deliberate decoupling —
+  do not collapse them (ADR 0002). Title parts are parsed on read, never
+  persisted (ADR 0006). PR `state` is zipped in from the engine's in-memory
+  map; `approvals.jsonl` stays frozen.
+- **Persistence** (no DB; PascalCase YAML config, snake_case JSONL state):
+  - `.config/rules.yaml` — both rule classes in one flat list; stable generated
+    `id`s; absent `Class` reads as `approve` so pre-class files need no
+    migration (ADR 0004). Seeded on first run with two editable examples
+    ("team chores", "service-a — teammate_a").
+  - `.config/settings.yaml` — the analytics constants; self-healing reseed on a
+    stale schema (ADR 0010/0012).
+  - `.state/approvals.jsonl` — append-only; both the dedup set (loaded at
+    startup) and the feed's source.
+  - `.state/merges.jsonl` — append-only merge ledger (ADR 0016).
+  - `.state/armed.json` — the persisted armed set; the first mutable per-PR
+    state in tm3k.
+- **Preflight (fail fast at boot)**: `gh` installed and authenticated; `@me`
+  resolved once; `:8666` free; and **the configured repo visible to the active
+  `gh` identity** — load-bearing because the search API returns an **empty
+  result, not an error**, for a repo the identity cannot see: without the
+  check, a wrong active account yields perpetual `outcome: ok` with zero counts
+  everywhere — silent blindness the `dropped` count cannot catch because it
+  lives below the fetch. Boot-time only, decided.
+- **Concurrency**: one mutex-guarded in-memory store; HTTP reads are locked
+  reads; **all approvals — auto and manual — flow through one locked
+  `approve()` path**, making the manual-approve-vs-cycle race safe.
 
 ## Testing
 
-- **Test weight is on pure logic** (parser, matcher, validator) — the
-  correctness-critical core. UI and shell-out get lighter coverage.
-- **Go** (table-driven + testify): parser (no-scope, breaking `!`,
-  multi/slash/mixed-case scopes, malformed doubled-prefix, non-conventional →
-  non-match); matcher (author & per-part include/exclude, OR-of-rules,
-  first-match attribution, breaking → queue; **diff-size DiffMin/DiffMax bounds;
-  Review-vs-Approve precedence; reasons-list accumulation including all matching
-  Review Rules + Approve-tied breaking_change; empty-Class ⇒ approve**);
-  validator (reject-empty-rule **incl. diff**, bad-regex-per-field,
-  **DiffMin ≤ DiffMax**); **`github.AllGreen` fold (pass/fail/pending buckets,
-  SKIPPED/NEUTRAL as pass, empty rollup ⇒ not green, mixed CheckRun +
-  StatusContext); Eligibility Gates in the cycle (draft dropped, not-all-green
-  dropped, both before parse/rules; `dropped` count); **`github.CollapsePRState`
-  fold (open / merged / closed-unmerged / defensive default)**. gh impl + http
-  handlers lightly tested.
-- **Frontend** (vitest): the three panels (feed, queue, rules editor) + cycle-
-  status line; the 10s polling hook and queue **Approve** action, API mocked.
-  **PR-State bar**: correct color token per `state` and **`unknown` renders no
-  bar**. The **Rule Draft** round-trip, validation (constrains-nothing incl. diff
-  `0`, inverted range, per-field title-part regex), and summary are tested
-  **pure** (no DOM); the rules-editor DOM test keeps only modal interaction (one
-  row per title-part field, Save disabled on invalid, mutations fire).
+Test weight is on the correctness-critical pure core — parser, matcher, folds,
+validator, date math — table-driven with `testify/require`; `gh` shell-out and
+HTTP handlers get lighter coverage, and the frontend tests pure logic (Draft
+round-trip, validation, summary) before DOM. Conventions and single-test
+invocations: `docs/development.md`.
 
 ## Deferred / not yet modelled
 
-- **Reclassifying a rule in place** (moving between the Approve and "Human Review
-  Always" cards) — MVP requires delete + recreate; `Class` is card-implied.
+- **Reclassifying a rule in place** — MVP is delete + recreate (ADR 0004).
 - **`BREAKING CHANGE:` body-footer detection** — needs fetching PR bodies.
 - **Dismiss action** on queue items — needs persistent hidden-state.
-- **Outbound analytics** — merges saved-switches integration (`merges.jsonl` is
-  the durable signal; whether/how a merge counts as a saved switch is undecided).
-  **Placement decided:** when a range-scoped merge-history view lands, it lives
-  in the **Analytics tab** behind the existing Grafana-style range picker —
-  **never** as a control on the funnel's Merged station (that station stays
-  today-scoped; a lean-back range control does not belong on the glance surface).
-- **Commit-message preview at arm time** — gh-land shows the constructed message
-  before its confirm; tm3k's arm predates the merge, and the body is fetched
-  live at merge time, so a preview at arm time could mislead. Skipped for now.
-- **Next-day PR-State reversal visibility** — PR State is **same-day-only** (it
-  inherits the feed's today-scope): a PR approved today but merged/closed
-  *tomorrow* is already off the feed, so its `merged`/`closed` bar (notably the
-  red **false-positive** signal) is seen by nobody. Accepted for the glance-tool
-  purpose; a "recent reversals" view or persisting state is a separate feature.
+- **Outbound analytics** — whether/how a merge counts as a saved switch is
+  undecided. Placement decided: a range-scoped merge-history view lives in the
+  Analytics tab behind the existing range picker — never as a control on the
+  funnel's Merged station (the glance surface stays today-scoped).
+- **Commit-message preview at arm time** — the body is fetched live at merge
+  time, so an arm-time preview could mislead. Skipped.
+- **Next-day PR-State reversal visibility** — PR State inherits the feed's
+  today-scope, so a reversal *tomorrow* (notably the red false-positive bar) is
+  seen by nobody. Accepted for the glance-tool purpose; a "recent reversals"
+  view is a separate feature.

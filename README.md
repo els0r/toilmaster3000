@@ -38,13 +38,20 @@ each part with an optional include/exclude regex), and **diff size**
 (`additions + deletions`, with optional min/max bounds). Rules are created,
 named, toggled, and edited from the UI and persist to `.config/rules.yaml`.
 
-The UI is two tabs under a "heartbeat" status strip:
+The UI is five tabs under a "heartbeat" status strip:
 
-- **Review** — the actionable Needs-Human-Review queue (with per-PR diff
-  magnitude and an on-demand per-file diff card) beside a read-only, today-scoped
+- **Inbound** — the Cycle Funnel: every PR of the latest cycle in exactly one
+  station, from the raw pull down through Dropped, Staging (uncovered PRs
+  awaiting a rule), the actionable Needs-Human-Review queue (with per-PR diff
+  magnitude and an on-demand per-file diff card), to a read-only, today-scoped
   **Approval Feed** that shows what the robot did and the live GitHub state
   (open / merged / closed) of each approval.
+- **Outbound** — the same funnel idiom for PRs *you* author, ending in a
+  today-scoped Merged station; arming a PR consents to tm3k merging it once it
+  is green, approved, and undiscussed.
 - **Rules** — the Approve Rules and "Human Review Always" cards.
+- **Analytics** — the saved-switches dashboard (below).
+- **Settings** — the analytics assumption constants.
 
 There is no database, no service account, and no network surface beyond the `gh`
 calls: it shells out to the `gh` CLI and reuses your existing auth.

@@ -28,6 +28,18 @@ server, proxies `/api` -> :8666, HMR).
 - Go: `go test ./internal/engine -run TestName`
 - Frontend: `cd frontend && npx vitest run src/PrRow.test.tsx`
 
+## Testing conventions
+
+Test weight goes to the correctness-critical pure core — the
+conventional-commit parser, the matcher, the judgement folds (`AllGreen`,
+`CollapsePRState`, the stage folds), the rule validator, and the analytics
+date math — as table-driven Go tests with `testify/require`. The `gh`
+shell-out and the HTTP handlers get lighter coverage; the seam's `fake.go`
+keeps the engine testable without the network. On the frontend (vitest), test
+pure logic first (the Rule Draft round-trip, validation, row summaries — no
+DOM); DOM tests keep only interaction (modal wiring, mutations firing,
+poll-driven rerenders with the API mocked).
+
 ## The drift guard
 
 There is **no CI**. `make check` is the drift guard — run it before committing

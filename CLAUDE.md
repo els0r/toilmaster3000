@@ -13,10 +13,11 @@ and either auto-approves it, routes it to a human-review queue, or drops it. It
 shells out to the `gh` CLI and reuses your auth — no DB, no service account, no
 network surface of its own.
 
-Read `README.md` for the product overview, `CONTEXT.md` for the full domain
-model and glossary, and `docs/adr/` for the architecture decision records (each
-numbered ADR explains *why* a non-obvious choice was made — consult the relevant
-one before changing that area).
+Read `README.md` for the product overview, `CONTEXT.md` for the domain model —
+the glossary, doctrines, and invariants; each entry points at the ADR in
+`docs/adr/` that holds the mechanics and rationale (consult the relevant one
+before changing that area). The wire contract of record is the committed
+`openapi.json`, not prose.
 
 When running a PRD autonomously (multi-issue orchestration), follow
 `WORKING-AGREEMENT.md` — it defines how a parent PRD is decomposed into vertical-
@@ -68,12 +69,17 @@ mind whenever you touch the cycle loop, the rules, or the funnel.
   approve removes the PR from the queue and moves its funnel count; a merge
   prunes Ready atomically with the ledger append — both preserving the
   partition sums. Never "simplify" these mutations away: the next cycle would
-  serve a known falsehood for up to 60s.
+  serve a known falsehood for up to a full cycle.
 
 ## Conventions
 
 - Commit style is Conventional Commits (`type(scope): subject`) — match the
   existing history.
+- **When a design decision crystallises, it lands in `CONTEXT.md` as a lean
+  glossary/doctrine entry *plus* an ADR** — the full mechanism and rationale
+  live in the ADR, never inline. CONTEXT.md names things and states what binds
+  them; it does not restate mechanics that ADRs, `openapi.json`, or code
+  already record.
 - The wire is snake_case; Go domain types are not. Keep them separated by the
   server DTO layer — never widen a domain struct just to serve the wire (ADR 0002).
 - Run `make check` after adding/changing any endpoint or DTO.

@@ -7,21 +7,31 @@ flow and the invariants; this is the detail you read before changing a package.
 `internal/engine` runs the loop → `internal/github` is the only thing that
 touches `gh` → `internal/server` exposes typed HTTP → `frontend` consumes it.
 
-- **`internal/engine`** — owns the find→approve loop and the single
-  mutex-guarded in-memory store (dedup set, approvals feed, live queue, funnel
-  snapshot, PR states). The loop is `RunCycleOnce(); sleep; repeat` in one
-  goroutine — the sleep is *after* the cycle (never a `Ticker`) so a slow cycle
-  can't overlap itself. **All approvals — auto and manual — flow through one
-  locked `approve()` path**, which is what makes the manual-approve-vs-cycle
-  race safe. The approval record is written to `approvals.jsonl` only on
-  success, so a failed approval is retried next cycle.
+- **`internal/engine`** — owns the cycle loop and the single mutex-guarded
+  in-memory store (dedup set, approvals feed, live queue, funnel + outbound
+  snapshots, armed set, PR states). The loop is `RunCycleOnce(); sleep; repeat`
+  in one goroutine — the sleep is *after* the cycle (never a `Ticker`) so a
+  slow cycle can't overlap itself; default interval 5m, floor 1m
+  (`--poll-interval`). One cycle: inbound fetch → gates → rules →
+  approve/queue/staging fold; outbound fetch + threads fetch → stage fold;
+  then two tail steps — the batched PR-State refresh (ADR 0007) and the merge
+  step over Armed Ready PRs (ADR 0016, gated by ADR 0019). **All approvals —
+  auto and manual — flow through one locked `approve()` path**, which is what
+  makes the manual-approve-vs-cycle race safe. Ledgers (`approvals.jsonl`,
+  `merges.jsonl`) are appended only on success, so failures retry next cycle;
+  engine-performed changes also mutate the published snapshots in place
+  (ADR 0018). Fetch failures fail closed: inbound skips the cycle, outbound or
+  threads clears the outbound snapshot and skips all merging.
 - **`internal/github`** — shells out to `gh` behind the `GitHubClient`
   interface; `fake.go` backs the tests so the engine runs without the network.
-  One `ListCandidates` call per cycle pulls everything (titles, authors, diff
-  counts, draft flag, `statusCheckRollup`) — no per-PR N+1. The pure judgement
-  folds (`AllGreen`, `FailingChecks`, `CollapsePRState`) are table-tested; the
-  CLI seam only decodes. On-demand `Diff` is the sanctioned exception to the
-  no-per-PR-call rule (ADR 0007/0008) — it never rides the cycle.
+  Three batched calls per cycle — `ListCandidates` (titles, authors, diff
+  counts, draft flag, `statusCheckRollup`, `reviewDecision`), the authored
+  list (+`mergeable`), and the GraphQL `UnresolvedThreads` search — plus the
+  batched `PRStatesSince`; no per-PR N+1. The pure judgement folds
+  (`AllGreen`, `FailingChecks`, `CollapsePRState`) are table-tested; the CLI
+  seam only decodes. The sanctioned per-PR exceptions never ride the cycle
+  timer: on-demand `Diff` (user click, ADR 0008) and the moment-of-merge
+  `gh pr view` (ADR 0016).
 - **`internal/rule`** — the rule store (persisted to `.config/rules.yaml`) and
   the matcher. A rule predicates over author (`@me` → authenticated user),
   parsed conventional-commit title parts (each with optional include/exclude
