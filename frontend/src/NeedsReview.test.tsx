@@ -138,6 +138,87 @@ describe("NeedsReview", () => {
     expect(screen.queryByText("breaking change")).not.toBeInTheDocument();
   });
 
+  // A screen-held entry: the engine's queueItemForHolds shape — every reason
+  // is screen:<name>, mirrored 1:1 by the screen_holds prose (rule reasons
+  // XOR screen holds, disjoint by construction).
+  const screenHeld = (): QueueItem =>
+    item({
+      number: 52,
+      title: "chore: sneaky dep",
+      title_parts: {
+        type: "chore",
+        scopes: [],
+        breaking: false,
+        description: "sneaky dep",
+      },
+      reasons: ["screen:security", "screen:license"],
+      screen_holds: [
+        { screen: "security", reason: "touches auth code without tests" },
+        { screen: "license", reason: "screen unavailable: harness timeout" },
+      ],
+    });
+
+  // F-queue-9 (slice 38): screen chips derive from the screen_holds structure
+  // and render visually distinct from rule chips — a robot hold must read
+  // differently from a rule route at a glance. A rule-routed sibling keeps its
+  // rule chip and grows no screen chip; the held row keeps its override
+  // Approve button (the human outranks the robot).
+  it("renders screen chips distinct from rule chips, one per holding screen", () => {
+    render(
+      <NeedsReview queue={[screenHeld(), item({ reasons: ["osixpatch gate"] })]} />,
+    );
+
+    const screenChips = document.querySelectorAll(".badge-screen");
+    expect(screenChips).toHaveLength(2);
+    expect(screen.getByText("screen:security")).toBeInTheDocument();
+    expect(screen.getByText("screen:license")).toBeInTheDocument();
+
+    // The rule-routed sibling: one rule chip (plus its breaking badge), zero
+    // screen chips — and the held row renders none of the rule-chip class.
+    expect(screen.getByText("osixpatch gate")).toBeInTheDocument();
+    expect(
+      screen.getByText("osixpatch gate").classList.contains("badge-screen"),
+    ).toBe(false);
+    for (const chip of screenChips) {
+      expect(chip.classList.contains("badge-breaking")).toBe(false);
+    }
+
+    // The override affordance stays on the held row.
+    expect(
+      screen.getByRole("button", { name: "approve #52" }),
+    ).toBeInTheDocument();
+  });
+
+  // F-queue-10 (slice 38): the screen's prose reasoning is one click away on
+  // the held row — hidden until the chip is clicked, disclosed with every
+  // holding screen's own words, and dismissible by a second click.
+  it("discloses the screen's prose reasoning on chip click", () => {
+    render(<NeedsReview queue={[screenHeld()]} />);
+
+    expect(
+      screen.queryByText(/touches auth code without tests/),
+    ).not.toBeInTheDocument();
+
+    const chip = screen.getByRole("button", {
+      name: "screen security reasoning for #52",
+    });
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(chip);
+
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByText(/touches auth code without tests/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/screen unavailable: harness timeout/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(chip);
+    expect(
+      screen.queryByText(/touches auth code without tests/),
+    ).not.toBeInTheDocument();
+  });
+
   // F-queue-8 (shrunk): the row wires a DiffPill for the item — the pill's own
   // rendering, click-to-open, and card contents are specified once in
   // DiffPill.test.tsx (ADR 0014-style: shared leaf tested at its own seam).

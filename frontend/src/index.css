@@ -37,6 +37,12 @@
      objection), yet stays distinguishable from awaiting (--pr-open) and
      ready (--success-dot) in the Outgoing bar. */
   --discussion: #0d9488;
+  /* Screen hold — the robot objection's own violet (ADR 0022): a screen:<name>
+     chip must read differently from an amber rule/breaking chip at a glance,
+     and from the blue action family. */
+  --screen: #6d28d9;
+  --screen-dot: #7c3aed;
+  --screen-bg: rgba(124, 58, 237, 0.1);
 
   /* PR State bar — GitHub's own (Primer) lifecycle palette, used ONLY for the
      Approval Feed row's top bar. Kept distinct from --success/--error so the bar
@@ -109,6 +115,9 @@
     --error-bg: rgba(241, 115, 107, 0.13);
     --link: #7aa2f7;
     --discussion: #2dd4bf;
+    --screen: #b8a5f8;
+    --screen-dot: #a78bfa;
+    --screen-bg: rgba(167, 139, 250, 0.14);
     /* GitHub's dark-mode (Primer) lifecycle palette. */
     --pr-open: #3fb950;
     --pr-merged: #a371f7;
@@ -653,6 +662,57 @@ textarea:focus {
   height: 5px;
   border-radius: var(--radius-full);
   background: var(--error);
+}
+/* Screen-hold chip — the robot-objection marker on a queue row (ADR 0022):
+   violet, so a screen:<name> hold reads differently from an amber rule chip
+   at a glance. A disclosure button — clicking reveals the screen's prose
+   reasoning under the meta line. */
+.badge-screen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--screen-bg);
+  color: var(--screen);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--weight-medium);
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.badge-screen:hover {
+  filter: brightness(1.06);
+}
+.badge-screen .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--screen-dot);
+}
+/* The held row's prose reasoning — the screen's own words, one chip-click
+   away. flex-basis 100% wraps it onto its own line inside the meta row, so
+   the disclosure needs no layout surgery in the station. */
+.screen-prose {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--screen-dot);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--fg-2);
+  font-size: var(--text-xs);
+}
+.screen-prose p {
+  margin: 0;
+}
+.screen-prose strong {
+  color: var(--screen);
+  font-weight: var(--weight-semibold);
 }
 /* Unresolved-thread count — the In Discussion station's hold marker. Neutral,
    not error-toned: a discussion is a hold, not an objection (ADR 0019). */

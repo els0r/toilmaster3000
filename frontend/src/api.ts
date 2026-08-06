@@ -203,6 +203,12 @@ export async function disarmOutbound(number: number): Promise<void> {
 // an explicit human override.
 export type QueueItem = components["schemas"]["QueueItem"];
 
+// ScreenHold is one holding Screen on a screen-held queue entry: the screen's
+// user-facing name plus its verdict's prose reason — the reasoning behind the
+// row's screen:<name> chip (ADR 0022). Rule reasons XOR screen holds: a
+// rule-routed entry carries an empty list.
+export type ScreenHold = components["schemas"]["ScreenHold"];
+
 export async function fetchQueue(): Promise<QueueItem[]> {
   const resp = await fetch(`${API_BASE}/queue`);
   if (!resp.ok) {
