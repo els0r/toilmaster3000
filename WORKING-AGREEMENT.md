@@ -68,17 +68,37 @@ so the board always shows the true frontier of work.
 - **Default bundling: one issue per PR.** Smallest reviewable unit; matches the
   vertical-slice decomposition. Confirm bundling with the user before dispatching
   if a different split is on the table.
+- **Blocked-by gate — mechanical, before every dispatch.** Verify via `gh` that
+  every issue named in the sub-issue's "Blocked by" list is `CLOSED`.
+  Dispatching over an open blocker is a guardrail violation, not a judgment
+  call. Keep dependencies as native sub-issue relations so the check is
+  queryable, never parsed from prose.
 - **Parallelize independent issues.** Sub-issues sharing the same `blocked-by`
   (e.g. #4 ∥ #5) are dispatched concurrently in separate worktrees, with each
   brief **scoped off the others' files** to avoid collisions. Expect to rebase
   the second-merged branch.
-- **Briefs are self-contained.** A subagent has no session memory. Each brief
-  restates: the issue verbatim, prior decisions and their rationale, branch +
-  base, the build/verify gates, the commit convention, and the guardrails (§7).
-- **TDD is required.** Each implementer invokes `/tdd` and works
+- **Dispatch through the standing implementer agent**
+  (`.claude/agents/tm3k-implementer.md`). It carries the conventions,
+  guardrails, TDD evidence contract, token discipline, and report schema, and
+  points at `docs/implementer-primer.md` instead of the full doc set. Briefs
+  then carry only what is per-issue: the issue verbatim, scope fences, prior
+  decisions and their rationale, branch + base, and which ADR(s) to read.
+- **Model tiering.** The implementer defaults to a mid-tier model (its
+  frontmatter); the orchestrator upgrades a dispatch (per-call `model`
+  override) when the slice touches cross-cutting invariants (e.g. the funnel
+  partition), introduces a new seam, or is security-sensitive. §6's
+  independent gate rerun is the safety net that makes tiering safe: a slice
+  that fails verification is fixed forward or redispatched one tier up.
+- **TDD is required — and evidenced.** Each implementer invokes `/tdd` and works
   red→green→refactor in **vertical slices** (one test → minimal code → repeat),
   testing **behavior at the highest existing seam** (e.g. the cycle over
-  `github.Fake`, the `/pipeline` handler), never internals.
+  `github.Fake`, the `/pipeline` handler), never internals. The agent's report
+  must show, per behavior, the test observed red before its implementation;
+  reports without that evidence are rejected.
+- **The orchestrator does all GitHub I/O.** Implementers produce commits on
+  their feature branch and a report — nothing else. Push, PR, verification,
+  and merge never happen inside an implementation context, so no agent ever
+  reasons about the merge strategy; it is fed as data.
 
 ## 5. Conventions
 
@@ -99,6 +119,10 @@ summary is a claim, not evidence.
 
 - **Verify against facts, not prose.** Check the PR via `gh`: base `main`, head
   branch, `Closes #N` present, mergeable, files changed match the brief's scope.
+- **TDD scan.** Before opening the PR, scan `git log --stat` on the branch:
+  a commit introducing production code must carry (or follow) test changes in
+  the same package, and the report's per-AC test names must exist in the diff.
+  Failing either is a rejected report, not a style nit.
 - **Run the gates yourself**, on the PR branch in a throwaway worktree (cleaned
   up after). There is no CI, so this is the only gate:
   - `make test` (Go + frontend), `make check` (OpenAPI/type drift).
@@ -146,6 +170,12 @@ need a prompt. Ask when:
 - **A gate fails or a guardrail blocks the next step** — never search for a flag
   that bypasses it.
 - **Closing the parent PRD** and **filing follow-up issues** — your call.
+
+An interrupted implementer (session limit, crash) is **resumed, never
+redispatched fresh**: resuming reuses its transcript and worktree; a fresh
+dispatch pays full context re-establishment a second time. Verify the
+worktree's committed vs. uncommitted state first and tell the resumed agent
+exactly where it stood.
 
 ## 9. End-of-run checklist
 
