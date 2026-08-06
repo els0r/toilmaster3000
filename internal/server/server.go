@@ -143,6 +143,21 @@ type QueueItem struct {
 	Deletions    int      `json:"deletions"`
 	ChangedFiles int      `json:"changed_files"`
 	Reasons      []string `json:"reasons"`
+	// ScreenHolds is the prose behind a screen-held entry: one {screen, reason}
+	// per holding Screen, mirroring the screen:<name> entries in Reasons (chips
+	// stay chips; the AI's reasoning is one click away — ADR 0022). Empty on
+	// rule-routed entries: rule reasons XOR screen holds, disjoint by
+	// construction.
+	ScreenHolds []ScreenHold `json:"screen_holds"`
+}
+
+// ScreenHold is the wire shape of one holding Screen on a screen-held queue
+// entry: the screen's user-facing name and its verdict's prose reason.
+// Snake_case mirrors the engine's ScreenHold (ADR 0002 — deliberate
+// decoupling, not redundancy).
+type ScreenHold struct {
+	Screen string `json:"screen"`
+	Reason string `json:"reason"`
 }
 
 // cycleStatusToBody converts the engine's internal cycle status to its wire
@@ -185,6 +200,10 @@ func approvalToBody(a engine.Approval, state github.PRState) Approval {
 // queueItemToBody converts an engine QueueItem to its wire DTO. See ADR 0002
 // for why the engine type does not cross the boundary directly.
 func queueItemToBody(q engine.QueueItem) QueueItem {
+	holds := make([]ScreenHold, 0, len(q.ScreenHolds)) // [] not null on rule-routed entries
+	for _, h := range q.ScreenHolds {
+		holds = append(holds, ScreenHold{Screen: h.Screen, Reason: h.Reason})
+	}
 	return QueueItem{
 		Number:       q.Number,
 		Title:        q.Title,
@@ -195,6 +214,7 @@ func queueItemToBody(q engine.QueueItem) QueueItem {
 		Deletions:    q.Deletions,
 		ChangedFiles: q.ChangedFiles,
 		Reasons:      q.Reasons,
+		ScreenHolds:  holds,
 	}
 }
 
