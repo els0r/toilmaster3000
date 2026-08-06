@@ -137,6 +137,37 @@ func TestBuildScreenerConstructsScreensOverTheClaudeAdapter(t *testing.T) {
 	require.NotNil(t, s)
 }
 
+// buildNotifierRunner wires the AI Notifier species from validated hook
+// config (buildScreener's sibling): zero configured Notifiers must yield a
+// nil runner — bit-for-bit today's engine behavior, the fired-ledger not even
+// opened — and configured Notifiers must yield a firing runner.
+func TestBuildNotifierRunnerNilWithoutNotifiers(t *testing.T) {
+	firesPath := filepath.Join(t.TempDir(), "hookfires.jsonl")
+	r, err := buildNotifierRunner(hook.Config{}, "acme/widgets", firesPath)
+	require.NoError(t, err)
+	require.Nil(t, r)
+	require.NoFileExists(t, firesPath, "zero notifiers: the ledger is not opened, let alone written")
+}
+
+func TestBuildNotifierRunnerNilWithScreensOnly(t *testing.T) {
+	cfg := hook.Config{Screens: []hook.ScreenConfig{{
+		Spec: hook.Spec{ID: "s1", Name: "security", Harness: "claude", Prompt: "vet it", Enabled: true},
+	}}}
+	r, err := buildNotifierRunner(cfg, "acme/widgets", filepath.Join(t.TempDir(), "hookfires.jsonl"))
+	require.NoError(t, err)
+	require.Nil(t, r, "screens alone announce nothing — notifiers are the only runner input")
+}
+
+func TestBuildNotifierRunnerConstructsNotifiersOverTheClaudeAdapter(t *testing.T) {
+	cfg := hook.Config{Notifiers: []hook.NotifierConfig{{
+		Spec:  hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Prompt: "review it", Enabled: true},
+		Point: hook.QueueEntered,
+	}}}
+	r, err := buildNotifierRunner(cfg, "acme/widgets", filepath.Join(t.TempDir(), "hookfires.jsonl"))
+	require.NoError(t, err)
+	require.NotNil(t, r)
+}
+
 // The shipped example hook config must load through the real hook loader
 // (drift guard for field renames), and the security-screen prompt it
 // references must exist, signed off by the operator (#40).
@@ -154,6 +185,7 @@ func TestExampleHooksConfigLoads(t *testing.T) {
 	require.Equal(t, "claude", cfg.Screens[0].Harness)
 	require.Equal(t, ".config/security-screen-prompt.md", cfg.Screens[0].PromptFile)
 	require.NotEmpty(t, cfg.Screens[0].ID, "boot must self-heal an Id into the entry")
+
 }
 
 func TestSecurityScreenPromptIsSignedOff(t *testing.T) {

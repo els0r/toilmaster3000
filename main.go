@@ -40,14 +40,15 @@ import (
 var embeddedFrontend embed.FS
 
 const (
-	addr         = "localhost:8666"
-	statePath    = ".state/approvals.jsonl"
-	mergesPath   = ".state/merges.jsonl"
-	armedPath    = ".state/armed.json"
-	verdictsPath = ".state/verdicts.jsonl"
-	rulesPath    = ".config/rules.yaml"
-	settingsPath = ".config/settings.yaml"
-	hooksPath    = ".config/hooks.yaml"
+	addr          = "localhost:8666"
+	statePath     = ".state/approvals.jsonl"
+	mergesPath    = ".state/merges.jsonl"
+	armedPath     = ".state/armed.json"
+	verdictsPath  = ".state/verdicts.jsonl"
+	hookFiresPath = ".state/hookfires.jsonl"
+	rulesPath     = ".config/rules.yaml"
+	settingsPath  = ".config/settings.yaml"
+	hooksPath     = ".config/hooks.yaml"
 )
 
 // config is the resolved startup configuration: the candidate set (repo +
@@ -169,7 +170,7 @@ func run(ctx context.Context, cfg config) error {
 	// config refuses startup naming the offending hook; an absent file means
 	// no hooks; hooks missing an Id get one self-healed into the file.
 	// Configured Screens gate the engine's approvals via the screener below;
-	// Notifiers do not fire yet — the fired-ledger is a later slice.
+	// configured Notifiers announce the post-point facts via the runner.
 	hooks, err := hook.Load(hooksPath)
 	if err != nil {
 		return fmt.Errorf("load hooks: %w", err)
@@ -182,11 +183,16 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return fmt.Errorf("build screener: %w", err)
 	}
+	notifiers, err := buildNotifierRunner(hooks, cfg.repo, hookFiresPath)
+	if err != nil {
+		return fmt.Errorf("build notifier runner: %w", err)
+	}
 
 	eng, err := engine.New(client, statePath, mergesPath, rules, arms, screener)
 	if err != nil {
 		return fmt.Errorf("build engine: %w", err)
 	}
+	eng.SetNotifierRunner(notifiers)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -255,6 +261,34 @@ func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener
 		})
 	}
 	return hook.NewScreener(store, instances...), nil
+}
+
+// buildNotifierRunner assembles the engine's notification dependency from the
+// validated hook config — buildScreener's sibling: one AI Notifier species per
+// configured Notifier, all over the claude harness adapter's side-effect leg
+// (ADR 0023). repo is the configured candidate-set slug the species passes to
+// the agent (the engine leaves PRContext.Repo empty; the AIScreen precedent).
+// With zero configured Notifiers the runner is nil and the engine behaves
+// bit-for-bit as before Notifiers existed: the fired-ledger is not even
+// opened.
+func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.NotifierRunner, error) {
+	if len(hooks.Notifiers) == 0 {
+		return nil, nil
+	}
+	ledger, err := hook.NewFiredLedger(firesPath)
+	if err != nil {
+		return nil, fmt.Errorf("build fired-ledger: %w", err)
+	}
+	agent := harness.NewClaude()
+	instances := make([]hook.NotifierInstance, 0, len(hooks.Notifiers))
+	for _, nc := range hooks.Notifiers {
+		instances = append(instances, hook.NotifierInstance{
+			Spec:     nc.Spec,
+			Point:    nc.Point,
+			Notifier: harness.NewAINotifier(nc.Spec, repo, agent),
+		})
+	}
+	return hook.NewNotifierRunner(ledger, instances...), nil
 }
 
 // checkGhAuth verifies the gh CLI is installed and authenticated. It is the
