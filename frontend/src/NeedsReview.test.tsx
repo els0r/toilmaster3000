@@ -29,6 +29,7 @@ const item = (over: Partial<QueueItem> = {}): QueueItem => ({
   deletions: 12,
   changed_files: 3,
   reasons: ["breaking_change"],
+  screen_holds: [],
   ...over,
 });
 

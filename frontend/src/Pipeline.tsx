@@ -19,12 +19,12 @@ import {
   type RuleClass,
 } from "./ruleDraft";
 
-// SEGMENTS are the six terminal stages that partition Incoming, in funnel order
-// (top→bottom of the spine). Each has a stable class hook for its color and a
-// human label for the legend. The bar paints one stacked segment per non-zero
-// stage; the legend lists every stage's exact count. `count` pulls the stage's
-// figure from the snapshot — the itemized lists by length, the standing stages by
-// their count fields (ADR: the bar partitions on current standing).
+// SEGMENTS are the seven terminal stages that partition Incoming, in funnel
+// order (top→bottom of the spine). Each has a stable class hook for its color
+// and a human label for the legend. The bar paints one stacked segment per
+// non-zero stage; the legend lists every stage's exact count. `count` pulls the
+// stage's figure from the snapshot — the itemized lists by length, the standing
+// stages by their count fields (ADR: the bar partitions on current standing).
 const SEGMENTS: {
   key: string;
   label: string;
@@ -33,6 +33,7 @@ const SEGMENTS: {
   { key: "red", label: "pipeline red", count: (p) => len(p.dropped_red) },
   { key: "draft", label: "draft", count: (p) => len(p.dropped_draft) },
   { key: "staging", label: "staging", count: (p) => len(p.staging) },
+  { key: "screening", label: "screening", count: (p) => len(p.screening) },
   {
     key: "human-review",
     label: "human review",
@@ -126,6 +127,32 @@ function ApprovedElsewhere({ items }: { items: FunnelItem[] }) {
         ))}
       </div>
     </section>
+  );
+}
+
+// ScreeningStation renders the awaiting-verdict segment (ADR 0022) through the
+// shared StationCard: read-only PrRows whose meta names the screens still
+// pending for the PR's current head — it answers "why hasn't #123 gone
+// through?" and deliberately offers nothing to do (no re-run, no skip; a
+// verdict acts on the next cycle by itself). Screening is transient by design,
+// so the station is omitted entirely when empty (the approved-elsewhere
+// precedent) — with zero screens configured the funnel looks exactly as it did
+// before hooks existed. No heartbeat count either: actionable-signals-only.
+function ScreeningStation({ items }: { items: FunnelItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <StationCard
+      testid="screening"
+      title="Screening"
+      note="awaiting screen verdicts"
+      items={items}
+      emptyNote=""
+      renderMeta={(item) => (
+        <span className="pending-screens">
+          awaiting {(item.pending_screens ?? []).join(", ")}
+        </span>
+      )}
+    />
   );
 }
 
@@ -275,6 +302,9 @@ export function PipelineFunnel({
           {/* Staging — the funnel's third terminal bucket — is interactive: each
               eligible-but-uncovered PR carries the two rule-minting shortcuts. */}
           <StagingStation items={pipeline.staging ?? []} />
+          {/* Screening — the awaiting-verdict segment — sits between Staging and
+              Needs Human Review (the spine order of CONTEXT "Cycle Funnel"). */}
+          <ScreeningStation items={pipeline.screening ?? []} />
         </>
       )}
 

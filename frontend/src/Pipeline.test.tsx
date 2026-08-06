@@ -43,6 +43,7 @@ const funnelItem = (over: Partial<FunnelItem> = {}): FunnelItem => ({
   additions: 0,
   deletions: 0,
   changed_files: 0,
+  pending_screens: [],
   ...over,
 });
 
@@ -63,6 +64,7 @@ const pipeline = (over: Partial<Pipeline> = {}): Pipeline => ({
   dropped_red: [],
   dropped_draft: [],
   staging: [],
+  screening: [],
   approved_elsewhere: [],
   needs_human_review: 0,
   approved_by_tm3k: 0,
@@ -228,6 +230,7 @@ describe("Pipeline funnel — stations 4 & 5 reuse + approved-elsewhere", () => 
       deletions: 1,
       changed_files: 1,
       reasons: ["breaking_change"],
+      screen_holds: [],
     };
     render(
       <PipelineFunnel
@@ -413,6 +416,61 @@ describe("Pipeline funnel — Staging", () => {
 
     const card = screen.getByTestId("staging");
     expect(within(card).getByText(/every eligible PR is covered/i)).toBeInTheDocument();
+  });
+});
+
+describe("Pipeline funnel — Screening", () => {
+  const screeningItem = (over: Partial<FunnelItem> = {}) =>
+    funnelItem({
+      number: 88,
+      title: "chore(deps): bump lib",
+      title_parts: {
+        type: "chore",
+        scopes: ["deps"],
+        breaking: false,
+        description: "bump lib",
+      },
+      author: "dep-bot",
+      url: "https://github.com/o/r/pull/88",
+      pending_screens: ["security", "license"],
+      ...over,
+    });
+
+  // A screening row answers "why hasn't #88 gone through?": the shared PrRow
+  // (title parts, author, GitHub link) plus the pending screens by name. It is
+  // deliberately read-only — no re-run, no skip, nothing to do here (ADR 0022).
+  it("renders a read-only screening row naming its pending screens", () => {
+    renderFunnel({ incoming: 1, screening: [screeningItem()] });
+
+    const card = screen.getByTestId("screening");
+    expect(within(card).getByText("Bump lib")).toBeInTheDocument();
+    expect(within(card).getByText("dep-bot", { exact: false })).toBeInTheDocument();
+    expect(within(card).getByText(/awaiting security, license/)).toBeInTheDocument();
+    const link = within(card).getByRole("link", { name: /#88/ });
+    expect(link).toHaveAttribute("href", "https://github.com/o/r/pull/88");
+    expect(within(card).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  // Screening is transient by design: with nothing awaiting a verdict (the
+  // common case, and always with zero screens configured) the station is
+  // omitted entirely — the approved-elsewhere precedent, no empty placeholder.
+  it("omits the station entirely when nothing is screening", () => {
+    renderFunnel({ incoming: 0 });
+
+    expect(screen.queryByTestId("screening")).not.toBeInTheDocument();
+  });
+
+  // The Incoming legend carries the screening segment's exact count — the
+  // partition is shown in full, zeros included.
+  it("shows the screening segment count in the Incoming legend", () => {
+    renderFunnel({
+      incoming: 2,
+      screening: [screeningItem(), screeningItem({ number: 89 })],
+    });
+
+    expect(
+      within(screen.getByTestId("legend-screening")).getByText("2"),
+    ).toBeInTheDocument();
   });
 });
 

@@ -1867,6 +1867,9 @@ textarea:focus {
 .dist-seg-staging {
   background: var(--attn-solid);
 }
+.dist-seg-screening {
+  background: var(--discussion);
+}
 .dist-seg-human-review {
   background: var(--action-solid);
 }

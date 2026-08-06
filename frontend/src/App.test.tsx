@@ -84,6 +84,7 @@ const queueItem = (n: number): QueueItem => ({
   deletions: 12,
   changed_files: 3,
   reasons: ["breaking_change"],
+  screen_holds: [],
 });
 
 const emptyPipeline: Pipeline = {
@@ -91,6 +92,7 @@ const emptyPipeline: Pipeline = {
   dropped_red: [],
   dropped_draft: [],
   staging: [],
+  screening: [],
   approved_elsewhere: [],
   needs_human_review: 0,
   approved_by_tm3k: 0,
@@ -105,6 +107,7 @@ const funnelItem = (n: number): FunnelItem => ({
   author: "dana",
   url: `https://github.com/o/r/pull/${n}`,
   failing_checks: 0,
+  pending_screens: [],
   additions: 0,
   deletions: 0,
   changed_files: 0,
