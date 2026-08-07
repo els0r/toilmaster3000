@@ -108,11 +108,15 @@ lacks.
   it threads hook config into `internal/github`, which knows nothing about
   hooks, to save ~0.7s on a multi-minute cycle — "the `gh` seam only decodes;
   never let it grow an opinion".
-- **A `Skills:` field on `Spec`.** Rejected: skills are a claude-harness
-  concept with no copilot equivalent, so the field would be silently inert for
-  half the harness allowlist — exactly the boundary ADR 0023 draws. Skill
-  delegation belongs in the prompt file, which is already the harness-coupling
-  escape hatch.
+- **A `Skills:` field on `Spec`.** Rejected — but **the stated reason was wrong
+  and is corrected by ADR 0027**. It read "skills are a claude-harness concept
+  with no copilot equivalent, so the field would be silently inert for half the
+  harness allowlist". Copilot v1.0.78 has skills: a `skill` subcommand, a
+  resolution mechanism, and project discovery from `.github/skills/`,
+  `.agents/skills/`, and `.claude/skills/`. The rejection stands on the
+  surviving reason alone: skill delegation belongs in the prompt, which is
+  already the harness-coupling escape hatch — and what a hook needs from tm3k is
+  a working directory (ADR 0027), not a skill list.
 
 ## Consequences
 
@@ -135,7 +139,11 @@ lacks.
   Skill tool even under `--allowedTools "Bash(gh:*)"` (verified), so a
   `.config/go-review-prompt.md` can name `go-style`/`go-testing` instead of
   restating them — one source of truth for review criteria. Documented in the
-  examples only, and claude-harness-specific: copilot reads it as inert prose.
+  examples only. (**Corrected by ADR 0027**: the original line called this
+  claude-harness-specific and said "copilot reads it as inert prose". Copilot
+  resolves skills too. What both harnesses need is a working directory to
+  discover them from — the delegation is not harness-specific, only its
+  spelling is.)
 - **A valid pattern that matches nothing real** (`*.golang`) stays silently
   non-firing. The boot preflight catches malformed patterns and the gitignore
   normalisation catches the common trap; the semantic residue is left to a

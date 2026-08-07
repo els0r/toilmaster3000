@@ -40,6 +40,14 @@ self-updates mid-run.
    `--available-tools=__none__` — the judge parity of claude's toolless
    screen run. (Bare `--available-tools` and `--available-tools=` are no-ops
    on v1.0.78; a match-nothing name is the reliable spelling of "no tools".)
+   (**Amended by ADR 0027**: all three flags stand on every leg, but a
+   *Notifier* may name a `WorkDir` — the harness process's working directory.
+   `--no-custom-instructions` disables `AGENTS.md`, **not** skills, so ambient
+   instructions stay off while skills discovered from that directory come on.
+   The directory is also the run's read ceiling: reads are ambient within cwd
+   on both harnesses, while shell and writes stay gated by the tool allowlist.
+   The toolless screen leg has no skill-resolution mechanism at all, and no
+   Screen can carry a `WorkDir`.)
 5. **The act leg's authority is exactly the gh shell.** `--allow-tool
    "shell(gh:*)"` — the analog of the claude leg's `Bash(gh:*)`: one action
    channel matching the composed prompt's instructions, posting as the same
