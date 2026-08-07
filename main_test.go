@@ -355,17 +355,24 @@ func TestBashReviewPromptCarriesCeilingAndUntrustedReminder(t *testing.T) {
 }
 
 // Both review-assist prompts may delegate their criteria to Skills instead of
-// restating them — one source of truth for review standards (ADR 0026). The
-// note must be flagged claude-harness-specific: a copilot run reads it as
-// inert prose, which is exactly why this lives in the prompt file and not as a
-// Spec field that would be silently inert for half the harness allowlist.
-func TestReviewPromptsFlagSkillDelegationAsHarnessSpecific(t *testing.T) {
+// restating them — one source of truth for review standards (ADR 0026). What
+// the delegation depends on is the ANCHOR, not the harness: both CLIs discover
+// skills from the directory their run is anchored in, so the note must send the
+// operator to WorkDir (ADR 0027). It stays in the prompt file rather than
+// becoming a Spec field because only the spelling is harness-specific, and the
+// prompt is where harness coupling belongs.
+func TestReviewPromptsSendSkillDelegationToWorkDir(t *testing.T) {
 	for _, path := range []string{"examples/go-review-prompt.md", "examples/bash-review-prompt.md"} {
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
 		prompt := string(data)
 		require.Contains(t, prompt, "Skill", path+": the delegation option is documented where the operator edits")
-		require.Contains(t, prompt, "claude-harness-specific", path+": and flagged as harness-specific, not portable")
+		require.Contains(t, prompt, "WorkDir", path+": and names the anchor it actually depends on")
+		// The corrected claim, pinned: delegation is not a claude-only property.
+		// ADR 0027 records that copilot v1.0.78 resolves skills too; this test
+		// previously enforced the false wording it replaced.
+		require.NotContains(t, prompt, "claude-harness-specific",
+			path+": skill delegation is not harness-specific — only its spelling is (ADR 0027)")
 	}
 }
 
