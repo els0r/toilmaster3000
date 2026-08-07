@@ -104,12 +104,15 @@ func (e *Engine) reconcileArmed(ob Outbound) {
 	keep := make(map[int]bool, ob.Outgoing())
 	changesRequested := map[int]bool{}
 	for stage, items := range ob {
+		// The rule's unit is the STAGE, so it is asked once per stage: every PR
+		// in an armable stage is kept, every PR in a non-armable one is a
+		// level-triggered disarm (and is named as such in the log below).
+		bucket := keep
+		if !armable(stage) {
+			bucket = changesRequested
+		}
 		for _, it := range items {
-			if armable(stage) {
-				keep[it.Number] = true
-			} else {
-				changesRequested[it.Number] = true
-			}
+			bucket[it.Number] = true
 		}
 	}
 
