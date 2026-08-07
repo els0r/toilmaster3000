@@ -115,6 +115,59 @@ func neverMoreCalls(t *testing.T, n *stubNotifier, want int, msg string) {
 // every cycle and a restart rebuilds everything, but the persisted fired-
 // ledger holds the line (AC 1). The context carries the point, the PR, and
 // the queue reasons.
+// EN1b: the cycle carries the PR's changed-file paths and true file count into
+// the hook payload (ADR 0026) — the scope axis rides the batched inbound fetch,
+// so a scoped Notifier can select itself without any per-PR call of its own.
+// Both are needed: the paths to match, the count to detect gh's 100-file cap.
+func TestQueueEnteredCarriesTheChangedFilePathsToTheHook(t *testing.T) {
+	n := &stubNotifier{}
+	pr := github.PR{
+		Number: 13, Title: "docs: gate me", Author: "ann", URL: "u13", Checks: green(), HeadSHA: "head-1",
+		ChangedFiles: 2, Files: []string{"docs/adr/0026-notifier-scope.md", "internal/hook/scope.go"},
+	}
+	eng, _ := notifierEngine(t, hook.NewNotifierRunner(
+		firesLedger(t, filepath.Join(t.TempDir(), "hookfires.jsonl")),
+		notifierInstance("id-ra", "review assist", hook.QueueEntered, n)), pr)
+
+	eng.RunCycleOnce(context.Background())
+
+	awaitNotified(t, n, 1)
+	got := n.callContexts()[0]
+	require.Equal(t, []string{"docs/adr/0026-notifier-scope.md", "internal/hook/scope.go"}, got.Files,
+		"the changed-file paths of the batched fetch reach the hook payload")
+	require.Equal(t, 2, got.ChangedFiles, "beside the true count, so truncation stays detectable")
+}
+
+// EN1c: a scoped Notifier selects itself inside a real cycle. Both directions
+// ride on the payload the engine populates: the Go reviewer runs on the queued
+// PR carrying Go files and stays silent on the docs-only one, keeping that
+// PR's once-per-PR fire unspent (ADR 0026 decision 3) rather than spending it
+// on a review of nothing.
+func TestScopedNotifierSelectsItselfPerQueuedPR(t *testing.T) {
+	n := &stubNotifier{}
+	ledger := firesLedger(t, filepath.Join(t.TempDir(), "hookfires.jsonl"))
+	inst := notifierInstance("id-go", "go review assist", hook.QueueEntered, n)
+	inst.Scope = hook.NewScope([]string{"*.go"})
+	docsOnly := github.PR{
+		Number: 14, Title: "docs: gate me", Author: "ann", URL: "u14", Checks: green(), HeadSHA: "h14",
+		ChangedFiles: 1, Files: []string{"README.md"},
+	}
+	withGo := github.PR{
+		Number: 15, Title: "docs: gate me too", Author: "bob", URL: "u15", Checks: green(), HeadSHA: "h15",
+		ChangedFiles: 2, Files: []string{"README.md", "internal/hook/scope.go"},
+	}
+	eng, _ := notifierEngine(t, hook.NewNotifierRunner(ledger, inst), docsOnly, withGo)
+
+	eng.RunCycleOnce(context.Background())
+	require.Len(t, eng.Queue(), 2, "both PRs are queued; only the Notifier selects")
+
+	awaitNotified(t, n, 1)
+	require.Equal(t, 15, n.callContexts()[0].Number, "only the PR carrying Go code is reviewed")
+	require.True(t, ledger.Fired("id-go", 15))
+	neverMoreCalls(t, n, 1, "a Go reviewer never comments on a docs-only PR")
+	require.False(t, ledger.Fired("id-go", 14), "its fire stays unspent for the day that PR grows Go code")
+}
+
 func TestQueueEnteredFiresOnceEverAcrossCyclesAndRestart(t *testing.T) {
 	ledgerPath := filepath.Join(t.TempDir(), "hookfires.jsonl")
 	n := &stubNotifier{}
@@ -262,6 +315,33 @@ func TestPostApproveFiresOnManualOverrideWithManualFlag(t *testing.T) {
 	// The next cycle sees the PR as a standing dedup member — no re-announce.
 	eng.RunCycleOnce(context.Background())
 	neverMoreCalls(t, n, 1, "one approval, one announcement")
+}
+
+// EN3c: the manual-override announcement is built from the queue item, which
+// carries the PR's file COUNT but not its paths — the engine genuinely does not
+// know a manual override's file list. That is unknown scope, and unknown scope
+// FIRES (ADR 0026 decision 5): a scoped Notifier announces the override rather
+// than silently declining every one of them. The count is carried precisely so
+// the fold reads the absence as unknown, not as "no files matched".
+func TestPostApproveOnManualOverrideFiresOnUnknownScope(t *testing.T) {
+	dir := t.TempDir()
+	n := &stubNotifier{}
+	inst := notifierInstance("id-pa", "go approval ping", hook.PostApprove, n)
+	inst.Scope = hook.NewScope([]string{"*.go"})
+	runner := hook.NewNotifierRunner(firesLedger(t, filepath.Join(dir, "hookfires.jsonl")), inst)
+	pr := github.PR{
+		Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "h12",
+		ChangedFiles: 3, Files: []string{"README.md", "docs/a.md", "docs/b.md"},
+	}
+	eng, _ := notifierEngine(t, runner, pr)
+
+	eng.RunCycleOnce(context.Background())
+	require.NoError(t, eng.ApproveManually(context.Background(), 12))
+
+	awaitNotified(t, n, 1)
+	got := n.callContexts()[0]
+	require.True(t, got.Manual)
+	require.Equal(t, 3, got.ChangedFiles, "the count rides so the absent path list reads as unknown, not as no-match")
 }
 
 // EN4: a Notifier can never block, divert, or reorder an engine action (AC 4):

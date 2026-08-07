@@ -382,14 +382,20 @@ func (e *Engine) ApproveManually(ctx context.Context, number int) error {
 		// ok==false means a racing cycle won and already announced: the
 		// approval is one fact, so it fires once. Fired outside every lock,
 		// after the snapshots settled — never able to block or reorder.
+		// The queue item carries the PR's file COUNT but not its paths, so a
+		// scoped Notifier reads this payload as UNKNOWN scope — and unknown
+		// scope fires (ADR 0026). Carrying the count is what makes the absent
+		// list read as unknown instead of as "no file matched", which would
+		// silently mute every scoped Notifier on every manual override.
 		e.fireNotifiers(ctx, hook.PRContext{
-			Point:   hook.PostApprove,
-			Number:  item.Number,
-			Title:   item.Title,
-			Author:  item.Author,
-			URL:     item.URL,
-			Reasons: item.Reasons,
-			Manual:  true,
+			Point:        hook.PostApprove,
+			Number:       item.Number,
+			Title:        item.Title,
+			Author:       item.Author,
+			URL:          item.URL,
+			ChangedFiles: item.ChangedFiles,
+			Reasons:      item.Reasons,
+			Manual:       true,
 		})
 	}
 	return nil
@@ -624,13 +630,15 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 			// The queue re-presents this entry every cycle; the fired-ledger
 			// makes the announcement once-per-PR-ever.
 			e.fireNotifiers(ctx, hook.PRContext{
-				Point:   hook.QueueEntered,
-				Number:  pr.Number,
-				Title:   pr.Title,
-				Author:  pr.Author,
-				URL:     pr.URL,
-				HeadSHA: pr.HeadSHA,
-				Reasons: reasons,
+				Point:        hook.QueueEntered,
+				Number:       pr.Number,
+				Title:        pr.Title,
+				Author:       pr.Author,
+				URL:          pr.URL,
+				HeadSHA:      pr.HeadSHA,
+				Files:        pr.Files,
+				ChangedFiles: pr.ChangedFiles,
+				Reasons:      reasons,
 			})
 			continue
 		}
@@ -653,12 +661,14 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 		// fall-through, bit-for-bit pre-screening behavior.
 		if e.screener != nil {
 			disp := e.screener.Consult(ctx, hook.PRContext{
-				Point:   hook.PreApprove,
-				Number:  pr.Number,
-				Title:   pr.Title,
-				Author:  pr.Author,
-				URL:     pr.URL,
-				HeadSHA: pr.HeadSHA,
+				Point:        hook.PreApprove,
+				Number:       pr.Number,
+				Title:        pr.Title,
+				Author:       pr.Author,
+				URL:          pr.URL,
+				HeadSHA:      pr.HeadSHA,
+				Files:        pr.Files,
+				ChangedFiles: pr.ChangedFiles,
 			})
 			if len(disp.Holds) > 0 {
 				// A screen held: divert to Needs-Human-Review carrying EVERY
@@ -676,13 +686,15 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 				// hold (ADR 0022) — never queue_entered: the event split is
 				// what keeps a review-assist off just-screened PRs (ADR 0021).
 				e.fireNotifiers(ctx, hook.PRContext{
-					Point:   hook.ScreenHeld,
-					Number:  pr.Number,
-					Title:   pr.Title,
-					Author:  pr.Author,
-					URL:     pr.URL,
-					HeadSHA: pr.HeadSHA,
-					Reasons: qi.Reasons,
+					Point:        hook.ScreenHeld,
+					Number:       pr.Number,
+					Title:        pr.Title,
+					Author:       pr.Author,
+					URL:          pr.URL,
+					HeadSHA:      pr.HeadSHA,
+					Files:        pr.Files,
+					ChangedFiles: pr.ChangedFiles,
+					Reasons:      qi.Reasons,
 				})
 				continue
 			}
@@ -713,13 +725,15 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 			// a fact; a failed approve fired nothing above and retries next
 			// cycle, announcing once on the success (ADR 0021).
 			e.fireNotifiers(ctx, hook.PRContext{
-				Point:   hook.PostApprove,
-				Number:  pr.Number,
-				Title:   pr.Title,
-				Author:  pr.Author,
-				URL:     pr.URL,
-				HeadSHA: pr.HeadSHA,
-				Manual:  false,
+				Point:        hook.PostApprove,
+				Number:       pr.Number,
+				Title:        pr.Title,
+				Author:       pr.Author,
+				URL:          pr.URL,
+				HeadSHA:      pr.HeadSHA,
+				Files:        pr.Files,
+				ChangedFiles: pr.ChangedFiles,
+				Manual:       false,
 			})
 		}
 	}
