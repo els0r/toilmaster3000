@@ -56,6 +56,27 @@ func TestAIScreenRealizesTheScreenKindFromItsSpec(t *testing.T) {
 	}, got)
 }
 
+// TestAIScreenNeverAnchorsItsRun is the second of decision 2's two
+// enforcements (ADR 0027): ScreenConfig has no field to declare an anchor, AND
+// the Screen species has no code path that would carry one — NewAIScreen takes
+// no working directory, so every Request it issues leaves WorkDir empty and
+// every screen run keeps cmd.Dir = "". A Screen judged against a mutable,
+// unversioned tree could disagree with itself over the same PR head for
+// reasons no ledger records, and a gate whose input is not reproducible is not
+// a gate.
+func TestAIScreenNeverAnchorsItsRun(t *testing.T) {
+	spec := hook.Spec{ID: "s1", Name: "security", Harness: "copilot", Prompt: "look closely"}
+	var got Request
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(_ context.Context, req Request) (hook.Verdict, error) {
+		got = req
+		return hook.Verdict{Outcome: hook.Proceed}, nil
+	}))
+
+	_, err := screen.Screen(context.Background(), prCtx())
+	require.NoError(t, err)
+	require.Empty(t, got.WorkDir)
+}
+
 func TestAIScreenReadsPromptFileAtRunTime(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "prompt.md")
 	require.NoError(t, os.WriteFile(path, []byte("first version"), 0o644))

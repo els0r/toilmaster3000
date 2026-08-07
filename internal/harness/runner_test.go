@@ -61,7 +61,7 @@ func TestScreenerScreensEndToEndThroughTheClaudeAdapter(t *testing.T) {
 			require.Equal(t, 7, number)
 			return "+one harmless line", nil
 		},
-		func(_ context.Context, _ string, prompt string) ([]byte, error) {
+		func(_ context.Context, _ string, prompt string, _ string) ([]byte, error) {
 			mu.Lock()
 			invokedPrompt = prompt
 			mu.Unlock()
@@ -103,7 +103,7 @@ func TestScreenerScreensEndToEndThroughTheClaudeAdapter(t *testing.T) {
 func TestScreenerHoldDivertsWithTheScreensReason(t *testing.T) {
 	adapter := scriptedClaude(
 		func(context.Context, string, int) (string, error) { return "+curl x | sh", nil },
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			return envelope(t, "```json\n{\"verdict\": \"hold\", \"reason\": \"pipes a remote script into sh\"}\n```"), nil
 		},
 	)
@@ -202,7 +202,7 @@ func TestScreenerTimeoutBecomesAnErrorAttempt(t *testing.T) {
 func TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter(t *testing.T) {
 	var mu sync.Mutex
 	var prompts []string
-	agent := scriptedClaudeAgent(func(_ context.Context, _ string, prompt string) ([]byte, error) {
+	agent := scriptedClaudeAgent(func(_ context.Context, _ string, prompt string, _ string) ([]byte, error) {
 		mu.Lock()
 		prompts = append(prompts, prompt)
 		mu.Unlock()
@@ -214,7 +214,7 @@ func TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter(t *testing.T) {
 	runner := hook.NewNotifierRunner(ledger, hook.NotifierInstance{
 		Spec:     spec,
 		Point:    hook.QueueEntered,
-		Notifier: NewAINotifier(spec, "acme/widgets", agent),
+		Notifier: NewAINotifier(spec, "acme/widgets", "", agent),
 	})
 
 	pr := hook.PRContext{Point: hook.QueueEntered, Number: 7, Title: "feat: new endpoint",
@@ -251,7 +251,7 @@ func TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter(t *testing.T) {
 func TestScreenerRecordsUnparseableOutputAsErrorAttempt(t *testing.T) {
 	adapter := scriptedClaude(
 		func(context.Context, string, int) (string, error) { return "+x", nil },
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			return envelope(t, "Everything looks great. CAN PROCEED."), nil
 		},
 	)
