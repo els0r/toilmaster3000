@@ -303,10 +303,24 @@ func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.Notif
 	if len(hooks.Notifiers) == 0 {
 		return nil, nil
 	}
+	instances, err := notifierInstances(hooks, repo)
+	if err != nil {
+		return nil, err
+	}
 	ledger, err := hook.NewFiredLedger(firesPath)
 	if err != nil {
 		return nil, fmt.Errorf("build fired-ledger: %w", err)
 	}
+	return hook.NewNotifierRunner(ledger, instances...), nil
+}
+
+// notifierInstances translates validated Notifier config into the units the
+// runner fires: one AI Notifier species per entry over the adapter its Harness
+// names, and its Paths compiled into a Scope. The compile happens HERE, once at
+// boot — a Scope normalises its patterns at construction, never per match
+// (ADR 0026). Scope rides the instance rather than the Spec because it exists
+// on the Notifier kind alone.
+func notifierInstances(hooks hook.Config, repo string) ([]hook.NotifierInstance, error) {
 	instances := make([]hook.NotifierInstance, 0, len(hooks.Notifiers))
 	for _, nc := range hooks.Notifiers {
 		agent, err := harnessFor(nc.Harness)
@@ -316,10 +330,11 @@ func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.Notif
 		instances = append(instances, hook.NotifierInstance{
 			Spec:     nc.Spec,
 			Point:    nc.Point,
+			Scope:    hook.NewScope(nc.Paths),
 			Notifier: harness.NewAINotifier(nc.Spec, repo, agent),
 		})
 	}
-	return hook.NewNotifierRunner(ledger, instances...), nil
+	return instances, nil
 }
 
 // checkHarnessBinaries verifies the harness CLI behind every enabled hook is

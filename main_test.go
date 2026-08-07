@@ -216,6 +216,37 @@ func TestBuildNotifierRunnerConstructsNotifiersOverTheClaudeAdapter(t *testing.T
 	require.NotNil(t, r)
 }
 
+// A Notifier's configured Paths must reach the instance the runner fires, and
+// be compiled into its Scope ONCE here at boot — not re-normalised per match
+// (ADR 0026). Scope lives on the instance rather than the Spec because it
+// exists on this kind only. The nested-file assertion is the proof the
+// gitignore normalisation ran: an unnormalised "*.go" matches main.go but not
+// internal/hook/scope.go.
+func TestNotifierInstancesCompilePathsIntoScope(t *testing.T) {
+	cfg := hook.Config{Notifiers: []hook.NotifierConfig{
+		{
+			Spec:  hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Prompt: "review it", Enabled: true},
+			Point: hook.QueueEntered,
+			Paths: []string{"*.go"},
+		},
+		{
+			Spec:  hook.Spec{ID: "n2", Name: "cross-cutting review", Harness: "claude", Prompt: "review it", Enabled: true},
+			Point: hook.QueueEntered,
+		},
+	}}
+
+	instances, err := notifierInstances(cfg, "acme/widgets")
+	require.NoError(t, err)
+	require.Len(t, instances, 2)
+
+	require.True(t, instances[0].Scope.Matches([]string{"internal/hook/scope.go"}, 1),
+		"the configured Paths reach the instance, gitignore-normalised at load")
+	require.False(t, instances[0].Scope.Matches([]string{"README.md"}, 1),
+		"and gate it: a docs-only PR is out of scope")
+	require.True(t, instances[1].Scope.Matches([]string{"README.md"}, 1),
+		"a Notifier without Paths stays unscoped and fires on every PR")
+}
+
 // The shipped example hook config must load through the real hook loader
 // (drift guard for field renames), and the security-screen prompt it
 // references must exist, signed off by the operator (#40).
@@ -234,17 +265,31 @@ func TestExampleHooksConfigLoads(t *testing.T) {
 	require.Equal(t, ".config/security-screen-prompt.md", cfg.Screens[0].PromptFile)
 	require.NotEmpty(t, cfg.Screens[0].ID, "boot must self-heal an Id into the entry")
 
-	// The example Notifier entry: the Go review-assist, attached to
-	// queue_entered (the review-assist's home, ADR 0021) and shipped disabled
-	// — enabling it is the operator's explicit act, after reviewing the
-	// prompt it references.
-	require.Len(t, cfg.Notifiers, 1)
-	n := cfg.Notifiers[0]
-	require.Equal(t, "claude", n.Harness)
-	require.Equal(t, hook.QueueEntered, n.Point)
-	require.Equal(t, ".config/go-review-prompt.md", n.PromptFile)
-	require.False(t, n.Enabled, "the example ships opt-in: disabled until the operator reviews and flips it")
-	require.NotEmpty(t, n.ID, "boot must self-heal an Id into the entry")
+	// The example Notifier entries: two language-keyed review-assists sharing
+	// queue_entered (the review-assist's home, ADR 0021), each scoped to its
+	// own language by Paths — the polyglot case scope exists for (ADR 0026),
+	// demonstrated as N flat siblings rather than one composing hook. Both ship
+	// disabled: enabling is the operator's explicit act, after reviewing the
+	// prompt each references.
+	require.Len(t, cfg.Notifiers, 2)
+	for _, n := range cfg.Notifiers {
+		require.Equal(t, "claude", n.Harness)
+		require.Equal(t, hook.QueueEntered, n.Point)
+		require.False(t, n.Enabled, "the example ships opt-in: disabled until the operator reviews and flips it")
+		require.NotEmpty(t, n.ID, "boot must self-heal an Id into the entry")
+		require.NotEmpty(t, n.Paths, "each language reviewer declares the scope it applies to")
+	}
+	require.Equal(t, ".config/go-review-prompt.md", cfg.Notifiers[0].PromptFile)
+	require.Equal(t, ".config/bash-review-prompt.md", cfg.Notifiers[1].PromptFile)
+
+	// The scopes select their own language and decline the other's PR — the
+	// example must demonstrate working selection, not just carry the field.
+	goScope := hook.NewScope(cfg.Notifiers[0].Paths)
+	shScope := hook.NewScope(cfg.Notifiers[1].Paths)
+	require.True(t, goScope.Matches([]string{"internal/hook/scope.go"}, 1))
+	require.False(t, goScope.Matches([]string{"scripts/release.sh"}, 1))
+	require.True(t, shScope.Matches([]string{"scripts/release.sh"}, 1))
+	require.False(t, shScope.Matches([]string{"internal/hook/scope.go"}, 1))
 }
 
 // The shipped Go review-assist prompt must carry the authority ceiling and
@@ -260,6 +305,33 @@ func TestGoReviewPromptCarriesCeilingAndUntrustedReminder(t *testing.T) {
 	require.Contains(t, prompt, "never approve", "the ceiling is stated where the operator will edit")
 	require.Contains(t, prompt, "never merge")
 	require.Contains(t, prompt, "untrusted", "the prompt must remind the assist the PR content is untrusted data")
+}
+
+// The bash review-assist prompt is the Go one's sibling — the second half of
+// the polyglot example — and carries the same operator-visible contract.
+func TestBashReviewPromptCarriesCeilingAndUntrustedReminder(t *testing.T) {
+	data, err := os.ReadFile("examples/bash-review-prompt.md")
+	require.NoError(t, err)
+	prompt := string(data)
+	require.Contains(t, prompt, "review before enabling", "the example is explicit opt-in: the operator reviews it first")
+	require.Contains(t, prompt, "never approve", "the ceiling is stated where the operator will edit")
+	require.Contains(t, prompt, "never merge")
+	require.Contains(t, prompt, "untrusted", "the prompt must remind the assist the PR content is untrusted data")
+}
+
+// Both review-assist prompts may delegate their criteria to Skills instead of
+// restating them — one source of truth for review standards (ADR 0026). The
+// note must be flagged claude-harness-specific: a copilot run reads it as
+// inert prose, which is exactly why this lives in the prompt file and not as a
+// Spec field that would be silently inert for half the harness allowlist.
+func TestReviewPromptsFlagSkillDelegationAsHarnessSpecific(t *testing.T) {
+	for _, path := range []string{"examples/go-review-prompt.md", "examples/bash-review-prompt.md"} {
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		prompt := string(data)
+		require.Contains(t, prompt, "Skill", path+": the delegation option is documented where the operator edits")
+		require.Contains(t, prompt, "claude-harness-specific", path+": and flagged as harness-specific, not portable")
+	}
 }
 
 func TestSecurityScreenPromptIsSignedOff(t *testing.T) {
