@@ -211,9 +211,11 @@ type Engine struct {
 	merges []Merge
 	queue  []QueueItem // live Needs-Human-Review snapshot, recomputed each cycle
 	funnel Funnel      // live Cycle Funnel snapshot, recomputed each cycle
-	// outbound is the live outbound funnel snapshot (the authored direction),
+	// outbound is the live outbound funnel partition (the authored direction),
 	// recomputed each cycle from its OWN list call and cleared when that call
-	// fails — see outbound.go.
+	// fails — see outbound.go. Initialised non-nil by New, so the no-cycle-yet
+	// and populated states have identical write semantics and the merge prune
+	// never depends on an early return as an accidental nil-map guard.
 	outbound Outbound
 	// prStates is the live GitHub lifecycle of feed PRs, keyed by number. It is
 	// volatile and NEVER persisted (the approvals.jsonl record is the frozen
@@ -245,6 +247,7 @@ func New(client github.GitHubClient, statePath, mergesPath string, rules *rule.S
 		screener:     screener,
 		logger:       slog.Default(),
 		dedup:        map[int]bool{},
+		outbound:     Outbound{},
 		prStates:     map[int]github.PRState{},
 		status:       Status{Outcome: "never_run"},
 		pollInterval: DefaultPollInterval,
@@ -467,16 +470,8 @@ func (e *Engine) trackedChangedFiles(number int) (int, bool) {
 			return s.ChangedFiles, true
 		}
 	}
-	for _, stage := range [][]OutboundItem{
-		e.outbound.Draft, e.outbound.Red, e.outbound.Running,
-		e.outbound.ChangesRequested, e.outbound.AwaitingApproval,
-		e.outbound.InDiscussion, e.outbound.Ready,
-	} {
-		for _, o := range stage {
-			if o.Number == number {
-				return o.ChangedFiles, true
-			}
-		}
+	if it, _, ok := e.outbound.find(number); ok {
+		return it.ChangedFiles, true
 	}
 	return 0, false
 }

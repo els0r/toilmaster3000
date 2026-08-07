@@ -3,6 +3,8 @@ package engine
 import (
 	"errors"
 	"fmt"
+
+	"github.com/els0r/toilmaster3000/internal/github"
 )
 
 // ErrNotInOutbound is returned by Arm when the given PR number is not in the
@@ -22,11 +24,11 @@ var ErrChangesRequested = errors.New("pr has changes requested; arming is reject
 // Changes Requested stage → ErrChangesRequested (the arm endpoint's 4xx). The
 // arm is persisted immediately, so it survives restarts and new pushes.
 func (e *Engine) Arm(number int) error {
-	inSnapshot, changesRequested := e.outboundStanding(number)
+	stage, inSnapshot := e.outboundStage(number)
 	if !inSnapshot {
 		return fmt.Errorf("%w: #%d", ErrNotInOutbound, number)
 	}
-	if changesRequested {
+	if stage == github.OutboundStageChangesRequested {
 		return fmt.Errorf("%w: #%d", ErrChangesRequested, number)
 	}
 	if err := e.armed.Arm(number); err != nil {
@@ -54,35 +56,15 @@ func (e *Engine) ArmedSet() map[int]bool {
 	return e.armed.Set()
 }
 
-// outboundStanding looks the PR number up in the current outbound snapshot
-// (locked read): whether it is present at all, and whether it sits in the
-// Changes Requested stage — the two facts Arm validates against.
-func (e *Engine) outboundStanding(number int) (inSnapshot, changesRequested bool) {
+// outboundStage returns the stage the PR number sits in within the current
+// outbound snapshot (locked read), and whether it is in the snapshot at all —
+// the two facts Arm validates against. It is a pure lookup: the consent rule
+// itself lives in armable, not here.
+func (e *Engine) outboundStage(number int) (github.OutboundStage, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for _, it := range e.outbound.ChangesRequested {
-		if it.Number == number {
-			return true, true
-		}
-	}
-	// Every other stage is armable — In Discussion included: the hold is a
-	// wait on a counterparty, not an objection, so consent stays available
-	// (and stays standing) there (ADR 0019).
-	for _, stage := range [][]OutboundItem{
-		e.outbound.Draft,
-		e.outbound.Red,
-		e.outbound.Running,
-		e.outbound.AwaitingApproval,
-		e.outbound.InDiscussion,
-		e.outbound.Ready,
-	} {
-		for _, it := range stage {
-			if it.Number == number {
-				return true, false
-			}
-		}
-	}
-	return false, false
+	_, stage, ok := e.outbound.find(number)
+	return stage, ok
 }
 
 // reconcileArmed applies the two arm-lifecycle rules to a FRESH authored pull
@@ -100,22 +82,22 @@ func (e *Engine) outboundStanding(number int) (inSnapshot, changesRequested bool
 // In Discussion HOLDS the armed merge without ever withdrawing consent
 // (ADR 0019: a nit thread is a conversation, not an objection).
 func (e *Engine) reconcileArmed(ob Outbound) {
-	keep := make(map[int]bool, ob.Outgoing)
-	for _, stage := range [][]OutboundItem{
-		ob.Draft,
-		ob.Red,
-		ob.Running,
-		ob.AwaitingApproval,
-		ob.InDiscussion,
-		ob.Ready,
+	keep := make(map[int]bool, ob.Outgoing())
+	for _, stage := range []github.OutboundStage{
+		github.OutboundStageDraft,
+		github.OutboundStageRed,
+		github.OutboundStageRunning,
+		github.OutboundStageAwaitingApproval,
+		github.OutboundStageInDiscussion,
+		github.OutboundStageReady,
 	} {
-		for _, it := range stage {
+		for _, it := range ob[stage] {
 			keep[it.Number] = true
 		}
 	}
 
-	changesRequested := make(map[int]bool, len(ob.ChangesRequested))
-	for _, it := range ob.ChangesRequested {
+	changesRequested := make(map[int]bool, len(ob[github.OutboundStageChangesRequested]))
+	for _, it := range ob[github.OutboundStageChangesRequested] {
 		changesRequested[it.Number] = true
 	}
 

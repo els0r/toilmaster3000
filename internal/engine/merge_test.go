@@ -124,8 +124,8 @@ func TestNotMergeableBlocksMergeButKeepsStage(t *testing.T) {
 			require.Empty(t, fake.MergeCalls(), "a %s PR never merges", mergeable)
 			require.Empty(t, eng.Merges(), "nothing lands in the ledger")
 			ob := eng.Outbound()
-			require.Len(t, ob.Ready, 1, "the PR stays in Ready — mergeable is a precondition, not a stage boundary")
-			require.Equal(t, 21, ob.Ready[0].Number)
+			require.Len(t, ob[github.OutboundStageReady], 1, "the PR stays in Ready — mergeable is a precondition, not a stage boundary")
+			require.Equal(t, 21, ob[github.OutboundStageReady][0].Number)
 		})
 	}
 }
@@ -220,7 +220,7 @@ func TestFailedMergeInfoSkipsMerge(t *testing.T) {
 // in the same locked step that appends the ledger (ADR 0018): the engine
 // performed the merge, so serving the PR in Ready for another cycle would be a
 // known falsehood — the Ready+Merged duplicate the UI can never be shown.
-// Outgoing follows the prune, so the outbound partition still sums.
+// Outgoing is derived from the partition, so the prune keeps the sum for free.
 func TestMergePrunesReadyImmediately(t *testing.T) {
 	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
 	fake.SetMergeInfo(21, github.MergeDetails{
@@ -234,8 +234,8 @@ func TestMergePrunesReadyImmediately(t *testing.T) {
 
 	require.Len(t, eng.Merges(), 1, "the PR merged and entered the ledger")
 	ob := eng.Outbound()
-	require.Empty(t, ob.Ready, "the merged PR left Ready in the same step it entered the ledger")
-	require.Zero(t, ob.Outgoing, "Outgoing follows the prune — the partition still sums")
+	require.Empty(t, ob[github.OutboundStageReady], "the merged PR left Ready in the same step it entered the ledger")
+	require.Zero(t, ob.Outgoing(), "the derived Outgoing follows the prune — the partition still sums")
 }
 
 // M11: a failed merge (attempt + immediate retry) mutates NOTHING — the PR
@@ -256,9 +256,9 @@ func TestFailedMergeLeavesSnapshotUntouched(t *testing.T) {
 
 	require.Empty(t, eng.Merges(), "a failed merge appends nothing")
 	ob := eng.Outbound()
-	require.Len(t, ob.Ready, 1, "the unmerged PR stays in Ready — that is the truth")
-	require.Equal(t, 21, ob.Ready[0].Number)
-	require.Equal(t, 1, ob.Outgoing, "Outgoing is untouched")
+	require.Len(t, ob[github.OutboundStageReady], 1, "the unmerged PR stays in Ready — that is the truth")
+	require.Equal(t, 21, ob[github.OutboundStageReady][0].Number)
+	require.Equal(t, 1, ob.Outgoing(), "Outgoing is untouched")
 }
 
 // M9: the merged PR leaves the is:open pull, so the NEXT cycle's slice-3

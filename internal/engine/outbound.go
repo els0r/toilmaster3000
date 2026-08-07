@@ -35,50 +35,64 @@ type OutboundItem struct {
 	UnresolvedThreads int
 }
 
-// Outbound is the live outbound funnel snapshot: every authored PR of the last
-// completed cycle, folded into EXACTLY one stage list by ClassifyOutboundStage.
+// Outbound IS the live outbound funnel partition (ADR 0025): every authored PR
+// of the last completed cycle, keyed under EXACTLY one stage by
+// ClassifyOutboundStage. The map is the snapshot — no wrapper struct, no stored
+// count, so there is nothing for the partition to drift from. A stage with no
+// PRs is simply an absent key, which reads as the nil slice.
+//
 // It mirrors the inbound Funnel's lifecycle — swapped under lock at cycle end,
-// the zero value after restart until the first cycle, cleared on a failed
-// outbound OR threads fetch (the robot never shows, and never merges on,
-// stale authored data — ADR 0016, extended by ADR 0019).
+// empty after restart until the first cycle, cleared on a failed outbound OR
+// threads fetch (the robot never shows, and never merges on, stale authored
+// data — ADR 0016, extended by ADR 0019).
 //
-// Partition invariant (CONTEXT "Outbound"): the seven stage lists partition
-// the raw authored pull, so
-//
-//	Outgoing = len(Draft) + len(Red) + len(Running) + len(ChangesRequested)
-//	         + len(AwaitingApproval) + len(InDiscussion) + len(Ready)
-//
-// holds by construction — every authored PR is appended to exactly one list.
-// The merge step walks ONLY Ready: In Discussion never merging is the
-// partition itself, not an extra merge-step clause (the Discussion gate,
-// ADR 0019).
-type Outbound struct {
-	Outgoing         int
-	Draft            []OutboundItem
-	Red              []OutboundItem
-	Running          []OutboundItem
-	ChangesRequested []OutboundItem
-	AwaitingApproval []OutboundItem
-	InDiscussion     []OutboundItem
-	Ready            []OutboundItem
+// Partition invariant (CONTEXT "Outbound"): the stage lists partition the raw
+// authored pull, and Outgoing folds over them, so the counts sum by
+// construction in the literal sense. The merge step walks ONLY Ready: In
+// Discussion never merging is the partition itself, not an extra merge-step
+// clause (the Discussion gate, ADR 0019).
+type Outbound map[github.OutboundStage][]OutboundItem
+
+// Outgoing is the size of the raw authored pull, DERIVED by folding the
+// partition rather than stored beside it (ADR 0025). Nothing decrements it, so
+// no prune or mutation can make it disagree with the lists it counts.
+func (ob Outbound) Outgoing() int {
+	n := 0
+	for _, items := range ob {
+		n += len(items)
+	}
+	return n
+}
+
+// find locates one PR number in the partition, returning its item and the stage
+// it sits in. It is the single lookup the engine resolves outbound numbers
+// through (the Arm gate's stage, the Diff card's changed_files): it ranges the
+// MAP, so it is complete over stages by construction — a stage nobody has
+// thought of yet is searched like every other.
+func (ob Outbound) find(number int) (OutboundItem, github.OutboundStage, bool) {
+	for stage, items := range ob {
+		for _, it := range items {
+			if it.Number == number {
+				return it, stage, true
+			}
+		}
+	}
+	return OutboundItem{}, "", false
 }
 
 // Outbound returns the live outbound funnel snapshot (locked read). It is
 // recomputed each cycle, so this reflects the current truth as of the last
-// completed cycle; it is the zero value after a restart until the first cycle,
-// and a failed outbound fetch clears it. The slices are copied so a caller
-// cannot mutate the engine's snapshot.
+// completed cycle; it is empty after a restart until the first cycle, and a
+// failed outbound fetch clears it. The map AND its slices are copied, so a
+// caller cannot mutate the engine's snapshot — the read side is the deep copy
+// precisely because the publish side (setOutbound) is not.
 func (e *Engine) Outbound() Outbound {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	ob := e.outbound
-	ob.Draft = append([]OutboundItem(nil), e.outbound.Draft...)
-	ob.Red = append([]OutboundItem(nil), e.outbound.Red...)
-	ob.Running = append([]OutboundItem(nil), e.outbound.Running...)
-	ob.ChangesRequested = append([]OutboundItem(nil), e.outbound.ChangesRequested...)
-	ob.AwaitingApproval = append([]OutboundItem(nil), e.outbound.AwaitingApproval...)
-	ob.InDiscussion = append([]OutboundItem(nil), e.outbound.InDiscussion...)
-	ob.Ready = append([]OutboundItem(nil), e.outbound.Ready...)
+	ob := make(Outbound, len(e.outbound))
+	for stage, items := range e.outbound {
+		ob[stage] = append([]OutboundItem(nil), items...)
+	}
 	return ob
 }
 
@@ -112,30 +126,16 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 		}
 	}
 
-	// Every authored PR folds into EXACTLY one stage list (the pure
-	// ClassifyOutboundStage is the partition), so the seven list lengths sum
-	// to Outgoing by construction. A PR absent from the threads map carries no
-	// review threads — the zero connection judges to zero unresolved.
-	ob := Outbound{Outgoing: len(authored)}
+	// Every authored PR is appended under the tag ClassifyOutboundStage returns,
+	// so the partition IS the fold's codomain: no switch to fall through, no
+	// default to swallow a PR, and the list lengths sum to Outgoing by
+	// construction. A PR absent from the threads map carries no review
+	// threads — the zero connection judges to zero unresolved.
+	ob := Outbound{}
 	for _, pr := range authored {
 		unresolved := github.UnresolvedCount(threads[pr.Number])
-		item := outboundItem(pr, unresolved)
-		switch github.ClassifyOutboundStage(pr, unresolved) {
-		case github.OutboundStageDraft:
-			ob.Draft = append(ob.Draft, item)
-		case github.OutboundStageRed:
-			ob.Red = append(ob.Red, item)
-		case github.OutboundStageRunning:
-			ob.Running = append(ob.Running, item)
-		case github.OutboundStageChangesRequested:
-			ob.ChangesRequested = append(ob.ChangesRequested, item)
-		case github.OutboundStageAwaitingApproval:
-			ob.AwaitingApproval = append(ob.AwaitingApproval, item)
-		case github.OutboundStageInDiscussion:
-			ob.InDiscussion = append(ob.InDiscussion, item)
-		case github.OutboundStageReady:
-			ob.Ready = append(ob.Ready, item)
-		}
+		stage := github.ClassifyOutboundStage(pr, unresolved)
+		ob[stage] = append(ob[stage], outboundItem(pr, unresolved))
 	}
 
 	// A fresh authored pull is the ONLY trigger for arm-lifecycle changes
@@ -144,26 +144,35 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 	// on stale or missing data.
 	e.reconcileArmed(ob)
 
-	e.logger.Info("cycle: outbound snapshot rebuilt",
-		"outgoing", ob.Outgoing,
-		"draft", len(ob.Draft),
-		"red", len(ob.Red),
-		"running", len(ob.Running),
-		"changes_requested", len(ob.ChangesRequested),
-		"awaiting_approval", len(ob.AwaitingApproval),
-		"in_discussion", len(ob.InDiscussion),
-		"ready", len(ob.Ready),
-	)
+	// The one ORDERED consumer of the stage list in Go: the per-stage counts are
+	// logged in funnel order, keyed by the stage constants' own string values
+	// (which is why the keys read exactly as they always have). Everything that
+	// must be COMPLETE ranges the map instead; here an omission would be merely
+	// cosmetic.
+	stages := github.OutboundStages()
+	args := make([]any, 0, 2+2*len(stages))
+	args = append(args, "outgoing", ob.Outgoing())
+	for _, stage := range stages {
+		args = append(args, string(stage), len(ob[stage]))
+	}
+	e.logger.Info("cycle: outbound snapshot rebuilt", args...)
 	e.setOutbound(ob)
 
 	// The merge step runs LAST, over the same fresh snapshot: reconciliation
 	// above already applied the level-triggered disarm, so consent read now is
-	// current. A failed outbound fetch returned early — the robot never merges
-	// on stale data (ADR 0016).
-	e.mergeArmedReady(ctx, ob)
+	// current. It is handed ONLY Ready — the Discussion gate is the signature,
+	// not a merge-step clause (ADR 0019). A failed outbound fetch returned
+	// early — the robot never merges on stale data (ADR 0016).
+	e.mergeArmedReady(ctx, ob[github.OutboundStageReady])
 }
 
-// setOutbound swaps the outbound snapshot under lock.
+// setOutbound swaps the outbound snapshot under lock, publishing the map BY
+// REFERENCE — deliberately, not by oversight. rebuildOutbound's local ob keeps
+// aliasing the published map, which is the sharing ADR 0018 reasons about: the
+// merge prune rebuilds the Ready slice rather than shifting it in place because
+// mergeArmedReady is still ranging the header it was handed. Cloning here would
+// demote that from load-bearing to belt-and-braces; the deep copy lives on the
+// read accessor instead.
 func (e *Engine) setOutbound(ob Outbound) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

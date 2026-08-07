@@ -108,29 +108,36 @@ func outboundItemsToBody(items []engine.OutboundItem, armed map[int]bool) []Outb
 	return out
 }
 
-// outboundToBody converts the engine's live outbound snapshot to its wire DTO
+// outboundToBody converts the engine's live outbound partition to its wire DTO
 // (ADR 0002). The seven lists are itemized with parse-on-read title parts; the
 // distribution counts are the list lengths, so they sum to Outgoing by
 // construction. armed is the engine's LIVE armed set, zipped onto each row
 // (the PR-State precedent) so a fresh toggle shows without waiting a cycle.
+//
+// This per-stage mapping is the ONE place stages are still named one by one,
+// and deliberately so: the wire contract is frozen and hand-written (ADR 0002),
+// so a new stage needs a named JSON field here whatever the engine does. The
+// guarantee that none is forgotten comes from the round-trip test driven by
+// github.OutboundStages() — make check cannot see a MISSING field, since
+// openapi.json stays byte-identical either way (ADR 0025).
 func outboundToBody(ob engine.Outbound, armed map[int]bool) Outbound {
 	return Outbound{
-		Outgoing:         ob.Outgoing,
-		Draft:            outboundItemsToBody(ob.Draft, armed),
-		Red:              outboundItemsToBody(ob.Red, armed),
-		Running:          outboundItemsToBody(ob.Running, armed),
-		ChangesRequested: outboundItemsToBody(ob.ChangesRequested, armed),
-		AwaitingApproval: outboundItemsToBody(ob.AwaitingApproval, armed),
-		InDiscussion:     outboundItemsToBody(ob.InDiscussion, armed),
-		Ready:            outboundItemsToBody(ob.Ready, armed),
+		Outgoing:         ob.Outgoing(),
+		Draft:            outboundItemsToBody(ob[github.OutboundStageDraft], armed),
+		Red:              outboundItemsToBody(ob[github.OutboundStageRed], armed),
+		Running:          outboundItemsToBody(ob[github.OutboundStageRunning], armed),
+		ChangesRequested: outboundItemsToBody(ob[github.OutboundStageChangesRequested], armed),
+		AwaitingApproval: outboundItemsToBody(ob[github.OutboundStageAwaitingApproval], armed),
+		InDiscussion:     outboundItemsToBody(ob[github.OutboundStageInDiscussion], armed),
+		Ready:            outboundItemsToBody(ob[github.OutboundStageReady], armed),
 		Distribution: OutboundDistribution{
-			Draft:            len(ob.Draft),
-			Red:              len(ob.Red),
-			Running:          len(ob.Running),
-			ChangesRequested: len(ob.ChangesRequested),
-			AwaitingApproval: len(ob.AwaitingApproval),
-			InDiscussion:     len(ob.InDiscussion),
-			Ready:            len(ob.Ready),
+			Draft:            len(ob[github.OutboundStageDraft]),
+			Red:              len(ob[github.OutboundStageRed]),
+			Running:          len(ob[github.OutboundStageRunning]),
+			ChangesRequested: len(ob[github.OutboundStageChangesRequested]),
+			AwaitingApproval: len(ob[github.OutboundStageAwaitingApproval]),
+			InDiscussion:     len(ob[github.OutboundStageInDiscussion]),
+			Ready:            len(ob[github.OutboundStageReady]),
 		},
 	}
 }
