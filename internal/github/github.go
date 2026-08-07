@@ -55,6 +55,13 @@ type PR struct {
 	// Ready PR stays in Ready carrying its conflict state. UNKNOWN means GitHub
 	// is still computing mergeability — retried naturally next cycle.
 	Mergeable string
+	// Files are the paths of the PR's changed files, from the same single gh list
+	// call (inbound only — the outbound pull requests no files). They are the
+	// scope axis of Notifier firing discipline: a Notifier's Paths globs match
+	// against them (ADR 0026). gh caps the field at 100 files per PR, so this
+	// list is TRUNCATED whenever len(Files) < ChangedFiles — the CLI seam only
+	// decodes that fact; the pure Scope fold judges what to do about it.
+	Files []string
 	// HeadSHA is gh's headRefOid from the same single gh list call: the commit
 	// the PR's head currently points at. Screen verdicts key on it
 	// (screen_id, number, head — ADR 0022), so a new push re-screens and an
@@ -192,6 +199,14 @@ type ghListItem struct {
 	// HeadRefOid is the PR head's commit SHA, pulled in the same single list
 	// call — the per-head key of the Screen verdict store (ADR 0022).
 	HeadRefOid string `json:"headRefOid"`
+	// Files is gh's changed-file array, requested only by the inbound candidate
+	// call. Each entry's path spells `path` here — NOT the `filename` of the
+	// REST files API behind Diff. Only the path is decoded: the batch field
+	// carries no patch, so it can never stand in for the on-demand diff fetch
+	// (ADR 0008 stays as it is).
+	Files []struct {
+		Path string `json:"path"`
+	} `json:"files"`
 }
 
 // listJSONFields is the --json field set of the inbound candidate list call —
@@ -227,9 +242,14 @@ func (c *CLI) CheckRepoVisible(ctx context.Context) error {
 	return nil
 }
 
-// ListCandidates pulls the inbound candidate set once via a single gh call.
+// ListCandidates pulls the inbound candidate set once via a single gh call,
+// with files riding it — the changed-file paths Notifier scope matches against
+// (ADR 0026), appended here rather than to listJSONFields exactly as the
+// outbound call appends its own mergeable: Notifiers fire at inbound points, so
+// the outbound pull must pay nothing for it. The call stays ONE call and merely
+// carries more.
 func (c *CLI) ListCandidates(ctx context.Context) ([]PR, error) {
-	return c.list(ctx, c.search, listJSONFields)
+	return c.list(ctx, c.search, listJSONFields+",files")
 }
 
 // ListAuthored pulls the outbound candidate set once via a second single gh
@@ -263,6 +283,10 @@ func (c *CLI) list(ctx context.Context, search, jsonFields string) ([]PR, error)
 
 	prs := make([]PR, 0, len(items))
 	for _, it := range items {
+		var files []string
+		for _, f := range it.Files {
+			files = append(files, f.Path)
+		}
 		prs = append(prs, PR{
 			Number:         it.Number,
 			Title:          it.Title,
@@ -276,6 +300,7 @@ func (c *CLI) list(ctx context.Context, search, jsonFields string) ([]PR, error)
 			ReviewDecision: it.ReviewDecision,
 			Mergeable:      it.Mergeable,
 			HeadSHA:        it.HeadRefOid,
+			Files:          files,
 		})
 	}
 	return prs, nil

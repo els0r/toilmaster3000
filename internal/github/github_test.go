@@ -132,6 +132,58 @@ JSON
 	require.Contains(t, string(got), "headRefOid", "head requested in the same --json arg")
 }
 
+// G1e: ListCandidates pulls each PR's changed-file paths in the SAME single gh
+// pr list call and decodes them into PR.Files — the scope axis of Notifier
+// firing discipline (ADR 0026). The call stays ONE call and merely carries
+// more, which is not the per-PR N+1 ADR 0007 removed. Note the field spelling:
+// gh's list `files` objects carry `path`, where the REST files API behind Diff
+// carries `filename` — decoding the wrong one yields silent empty strings.
+func TestCLIListCandidatesDecodesChangedFilePaths(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	argsFile := withFakeGh(t, `cat <<'JSON'
+[
+  {"number": 12, "title": "feat: polyglot", "url": "https://gh/pull/12", "author": {"login": "ann"}, "changedFiles": 2,
+   "files": [{"path": "internal/hook/scope.go", "additions": 40, "deletions": 0, "changeType": "ADDED"},
+             {"path": "scripts/release.sh", "additions": 3, "deletions": 1, "changeType": "MODIFIED"}]},
+  {"number": 13, "title": "docs: readme", "url": "https://gh/pull/13", "author": {"login": "bob"}, "changedFiles": 0}
+]
+JSON
+`)
+
+	prs, err := github.NewCLI(testRepo, testSearch).ListCandidates(context.Background())
+	require.NoError(t, err)
+	require.Len(t, prs, 2)
+	require.Equal(t, []string{"internal/hook/scope.go", "scripts/release.sh"}, prs[0].Files,
+		"the files array decodes into the PR's changed-file path list")
+	require.Equal(t, 2, prs[0].ChangedFiles, "the true count rides beside the list, so truncation is detectable")
+	require.Empty(t, prs[1].Files, "a PR gh reports no files for decodes to an empty list, never an error")
+
+	got, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	require.Equal(t, 1, bytes.Count(got, []byte("pr list")), "candidate set is fetched in exactly one gh call")
+	require.Contains(t, string(got), "files", "the paths ride the same --json arg")
+}
+
+// G1f: the outbound authored pull does NOT request files. Notifiers fire at
+// inbound points only, so the outbound call pays nothing for scope (ADR 0026);
+// it keeps requesting its own extra field, mergeable.
+func TestCLIListAuthoredDoesNotRequestFiles(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	argsFile := withFakeGh(t, "printf '[]\\n'\n")
+
+	_, err := github.NewCLI(testRepo, testSearch).ListAuthored(context.Background())
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	require.Contains(t, string(got), "mergeable", "the outbound call keeps its own extra field")
+	require.NotContains(t, string(got), ",files", "scope is inbound-only: the outbound pull carries no files")
+}
+
 // G1c: PRStatesSince shells out to a SINGLE `gh pr list` scoped by
 // `reviewed-by:@me updated:>=<since>` over `--state all`, and decodes the array
 // into a number->raw map — the decode-only batched seam the engine's tail
