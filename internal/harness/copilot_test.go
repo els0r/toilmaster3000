@@ -14,7 +14,7 @@ import (
 // the gh diff fetch and the copilot invocation are plain functions, so the
 // real gh/copilot CLIs never run in tests (the claude adapter's precedent).
 func scriptedCopilot(fetchDiff func(ctx context.Context, repo string, number int) (string, error),
-	invoke func(ctx context.Context, model, prompt string) ([]byte, error)) *Copilot {
+	invoke func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Copilot {
 	return &Copilot{fetchDiff: fetchDiff, invoke: invoke}
 }
 
@@ -28,7 +28,7 @@ func TestCopilotScreenFetchesComposesInvokesExtracts(t *testing.T) {
 			gotRepo, gotNumber = repo, number
 			return "+harmless line", nil
 		},
-		func(_ context.Context, model, prompt string) ([]byte, error) {
+		func(_ context.Context, model, prompt, _ string) ([]byte, error) {
 			gotModel, gotPrompt = model, prompt
 			// Silent-mode stdout IS the response text — no envelope (ADR 0024).
 			return []byte("Reviewed.\n\n```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```\n"), nil
@@ -53,7 +53,7 @@ func TestCopilotScreenDiffFetchFailureIsAFailedAttempt(t *testing.T) {
 		func(context.Context, string, int) (string, error) {
 			return "", errors.New("gh pr diff: exit status 1")
 		},
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			invoked = true
 			return nil, nil
 		},
@@ -68,7 +68,7 @@ func TestCopilotScreenDiffFetchFailureIsAFailedAttempt(t *testing.T) {
 func TestCopilotScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 	c := scriptedCopilot(
 		func(context.Context, string, int) (string, error) { return "+x", nil },
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			return nil, errors.New("copilot -p: signal: killed")
 		},
 	)
@@ -80,7 +80,7 @@ func TestCopilotScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 func TestCopilotScreenUnparseableOutputIsAFailedAttempt(t *testing.T) {
 	c := scriptedCopilot(
 		func(context.Context, string, int) (string, error) { return "+x", nil },
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			return []byte("I looked at it. CAN PROCEED!"), nil
 		},
 	)
@@ -93,14 +93,14 @@ func TestCopilotScreenUnparseableOutputIsAFailedAttempt(t *testing.T) {
 
 // scriptedCopilotAgent returns a Copilot adapter whose side-effect seam is
 // scripted — the real copilot CLI never runs in tests.
-func scriptedCopilotAgent(act func(ctx context.Context, model, prompt string) ([]byte, error)) *Copilot {
+func scriptedCopilotAgent(act func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Copilot {
 	return &Copilot{act: act}
 }
 
 func TestCopilotActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 	req := composeReq()
 	var gotModel, gotPrompt string
-	c := scriptedCopilotAgent(func(_ context.Context, model, prompt string) ([]byte, error) {
+	c := scriptedCopilotAgent(func(_ context.Context, model, prompt, _ string) ([]byte, error) {
 		gotModel, gotPrompt = model, prompt
 		return []byte("Posted a review comment on #42.\n"), nil
 	})
@@ -114,9 +114,65 @@ func TestCopilotActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 		"the invoked prompt is exactly the notify composition — the ceiling rides every run")
 }
 
+// One field serves both adapters, which is the whole reason WorkDir is the
+// process's cwd and not copilot's -C: the Request's anchor reaches the process
+// seam verbatim here exactly as it does on claude, and internal/harness grows
+// no per-CLI branch. The screen leg stays unanchored — AIScreen never populates
+// the field, and copilot's toolless screen run has no skill-resolution
+// mechanism to anchor anyway.
+func TestCopilotCarriesWorkDirToTheProcessSeam(t *testing.T) {
+	req := composeReq()
+	req.WorkDir = "/srv/skills-worktree"
+
+	var actWorkDir string
+	agent := &Copilot{act: func(_ context.Context, model, prompt, workDir string) ([]byte, error) {
+		actWorkDir = workDir
+		return []byte("Posted a review comment on #42.\n"), nil
+	}}
+	_, err := agent.Act(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, "/srv/skills-worktree", actWorkDir)
+
+	var screenWorkDir string
+	screen := scriptedCopilot(
+		func(context.Context, string, int) (string, error) { return "+x", nil },
+		func(_ context.Context, model, prompt, workDir string) ([]byte, error) {
+			screenWorkDir = workDir
+			return []byte("```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```\n"), nil
+		},
+	)
+	_, err = screen.Screen(context.Background(), composeReq())
+	require.NoError(t, err)
+	require.Empty(t, screenWorkDir, "a screen run is never anchored: the species leaves WorkDir empty")
+}
+
+// copilotCmd's twin of the claude assertion: the anchor is the process's cwd,
+// not copilot's -C, and the read grant is never widened. The hermetic base
+// flags of ADR 0024 ride every leg unchanged — they suppress AGENTS.md, which
+// is orthogonal to the skills the anchored directory makes discoverable.
+func TestCopilotCmdAnchorsTheRunAndNeverWidensTheGrant(t *testing.T) {
+	// The extra arguments are the act leg's, verbatim from copilotActInvoke —
+	// the only leg that is ever anchored.
+	cmd := copilotCmd(context.Background(), "sonnet", "prompt text", "/srv/skills-worktree",
+		"--allow-tool", "shell(gh:*)")
+
+	require.Equal(t, "/srv/skills-worktree", cmd.Dir)
+	for _, arg := range cmd.Args {
+		require.NotContains(t, arg, "--add-dir", "the grant is bounded by WorkDir and never widened")
+		require.NotContains(t, arg, "--allow-all-paths", "the grant is bounded by WorkDir and never widened")
+	}
+	require.Contains(t, cmd.Args, "--no-custom-instructions",
+		"hermetic-by-default stands: ambient instructions stay off while ambient skills come on")
+
+	// An unanchored run leaves cmd.Dir empty, which inherits tm3k's own cwd —
+	// the behaviour every leg had before WorkDir existed, bit-for-bit. The
+	// toolless screen leg is always in this shape.
+	require.Empty(t, copilotCmd(context.Background(), "", "prompt text", "", "--available-tools=__none__").Dir)
+}
+
 func TestCopilotActFailuresSurfaceAsErrors(t *testing.T) {
 	// A crashed CLI surfaces its error.
-	c := scriptedCopilotAgent(func(context.Context, string, string) ([]byte, error) {
+	c := scriptedCopilotAgent(func(context.Context, string, string, string) ([]byte, error) {
 		return nil, errors.New("copilot -p: signal: killed")
 	})
 	_, err := c.Act(context.Background(), composeReq())
@@ -124,7 +180,7 @@ func TestCopilotActFailuresSurfaceAsErrors(t *testing.T) {
 
 	// Blank silent-mode output is an error, not a transcript: the run said
 	// nothing, so there is nothing to log as the agent's account of itself.
-	c = scriptedCopilotAgent(func(context.Context, string, string) ([]byte, error) {
+	c = scriptedCopilotAgent(func(context.Context, string, string, string) ([]byte, error) {
 		return []byte("  \n"), nil
 	})
 	_, err = c.Act(context.Background(), composeReq())

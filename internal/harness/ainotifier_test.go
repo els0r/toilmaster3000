@@ -40,7 +40,7 @@ func queueCtx() hook.PRContext {
 func TestAINotifierRealizesTheNotifierKindFromItsSpec(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Model: "sonnet", Prompt: "review Go code"}
 	var got Request
-	notifier := NewAINotifier(spec, "acme/widgets", agentFunc(func(_ context.Context, req Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(_ context.Context, req Request) (string, error) {
 		got = req
 		return "posted a review comment", nil
 	}))
@@ -60,11 +60,40 @@ func TestAINotifierRealizesTheNotifierKindFromItsSpec(t *testing.T) {
 	}, got)
 }
 
+// AN4: the configured WorkDir lands on every Request the species issues, taken
+// at construction exactly as repo is (ADR 0027). It arrives as a constructor
+// argument rather than off the Spec because WorkDir lives on NotifierConfig
+// and nowhere on the shared Spec — the same shape Scope's compile takes. An
+// unanchored Notifier leaves it empty and runs in tm3k's own cwd, bit-for-bit
+// as before the field existed.
+func TestAINotifierCarriesItsConfiguredWorkDir(t *testing.T) {
+	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "copilot", Prompt: "/golang-pr-review"}
+
+	var anchored Request
+	notifier := NewAINotifier(spec, "acme/widgets", "/srv/skills-worktree",
+		agentFunc(func(_ context.Context, req Request) (string, error) {
+			anchored = req
+			return "posted a review comment", nil
+		}))
+	require.NoError(t, notifier.Notify(context.Background(), queueCtx()))
+	require.Equal(t, "/srv/skills-worktree", anchored.WorkDir)
+	require.Equal(t, "acme/widgets", anchored.Repo, "the anchor rides alongside repo, replacing nothing")
+
+	var unanchored Request
+	plain := NewAINotifier(spec, "acme/widgets", "",
+		agentFunc(func(_ context.Context, req Request) (string, error) {
+			unanchored = req
+			return "posted a review comment", nil
+		}))
+	require.NoError(t, plain.Notify(context.Background(), queueCtx()))
+	require.Empty(t, unanchored.WorkDir)
+}
+
 // AN2: a failing agent run surfaces as the Notify error — the runner logs the
 // miss and never retries (ADR 0021); the species fabricates nothing.
 func TestAINotifierAgentFailureSurfacesAsError(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Prompt: "review it"}
-	notifier := NewAINotifier(spec, "acme/widgets", agentFunc(func(context.Context, Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
 		return "", errors.New("claude -p: signal: killed")
 	}))
 
@@ -80,7 +109,7 @@ func TestAINotifierReadsPromptFileAtRunTimeAndFailsClosed(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("go instructions"), 0o644))
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", PromptFile: path}
 	var instructions string
-	notifier := NewAINotifier(spec, "acme/widgets", agentFunc(func(_ context.Context, req Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(_ context.Context, req Request) (string, error) {
 		instructions = req.Instructions
 		return "", nil
 	}))
@@ -90,7 +119,7 @@ func TestAINotifierReadsPromptFileAtRunTimeAndFailsClosed(t *testing.T) {
 
 	invoked := false
 	missing := hook.Spec{ID: "n2", Name: "go review 2", Harness: "claude", PromptFile: filepath.Join(t.TempDir(), "missing.md")}
-	broken := NewAINotifier(missing, "acme/widgets", agentFunc(func(context.Context, Request) (string, error) {
+	broken := NewAINotifier(missing, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
 		invoked = true
 		return "", nil
 	}))

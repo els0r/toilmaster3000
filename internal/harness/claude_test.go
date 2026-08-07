@@ -14,7 +14,7 @@ import (
 // the gh diff fetch and the claude invocation are plain functions, so the
 // real gh/claude CLIs never run in tests (the internal/github fake precedent).
 func scriptedClaude(fetchDiff func(ctx context.Context, repo string, number int) (string, error),
-	invoke func(ctx context.Context, model, prompt string) ([]byte, error)) *Claude {
+	invoke func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Claude {
 	return &Claude{fetchDiff: fetchDiff, invoke: invoke}
 }
 
@@ -28,7 +28,7 @@ func TestClaudeScreenFetchesComposesInvokesExtracts(t *testing.T) {
 			gotRepo, gotNumber = repo, number
 			return "+harmless line", nil
 		},
-		func(_ context.Context, model, prompt string) ([]byte, error) {
+		func(_ context.Context, model, prompt, _ string) ([]byte, error) {
 			gotModel, gotPrompt = model, prompt
 			return envelope(t, "```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```"), nil
 		},
@@ -52,7 +52,7 @@ func TestClaudeScreenDiffFetchFailureIsAFailedAttempt(t *testing.T) {
 		func(context.Context, string, int) (string, error) {
 			return "", errors.New("gh pr diff: exit status 1")
 		},
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			invoked = true
 			return nil, nil
 		},
@@ -67,7 +67,7 @@ func TestClaudeScreenDiffFetchFailureIsAFailedAttempt(t *testing.T) {
 func TestClaudeScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 	c := scriptedClaude(
 		func(context.Context, string, int) (string, error) { return "+x", nil },
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			return nil, errors.New("claude -p: signal: killed")
 		},
 	)
@@ -78,14 +78,14 @@ func TestClaudeScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 
 // scriptedClaudeAgent returns a Claude adapter whose side-effect seam is
 // scripted — the real claude CLI never runs in tests.
-func scriptedClaudeAgent(act func(ctx context.Context, model, prompt string) ([]byte, error)) *Claude {
+func scriptedClaudeAgent(act func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Claude {
 	return &Claude{act: act}
 }
 
 func TestClaudeActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 	req := composeReq()
 	var gotModel, gotPrompt string
-	c := scriptedClaudeAgent(func(_ context.Context, model, prompt string) ([]byte, error) {
+	c := scriptedClaudeAgent(func(_ context.Context, model, prompt, _ string) ([]byte, error) {
 		gotModel, gotPrompt = model, prompt
 		return envelope(t, "Posted a review comment on #42."), nil
 	})
@@ -99,23 +99,77 @@ func TestClaudeActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 		"the invoked prompt is exactly the notify composition — the ceiling rides every run")
 }
 
+// The Request's WorkDir is what anchors the harness process, and it reaches
+// the process seam verbatim — that is the whole mechanism of ADR 0027. The
+// screen leg gets no anchor: AIScreen never populates the field, so a screen
+// run keeps the pre-existing unanchored behaviour bit-for-bit.
+func TestClaudeCarriesWorkDirToTheProcessSeam(t *testing.T) {
+	req := composeReq()
+	req.WorkDir = "/srv/skills-worktree"
+
+	var actWorkDir string
+	agent := &Claude{act: func(_ context.Context, model, prompt, workDir string) ([]byte, error) {
+		actWorkDir = workDir
+		return envelope(t, "Posted a review comment on #42."), nil
+	}}
+	_, err := agent.Act(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, "/srv/skills-worktree", actWorkDir)
+
+	var screenWorkDir string
+	screen := scriptedClaude(
+		func(context.Context, string, int) (string, error) { return "+x", nil },
+		func(_ context.Context, model, prompt, workDir string) ([]byte, error) {
+			screenWorkDir = workDir
+			return envelope(t, "```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```"), nil
+		},
+	)
+	_, err = screen.Screen(context.Background(), composeReq())
+	require.NoError(t, err)
+	require.Empty(t, screenWorkDir, "a screen run is never anchored: the species leaves WorkDir empty")
+}
+
+// claudeCmd is where the anchor becomes real: the built command is inspected,
+// never run, so the assertion covers the production argv without the CLI ever
+// executing. Two things are pinned. The anchor IS cmd.Dir — copilot's -C has no
+// claude analogue, and cwd is the lever both CLIs share. And the run's read
+// grant is never widened: because reads resolve from the same root as
+// discovery, the named directory is the ceiling, so tm3k must pass neither
+// --add-dir nor --allow-all-paths on any leg, ever (ADR 0027 decision 3).
+func TestClaudeCmdAnchorsTheRunAndNeverWidensTheGrant(t *testing.T) {
+	// The extra arguments are the act leg's, verbatim from claudeActInvoke —
+	// the only leg that is ever anchored.
+	cmd := claudeCmd(context.Background(), "sonnet", "prompt text", "/srv/skills-worktree",
+		"--allowedTools", "Bash(gh:*)")
+
+	require.Equal(t, "/srv/skills-worktree", cmd.Dir)
+	for _, arg := range cmd.Args {
+		require.NotContains(t, arg, "--add-dir", "the grant is bounded by WorkDir and never widened")
+		require.NotContains(t, arg, "--allow-all-paths", "the grant is bounded by WorkDir and never widened")
+	}
+
+	// An unanchored run leaves cmd.Dir empty, which inherits tm3k's own cwd —
+	// the behaviour every leg had before WorkDir existed, bit-for-bit.
+	require.Empty(t, claudeCmd(context.Background(), "", "prompt text", "").Dir)
+}
+
 func TestClaudeActFailuresSurfaceAsErrors(t *testing.T) {
 	// A crashed CLI surfaces its error.
-	c := scriptedClaudeAgent(func(context.Context, string, string) ([]byte, error) {
+	c := scriptedClaudeAgent(func(context.Context, string, string, string) ([]byte, error) {
 		return nil, errors.New("claude -p: signal: killed")
 	})
 	_, err := c.Act(context.Background(), composeReq())
 	require.ErrorContains(t, err, "claude -p")
 
 	// An errored run envelope is an error, not a transcript.
-	c = scriptedClaudeAgent(func(context.Context, string, string) ([]byte, error) {
+	c = scriptedClaudeAgent(func(context.Context, string, string, string) ([]byte, error) {
 		return []byte(`{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": ""}`), nil
 	})
 	_, err = c.Act(context.Background(), composeReq())
 	require.ErrorContains(t, err, "errored")
 
 	// Non-envelope stdout (crash text) fails the decode.
-	c = scriptedClaudeAgent(func(context.Context, string, string) ([]byte, error) {
+	c = scriptedClaudeAgent(func(context.Context, string, string, string) ([]byte, error) {
 		return []byte("panic: something broke"), nil
 	})
 	_, err = c.Act(context.Background(), composeReq())
@@ -125,7 +179,7 @@ func TestClaudeActFailuresSurfaceAsErrors(t *testing.T) {
 func TestClaudeScreenUnparseableOutputIsAFailedAttempt(t *testing.T) {
 	c := scriptedClaude(
 		func(context.Context, string, int) (string, error) { return "+x", nil },
-		func(context.Context, string, string) ([]byte, error) {
+		func(context.Context, string, string, string) ([]byte, error) {
 			return []byte("I looked at it. CAN PROCEED!"), nil
 		},
 	)

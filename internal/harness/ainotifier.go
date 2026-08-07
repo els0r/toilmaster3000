@@ -15,17 +15,26 @@ import (
 // or requests changes as the runtime identity. No verdict comes back: the
 // transcript is logged here and otherwise ignored.
 type AINotifier struct {
-	spec   hook.Spec
-	repo   string
-	agent  Agent
-	logger *slog.Logger
+	spec    hook.Spec
+	repo    string
+	workDir string
+	agent   Agent
+	logger  *slog.Logger
 }
 
 // NewAINotifier constructs the species over an already-validated Spec. repo is
 // the configured candidate-set slug ("owner/name"), taken at construction
 // exactly like AIScreen's (the engine leaves PRContext.Repo empty today).
-func NewAINotifier(spec hook.Spec, repo string, agent Agent) *AINotifier {
-	return &AINotifier{spec: spec, repo: repo, agent: agent, logger: slog.Default()}
+//
+// workDir is the Notifier's optional harness anchor (ADR 0027), boot-validated
+// as an absolute directory. It arrives as an argument rather than off the Spec
+// because it exists on the Notifier kind alone — the shape Scope's compile
+// already takes — and the empty string is the unanchored Notifier. AIScreen has
+// no such parameter and never sets Request.WorkDir: the Screen exclusion is
+// enforced twice, once by the absent config field and once by the absent code
+// path.
+func NewAINotifier(spec hook.Spec, repo, workDir string, agent Agent) *AINotifier {
+	return &AINotifier{spec: spec, repo: repo, workDir: workDir, agent: agent, logger: slog.Default()}
 }
 
 // Notify runs one side-effecting agent pass for the PR. An error — unreadable
@@ -39,6 +48,7 @@ func (n *AINotifier) Notify(ctx context.Context, pr hook.PRContext) error {
 	transcript, err := n.agent.Act(ctx, Request{
 		Model:        n.spec.Model,
 		Instructions: instructions,
+		WorkDir:      n.workDir,
 		Repo:         n.repo,
 		Number:       pr.Number,
 		Title:        pr.Title,

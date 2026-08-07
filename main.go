@@ -316,10 +316,11 @@ func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.Notif
 
 // notifierInstances translates validated Notifier config into the units the
 // runner fires: one AI Notifier species per entry over the adapter its Harness
-// names, and its Paths compiled into a Scope. The compile happens HERE, once at
-// boot — a Scope normalises its patterns at construction, never per match
-// (ADR 0026). Scope rides the instance rather than the Spec because it exists
-// on the Notifier kind alone.
+// names, its Paths compiled into a Scope, and its WorkDir. The compile happens
+// HERE, once at boot — a Scope normalises its patterns at construction, never
+// per match (ADR 0026). Scope rides the instance and WorkDir rides the species
+// rather than either riding the Spec, because both exist on the Notifier kind
+// alone: no Screen has an anchor to acquire (ADR 0027).
 func notifierInstances(hooks hook.Config, repo string) ([]hook.NotifierInstance, error) {
 	instances := make([]hook.NotifierInstance, 0, len(hooks.Notifiers))
 	for _, nc := range hooks.Notifiers {
@@ -331,7 +332,7 @@ func notifierInstances(hooks hook.Config, repo string) ([]hook.NotifierInstance,
 			Spec:     nc.Spec,
 			Point:    nc.Point,
 			Scope:    hook.NewScope(nc.Paths),
-			Notifier: harness.NewAINotifier(nc.Spec, repo, agent),
+			Notifier: harness.NewAINotifier(nc.Spec, repo, nc.WorkDir, agent),
 		})
 	}
 	return instances, nil
