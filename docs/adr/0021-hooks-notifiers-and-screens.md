@@ -92,6 +92,8 @@ the "checks running" card).
   persisted, and at-most-once means a failed notification is a logged miss,
   not a retry.
 - A PR that gains commits *after* entering the queue gets no fresh
-  review-assist run — accepted, mirrors how humans review.
+  review-assist run — accepted, mirrors how humans review. Amended by ADR 0026:
+  no *repeat* run, but a Notifier the PR was previously out of scope for can
+  still make its *first* run once the PR grows into scope.
 - Vocabulary is load-bearing: hook point ≠ stage, Screen ≠ CI check,
   Notifier output is not a "verdict". CONTEXT.md carries the terms.
