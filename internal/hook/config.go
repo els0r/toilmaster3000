@@ -60,7 +60,8 @@ type ScreenConfig struct {
 }
 
 // NotifierConfig is a declarative Notifier entry in hooks.yaml; Point names
-// the post-point it fires at and Paths optionally scopes it.
+// the post-point it fires at, Paths optionally scopes it, and WorkDir
+// optionally anchors its harness run.
 //
 // Paths is firing discipline's second axis (ADR 0026): gitignore-style globs
 // over the PR's changed-file paths deciding whether this Notifier applies to
@@ -69,10 +70,21 @@ type ScreenConfig struct {
 // where it does not apply, handing hooks.yaml a way to silently un-gate whole
 // file classes; the hazard stays unrepresentable rather than validated against
 // (the same technique as ScreenConfig carrying no Point field).
+//
+// WorkDir is the harness process's working directory (ADR 0027): an absolute
+// path, so the CLI discovers that directory's ambient skills — and, because
+// discovery and reads resolve from the same root, it is also the run's read
+// ceiling, which tm3k never widens. Absent WorkDir is the unanchored Notifier,
+// running in tm3k's own cwd exactly as before the field existed. It lives here
+// and NOT on the shared Spec for the same unrepresentable-hazard reason as
+// Paths: a working tree is mutable, unversioned input, so a Screen anchored to
+// one could return different verdicts for the same PR head for reasons no
+// ledger records — and a gate whose input is not reproducible is not a gate.
 type NotifierConfig struct {
-	Spec  `yaml:",inline"`
-	Point Point    `yaml:"Point"`
-	Paths []string `yaml:"Paths,omitempty"`
+	Spec    `yaml:",inline"`
+	Point   Point    `yaml:"Point"`
+	Paths   []string `yaml:"Paths,omitempty"`
+	WorkDir string   `yaml:"WorkDir,omitempty"`
 }
 
 // Duration is a time.Duration that round-trips YAML in Go duration syntax
