@@ -35,10 +35,12 @@ Concretely:
   pulse, and a manual override is not the cycle's doing.
 - **Robot merge** (`pruneMergedFromOutbound`): in the same critical section as
   the merge-ledger append, remove the PR from the published outbound
-  snapshot's Ready list and decrement `Outgoing`. `/outbound` and `/merges`
-  can never disagree — the row leaves Ready in the same atomic step that puts
-  it in the ledger. A failed merge mutates nothing: the PR genuinely is still
-  Ready.
+  snapshot's Ready list — and nothing else. (**Amended by ADR 0025**: this
+  originally also decremented `Outgoing`; the outbound snapshot is now a keyed
+  partition whose total is derived by folding it, so there is no count left to
+  decrement.) `/outbound` and `/merges` can never disagree — the row leaves
+  Ready in the same atomic step that puts it in the ledger. A failed merge
+  mutates nothing: the PR genuinely is still Ready.
 
 Both mutations move a PR *between* partition segments (or remove it from both
 sides of a partition), so the funnel and outbound sum invariants keep holding
@@ -66,7 +68,8 @@ by construction.
   still lands only on the next rebuild.
 - `mergeArmedReady` iterates the same slice header the prune edits, so the
   prune rebuilds the Ready slice instead of shifting in place — both share the
-  backing array.
+  backing array. This stays load-bearing under ADR 0025: the snapshot is
+  published by reference precisely so the sharing remains visible.
 - The merged PR's armed entry still waits for the next cycle's
   `reconcileArmed` cleanup; harmless, since armed flags are only zipped onto
   rows present in the snapshot.
