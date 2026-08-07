@@ -166,6 +166,22 @@ defense-in-depth, not a security boundary.** The review-assist Notifier may
 comment or request changes, **never approve** — that authority stays with
 rules + Screens inbound and the human in the queue.
 
+**`WorkDir` is the one sanctioned breach of hermeticity, and it is a read
+grant** (ADR 0027, amending ADR 0024). A Notifier may name an absolute
+directory to run the harness process in; ambient *instructions* stay off, but
+whatever the harness discovers from a working directory — skills and their
+supporting files — comes on. Discovery and reads resolve from the same root, so
+the anchor cannot be separated from read access to its subtree: the named
+directory **is** the ceiling, and tm3k never widens it. Doctrine: point it at a
+purpose-built, skills-only checkout, never a working clone — a working clone
+carries untracked files that are untracked for a reason, and sits on whatever
+branch you last left it. `WorkDir` is Notifier-only for that second reason: a
+Screen judging against a mutable tree is a gate with an irreproducible input.
+The tree is ambient and is **not** at the PR's head SHA. Which skill runs is
+named in the hook's `Prompt` — the harness-coupling escape hatch (ADR 0026) —
+and composition requires the posted review to name the profile it applied, since
+tm3k cannot verify that a skill resolved.
+
 ### Approved elsewhere
 An Incoming PR GitHub already reports `APPROVED` by someone other than tm3k
 (detected via `reviewDecision` on the cycle fetch; number absent from
