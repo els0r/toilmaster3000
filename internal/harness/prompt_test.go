@@ -100,6 +100,23 @@ func TestComposeNotifyPromptEnforcesTheAuthorityCeiling(t *testing.T) {
 	require.Contains(t, p, "gh pr merge")
 }
 
+func TestComposeNotifyPromptRequiresTheReviewToNameItsProfile(t *testing.T) {
+	// Attribution is the only detection tm3k can have (ADR 0027 decision 6).
+	// Nothing comes back from Act to inspect — the transcript is logged and
+	// ignored — and tm3k cannot check that a skill resolved without learning
+	// what a skill is, which is the boundary ADR 0026 drew. So the signal goes
+	// where a human is already looking: a posted review naming no profile is a
+	// review that loaded no skill. Like the ceiling, it is appended by
+	// composition regardless of the operator's instructions.
+	p := ComposeNotifyPrompt(composeReq())
+
+	require.Contains(t, p, "review profile")
+	require.Contains(t, p, "applied none")
+	require.Greater(t, strings.Index(p, "review profile"),
+		strings.Index(p, "Review the change for malicious intent."),
+		"the requirement is appended after the operator's instructions, never replaceable by them")
+}
+
 func TestComposeNotifyPromptFramesPRContentAsUntrustedData(t *testing.T) {
 	p := ComposeNotifyPrompt(composeReq())
 
