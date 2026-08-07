@@ -253,9 +253,23 @@ func TestNotifierInstancesCompilePathsIntoScope(t *testing.T) {
 func TestExampleHooksConfigLoads(t *testing.T) {
 	data, err := os.ReadFile("examples/hooks.yaml")
 	require.NoError(t, err)
+
+	// Load the example from the layout its own header tells the operator to
+	// create: the file next to the binary, with the prompts it references
+	// copied into .config/. The boot preflight now stats every ENABLED hook's
+	// PromptFile (ADR 0027), so this is also the assertion that an operator who
+	// followed the shipped instructions boots — and that one who skipped the
+	// copy is told which hook is missing what, instead of discovering it as a
+	// screen that holds every PR.
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".config"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".config", "security-screen-prompt.md"),
+		[]byte("vet it"), 0o644))
+
 	// Load self-heals missing Ids into the file, so load a copy — the
 	// committed example must stay Id-less (the intended first-run UX).
-	path := filepath.Join(t.TempDir(), "hooks.yaml")
+	path := filepath.Join(dir, "hooks.yaml")
 	require.NoError(t, os.WriteFile(path, data, 0o644))
 
 	cfg, err := hook.Load(path)
@@ -279,8 +293,29 @@ func TestExampleHooksConfigLoads(t *testing.T) {
 		require.NotEmpty(t, n.ID, "boot must self-heal an Id into the entry")
 		require.NotEmpty(t, n.Paths, "each language reviewer declares the scope it applies to")
 	}
-	require.Equal(t, ".config/go-review-prompt.md", cfg.Notifiers[0].PromptFile)
+	// The two Notifiers also demonstrate both harness-anchoring shapes
+	// (ADR 0027). The Go one is ANCHORED: an absolute WorkDir plus a one-line
+	// Prompt naming the skill that lives in it — harness coupling belongs in
+	// Prompt, the escape hatch, and PromptFile is not re-based against WorkDir.
+	// The bash one is UNANCHORED, keeping the PromptFile shape every hooks.yaml
+	// written before WorkDir existed still has.
+	require.NotEmpty(t, cfg.Notifiers[0].WorkDir, "the Go review-assist demonstrates the anchored shape")
+	require.True(t, filepath.IsAbs(cfg.Notifiers[0].WorkDir), "WorkDir is absolute — nothing is expanded")
+	require.NotEmpty(t, cfg.Notifiers[0].Prompt, "an anchored Notifier names its skill inline")
+	require.Empty(t, cfg.Notifiers[0].PromptFile)
+
+	require.Empty(t, cfg.Notifiers[1].WorkDir, "the bash review-assist stays unanchored — both shapes are shown")
 	require.Equal(t, ".config/bash-review-prompt.md", cfg.Notifiers[1].PromptFile)
+
+	// The comment must carry what an operator cannot infer from the field name:
+	// that WorkDir is a READ GRANT over that subtree, that it must point at a
+	// purpose-built skills-only checkout rather than a working clone, and the
+	// sparse-worktree recipe that produces one.
+	doc := string(data)
+	require.Contains(t, doc, "read access")
+	require.Contains(t, doc, "never a working clone")
+	require.Contains(t, doc, "git worktree add --detach")
+	require.Contains(t, doc, "git sparse-checkout set")
 
 	// The scopes select their own language and decline the other's PR — the
 	// example must demonstrate working selection, not just carry the field.
