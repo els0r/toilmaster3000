@@ -27,6 +27,13 @@ var (
 	// the spec is Prompt|PromptFile, exactly one; silently preferring either
 	// would run instructions the user did not intend.
 	ErrAmbiguousPrompt = errors.New("Prompt and PromptFile are mutually exclusive")
+	// ErrBadPromptFile rejects a PromptFile that does not resolve to a readable
+	// file, on either kind (ADR 0027). Instructions are resolved at RUN time,
+	// and for a Notifier that is after the fired-ledger row is appended — so a
+	// typo there is a logged miss with the once-per-PR fire already spent, and
+	// that PR loses its review permanently. Boot is the only moment the typo is
+	// still cheap.
+	ErrBadPromptFile = errors.New("unreadable prompt file")
 	// ErrBadPoint rejects a Notifier whose Point is not a post-point: absent,
 	// unknown, or a pre-point (pre-points carry Screens only — ADR 0021).
 	ErrBadPoint = errors.New("invalid hook point")
@@ -81,7 +88,7 @@ func (c Config) validate() error {
 				return fmt.Errorf("%s: %w: %q", l, ErrBadPattern, p)
 			}
 		}
-		if err := validateWorkDir(l, n.WorkDir); err != nil {
+		if err := validateWorkDir(l, n.WorkDir, n.Enabled); err != nil {
 			return err
 		}
 	}
@@ -93,13 +100,21 @@ func (c Config) validate() error {
 // existing directory. The path is taken literally — no $VAR, no ~, no cleanup
 // pass — so the directory the operator wrote is the directory the agent reads
 // from (ADR 0027).
-func validateWorkDir(label, workDir string) error {
+//
+// Well-formedness is checked always; existence only for a hook that can run,
+// the checkHarnessBinaries line — a disabled Notifier may name the skills
+// checkout you have not made yet, and the check lands on the boot after you
+// flip Enabled.
+func validateWorkDir(label, workDir string, enabled bool) error {
 	if workDir == "" {
 		return nil
 	}
 	if !filepath.IsAbs(workDir) {
 		return fmt.Errorf("%s: %w: %q — WorkDir must be an absolute path (no $VAR or ~ expansion is performed)",
 			label, ErrBadWorkDir, workDir)
+	}
+	if !enabled {
+		return nil
 	}
 	info, err := os.Stat(workDir)
 	if err != nil {
@@ -132,6 +147,11 @@ func (s Spec) validate(label string, names map[string]bool) error {
 	}
 	if s.Prompt != "" && s.PromptFile != "" {
 		return fmt.Errorf("%s: %w", label, ErrAmbiguousPrompt)
+	}
+	if s.PromptFile != "" && s.Enabled {
+		if _, err := os.Stat(s.PromptFile); err != nil {
+			return fmt.Errorf("%s: %w: %q: %v", label, ErrBadPromptFile, s.PromptFile, err)
+		}
 	}
 	return nil
 }
