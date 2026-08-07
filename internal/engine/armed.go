@@ -28,7 +28,7 @@ func (e *Engine) Arm(number int) error {
 	if !inSnapshot {
 		return fmt.Errorf("%w: #%d", ErrNotInOutbound, number)
 	}
-	if stage == github.OutboundStageChangesRequested {
+	if !armable(stage) {
 		return fmt.Errorf("%w: #%d", ErrChangesRequested, number)
 	}
 	if err := e.armed.Arm(number); err != nil {
@@ -56,6 +56,23 @@ func (e *Engine) ArmedSet() map[int]bool {
 	return e.armed.Set()
 }
 
+// armable reports whether consent may stand over a PR in the given outbound
+// stage. It is the ONE declaration of the "Arm anywhere except Changes
+// Requested" doctrine (CONTEXT "Armed / Withheld", ADR 0016), read by both of
+// its consumers: Arm's 4xx gate and reconcileArmed's keep loop.
+//
+// It is stated by EXCLUSION, and that phrasing is the point: a stage nobody has
+// thought of yet is armable by default at both sites simultaneously, so adding
+// a stage can never silently withdraw merge consent for the PRs in it. In
+// Discussion is armable for the same reason it is worded this way — the hold is
+// a wait on a counterparty, not an objection (ADR 0019).
+//
+// It lives in engine, not github: arming is tm3k's consent model, not a GitHub
+// concept.
+func armable(stage github.OutboundStage) bool {
+	return stage != github.OutboundStageChangesRequested
+}
+
 // outboundStage returns the stage the PR number sits in within the current
 // outbound snapshot (locked read), and whether it is in the snapshot at all —
 // the two facts Arm validates against. It is a pure lookup: the consent rule
@@ -76,29 +93,24 @@ func (e *Engine) outboundStage(number int) (github.OutboundStage, bool) {
 //     stage is disarmed this cycle, keeping Armed ∧ Changes-Requested
 //     impossible without any transition memory.
 //
-// Both fold into one Retain (a single rewrite): keep = every authored number
-// EXCEPT those with changes requested. Arms on every other stage are left
-// alone — stickiness across pushes (arm-while-red) is the core use case, and
-// In Discussion HOLDS the armed merge without ever withdrawing consent
-// (ADR 0019: a nit thread is a conversation, not an objection).
+// Both fold into one Retain (a single rewrite): keep = every authored number in
+// an armable stage. The loop ranges the PARTITION and asks armable, so it is
+// complete over stages by construction — arms on every stage but Changes
+// Requested are left alone, including stages that do not exist yet. Stickiness
+// across pushes (arm-while-red) is the core use case, and In Discussion HOLDS
+// the armed merge without ever withdrawing consent (ADR 0019: a nit thread is a
+// conversation, not an objection).
 func (e *Engine) reconcileArmed(ob Outbound) {
 	keep := make(map[int]bool, ob.Outgoing())
-	for _, stage := range []github.OutboundStage{
-		github.OutboundStageDraft,
-		github.OutboundStageRed,
-		github.OutboundStageRunning,
-		github.OutboundStageAwaitingApproval,
-		github.OutboundStageInDiscussion,
-		github.OutboundStageReady,
-	} {
-		for _, it := range ob[stage] {
-			keep[it.Number] = true
+	changesRequested := map[int]bool{}
+	for stage, items := range ob {
+		for _, it := range items {
+			if armable(stage) {
+				keep[it.Number] = true
+			} else {
+				changesRequested[it.Number] = true
+			}
 		}
-	}
-
-	changesRequested := make(map[int]bool, len(ob[github.OutboundStageChangesRequested]))
-	for _, it := range ob[github.OutboundStageChangesRequested] {
-		changesRequested[it.Number] = true
 	}
 
 	removed, err := e.armed.Retain(keep)
