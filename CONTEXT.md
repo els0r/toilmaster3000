@@ -17,9 +17,12 @@ lean entry **plus** an ADR — the full mechanism lives in the ADR, never inline
 Cross-cutting principles the entries below reference by name.
 
 - **Funnel partition** — every PR in a pull lands in **exactly one** terminal
-  bucket, and the branch precedence in the cycle loop *is* the partition, so
-  segment counts sum to the raw pull by construction. Holds independently for
-  the inbound Cycle Funnel and the outbound stages.
+  bucket, so segment counts sum to the raw pull by construction. Holds for the
+  inbound Cycle Funnel and the outbound stages at **two different strengths**:
+  outbound is a keyed partition whose total is a fold over it (ADR 0025), so
+  "by construction" is literal; inbound is a *maintained* invariant — the
+  branch precedence in the cycle loop *is* the partition, and the counts are
+  mutated by hand alongside it.
 - **Gate vs Invariant** (ADR 0005) — a Gate **drops** a PR from consideration
   entirely (never approved, never queued, never shown); an Invariant **diverts**
   a ready PR to the human queue. Filter vs reroute — never conflate them.
@@ -279,7 +282,9 @@ explicitly arm (a gentleman's-agreement approval must never merge on its own).
 Arm anywhere **except Changes Requested**: an armed PR observed
 `CHANGES_REQUESTED` is disarmed that cycle (level-triggered, no transition
 memory), so Armed ∧ Changes-Requested is an impossible state and an open
-objection always requires fresh consent. **In Discussion holds, never disarms**
+objection always requires fresh consent. **The exclusion is the declaration**
+(ADR 0025): a stage nobody has thought of yet is armable by default, because an
+unanticipated stage must never silently withdraw consent. **In Discussion holds, never disarms**
 (Armed ∧ In-Discussion is valid): the first cycle the threads read zero it
 merges — including when the reviewer's resolve tips it with nobody at the
 keyboard; that is what standing consent means (ADR 0019). New pushes do not
