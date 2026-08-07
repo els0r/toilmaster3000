@@ -60,10 +60,19 @@ type ScreenConfig struct {
 }
 
 // NotifierConfig is a declarative Notifier entry in hooks.yaml; Point names
-// the post-point it fires at.
+// the post-point it fires at and Paths optionally scopes it.
+//
+// Paths is firing discipline's second axis (ADR 0026): gitignore-style globs
+// over the PR's changed-file paths deciding whether this Notifier applies to
+// the PR at all. Absent Paths fires on every PR. It lives here and NOT on the
+// shared Spec deliberately — a scoped Screen would have to resolve to proceed
+// where it does not apply, handing hooks.yaml a way to silently un-gate whole
+// file classes; the hazard stays unrepresentable rather than validated against
+// (the same technique as ScreenConfig carrying no Point field).
 type NotifierConfig struct {
 	Spec  `yaml:",inline"`
-	Point Point `yaml:"Point"`
+	Point Point    `yaml:"Point"`
+	Paths []string `yaml:"Paths,omitempty"`
 }
 
 // Duration is a time.Duration that round-trips YAML in Go duration syntax

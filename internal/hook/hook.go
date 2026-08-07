@@ -49,6 +49,15 @@ type PRContext struct {
 	URL     string
 	HeadSHA string // the head the PR carried when the point fired; Screen verdicts key on it
 
+	// Files are the PR's changed-file paths as the cycle fetch saw them, and
+	// ChangedFiles is the count the PR actually touches. They ride the batched
+	// inbound call (ADR 0026) and are what a Notifier's Scope matches against.
+	// The two are carried separately because gh caps the file list at 100 per
+	// PR: len(Files) < ChangedFiles is an exact truncation signal, and a
+	// Notifier resolves that uncertainty by firing.
+	Files        []string
+	ChangedFiles int
+
 	// Point extras — zero-valued where the point carries no such fact.
 	Reasons []string // queue_entered / screen_held: why the PR sits in the queue
 	Manual  bool     // post_approve: manual override vs auto-approval
