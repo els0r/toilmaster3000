@@ -222,6 +222,120 @@ Notifiers:
 	require.Empty(t, cfg.Notifiers[1].Paths, "a Notifier without Paths is unscoped, not scoped to nothing")
 }
 
+// TestLoadDecodesNotifierWorkDir proves a Notifier's optional harness anchor
+// decodes from hooks.yaml (ADR 0027): WorkDir is the absolute directory the
+// harness process runs in — the lever that makes that directory's ambient
+// skills discoverable, and the run's read ceiling. A Notifier without it is
+// unanchored and runs in tm3k's own cwd, exactly as every Notifier did before
+// WorkDir existed.
+func TestLoadDecodesNotifierWorkDir(t *testing.T) {
+	dir := t.TempDir()
+	path := writeHooks(t, `
+Notifiers:
+  - Id: aaaa1111
+    Name: go review assist
+    Harness: copilot
+    Prompt: /golang-pr-review
+    Point: queue_entered
+    WorkDir: `+dir+`
+    Enabled: true
+  - Id: bbbb2222
+    Name: bash review assist
+    Harness: claude
+    Prompt: review it
+    Point: queue_entered
+    Enabled: true
+`)
+
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Notifiers, 2)
+	require.Equal(t, dir, cfg.Notifiers[0].WorkDir)
+	require.Empty(t, cfg.Notifiers[1].WorkDir, "a Notifier without WorkDir is unanchored, not anchored to nothing")
+}
+
+// TestLoadRejectsBadWorkDir is the WorkDir preflight table (ADR 0027 decision
+// 5), joining the refuse-at-boot family: a WorkDir that is not an absolute path
+// to an existing directory refuses startup, named with the offending hook.
+//
+// The three refusals share one motive. WorkDir is a read grant handed to an
+// agent that holds a gh publishing channel, so "which directory" must never be
+// resolved by accident: a relative path would silently depend on where the
+// binary happened to be started, and a missing or non-directory path would run
+// the agent in tm3k's own cwd — no skills found, one generic review posted
+// once, forever.
+//
+// The $VAR and ~ rows are the same rule read forward: NO expansion is
+// performed. Both spellings are simply not absolute, so they are refused —
+// which is the point, because an unset variable expands to "" and "" silently
+// inherits tm3k's cwd. The row proves the refusal survives even when the
+// variable IS set to a perfectly good directory.
+func TestLoadRejectsBadWorkDir(t *testing.T) {
+	realDir := t.TempDir()
+	notADir := filepath.Join(realDir, "SKILL.md")
+	require.NoError(t, os.WriteFile(notADir, []byte("# skill"), 0o644))
+
+	tests := []struct {
+		name    string
+		workDir string
+		wantErr error
+		wantMsg []string
+	}{
+		{
+			name:    "relative path",
+			workDir: "skills",
+			wantErr: hook.ErrBadWorkDir,
+			wantMsg: []string{"go review assist", "skills"},
+		},
+		{
+			name:    "absolute path that does not exist",
+			workDir: filepath.Join(realDir, "nope"),
+			wantErr: hook.ErrBadWorkDir,
+			wantMsg: []string{"go review assist", "nope"},
+		},
+		{
+			name:    "absolute path to a file, not a directory",
+			workDir: notADir,
+			wantErr: hook.ErrBadWorkDir,
+			wantMsg: []string{"go review assist", "SKILL.md"},
+		},
+		{
+			name:    "an environment variable is never expanded",
+			workDir: "$TM3K_TEST_SKILLS",
+			wantErr: hook.ErrBadWorkDir,
+			wantMsg: []string{"go review assist", "$TM3K_TEST_SKILLS"},
+		},
+		{
+			name:    "a tilde is never expanded",
+			workDir: "~/skills",
+			wantErr: hook.ErrBadWorkDir,
+			wantMsg: []string{"go review assist", "~/skills"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set for real: expansion would turn this into a valid directory,
+			// so the refusal below is proof that no expansion happened.
+			t.Setenv("TM3K_TEST_SKILLS", realDir)
+			path := writeHooks(t, `
+Notifiers:
+  - Name: go review assist
+    Harness: copilot
+    Prompt: /golang-pr-review
+    Point: queue_entered
+    WorkDir: "`+tt.workDir+`"
+    Enabled: true
+`)
+			_, err := hook.Load(path)
+			require.ErrorIs(t, err, tt.wantErr)
+			for _, msg := range tt.wantMsg {
+				require.ErrorContains(t, err, msg)
+			}
+		})
+	}
+}
+
 // TestScopeIsNotifierOnly pins decision 1 of ADR 0026 structurally: Paths
 // exists on NotifierConfig and NOWHERE on the shared Spec, so no Screen can
 // carry it. A scoped Screen would have to resolve to proceed where it does not
@@ -255,6 +369,43 @@ Screens:
 	require.NoError(t, err)
 	require.Len(t, cfg.Screens, 1)
 	require.True(t, cfg.Screens[0].Enabled, "the Screen loads; it simply has no scope to acquire")
+}
+
+// TestWorkDirIsNotifierOnly pins decision 2 of ADR 0027 structurally: WorkDir
+// exists on NotifierConfig and NOWHERE on the shared Spec, so no Screen can
+// carry it. A working tree is mutable, unversioned input — anchor a Screen to
+// one and its verdict depends on whatever branch or half-finished rebase the
+// operator last left there, so two runs over the same PR head can disagree for
+// reasons no ledger records. A gate whose input is not reproducible is not a
+// gate. As with Paths and with ScreenConfig's absent Point, the hazard stays
+// UNREPRESENTABLE rather than validated against.
+func TestWorkDirIsNotifierOnly(t *testing.T) {
+	_, onNotifier := reflect.TypeOf(hook.NotifierConfig{}).FieldByName("WorkDir")
+	require.True(t, onNotifier, "the harness anchor is declared on the Notifier kind")
+
+	_, onScreen := reflect.TypeOf(hook.ScreenConfig{}).FieldByName("WorkDir")
+	require.False(t, onScreen, "a Screen — directly or through the shared Spec — can never carry an anchor")
+
+	_, onSpec := reflect.TypeOf(hook.Spec{}).FieldByName("WorkDir")
+	require.False(t, onSpec, "the shared Spec must not grow an anchor: both kinds would inherit it")
+
+	// And a hooks.yaml Screen that writes WorkDir anyway acquires nothing: the
+	// field is not there to decode into, so the Screen runs unanchored as
+	// always. The value written is one the Notifier preflight would refuse
+	// outright — it passes here precisely because nothing reads it.
+	path := writeHooks(t, `
+Screens:
+  - Id: aaaa1111
+    Name: security screen
+    Harness: claude
+    Prompt: vet it
+    WorkDir: skills
+    Enabled: true
+`)
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Screens, 1)
+	require.True(t, cfg.Screens[0].Enabled, "the Screen loads; it simply has no anchor to acquire")
 }
 
 // TestLoadRejectsBadConfig is the preflight table (the boot gate of ADR 0023):

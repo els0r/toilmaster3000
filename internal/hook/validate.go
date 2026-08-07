@@ -3,6 +3,8 @@ package hook
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -33,6 +35,13 @@ var (
 	// — so a typo that makes the pattern unparseable must surface at boot, not
 	// as a review-assist that mysteriously went quiet (ADR 0026).
 	ErrBadPattern = errors.New("invalid path pattern")
+	// ErrBadWorkDir rejects a Notifier WorkDir that is not an absolute path to
+	// an existing directory (ADR 0027). WorkDir is a read grant handed to an
+	// agent holding a gh publishing channel, so which directory it names must
+	// never be resolved by accident. NOTHING is expanded: no $VAR, no ~ — an
+	// unset variable expands to "", which silently inherits tm3k's own cwd, and
+	// the agent would then find no skills and post one generic review forever.
+	ErrBadWorkDir = errors.New("invalid work directory")
 	// ErrDuplicateName rejects a Name appearing twice across Screens and
 	// Notifiers together: names label hooks in errors, logs, and queue
 	// reasons (screen:<name>), so they must be unambiguous.
@@ -72,6 +81,32 @@ func (c Config) validate() error {
 				return fmt.Errorf("%s: %w: %q", l, ErrBadPattern, p)
 			}
 		}
+		if err := validateWorkDir(l, n.WorkDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateWorkDir checks a Notifier's optional harness anchor: absent is the
+// unanchored Notifier, and anything else must be an absolute path to an
+// existing directory. The path is taken literally — no $VAR, no ~, no cleanup
+// pass — so the directory the operator wrote is the directory the agent reads
+// from (ADR 0027).
+func validateWorkDir(label, workDir string) error {
+	if workDir == "" {
+		return nil
+	}
+	if !filepath.IsAbs(workDir) {
+		return fmt.Errorf("%s: %w: %q — WorkDir must be an absolute path (no $VAR or ~ expansion is performed)",
+			label, ErrBadWorkDir, workDir)
+	}
+	info, err := os.Stat(workDir)
+	if err != nil {
+		return fmt.Errorf("%s: %w: %q: %v", label, ErrBadWorkDir, workDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s: %w: %q — not a directory", label, ErrBadWorkDir, workDir)
 	}
 	return nil
 }
