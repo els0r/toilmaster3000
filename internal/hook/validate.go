@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 // The preflight failure classes (ADR 0023): each refuses startup, wrapped with
@@ -26,6 +28,11 @@ var (
 	// ErrBadPoint rejects a Notifier whose Point is not a post-point: absent,
 	// unknown, or a pre-point (pre-points carry Screens only — ADR 0021).
 	ErrBadPoint = errors.New("invalid hook point")
+	// ErrBadPattern rejects a Notifier Paths entry that is not a valid glob.
+	// Scope is a silent gate — a pattern that never matches simply never fires
+	// — so a typo that makes the pattern unparseable must surface at boot, not
+	// as a review-assist that mysteriously went quiet (ADR 0026).
+	ErrBadPattern = errors.New("invalid path pattern")
 	// ErrDuplicateName rejects a Name appearing twice across Screens and
 	// Notifiers together: names label hooks in errors, logs, and queue
 	// reasons (screen:<name>), so they must be unambiguous.
@@ -59,6 +66,11 @@ func (c Config) validate() error {
 		if !postPoints[n.Point] {
 			return fmt.Errorf("%s: %w: %q — Notifiers attach to post-points only (%s)",
 				l, ErrBadPoint, n.Point, strings.Join(sortedNames(postPoints), ", "))
+		}
+		for _, p := range n.Paths {
+			if !doublestar.ValidatePattern(p) {
+				return fmt.Errorf("%s: %w: %q", l, ErrBadPattern, p)
+			}
 		}
 	}
 	return nil

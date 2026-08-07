@@ -3,6 +3,7 @@ package hook_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -189,6 +190,73 @@ Notifiers:
 	require.Equal(t, "copilot", cfg.Notifiers[0].Harness)
 }
 
+// TestLoadDecodesNotifierPaths proves a Notifier's optional scope decodes from
+// hooks.yaml (ADR 0026): Paths is the glob list gating whether the Notifier
+// applies to a PR at all, and a Notifier without it stays unscoped — absent
+// Paths fires on every PR, so every hooks.yaml written before scope existed
+// keeps its meaning.
+func TestLoadDecodesNotifierPaths(t *testing.T) {
+	path := writeHooks(t, `
+Notifiers:
+  - Id: aaaa1111
+    Name: go review assist
+    Harness: claude
+    Prompt: review it
+    Point: queue_entered
+    Paths:
+      - "*.go"
+      - "services/api/**"
+    Enabled: true
+  - Id: bbbb2222
+    Name: cross-cutting review
+    Harness: claude
+    Prompt: review it
+    Point: queue_entered
+    Enabled: true
+`)
+
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Notifiers, 2)
+	require.Equal(t, []string{"*.go", "services/api/**"}, cfg.Notifiers[0].Paths)
+	require.Empty(t, cfg.Notifiers[1].Paths, "a Notifier without Paths is unscoped, not scoped to nothing")
+}
+
+// TestScopeIsNotifierOnly pins decision 1 of ADR 0026 structurally: Paths
+// exists on NotifierConfig and NOWHERE on the shared Spec, so no Screen can
+// carry it. A scoped Screen would have to resolve to proceed where it does not
+// apply — handing hooks.yaml a way to silently un-gate whole file classes (a
+// security screen scoped to **/*.go would auto-approve a malicious Makefile-only
+// PR with zero screening). The hazard stays UNREPRESENTABLE rather than
+// validated against, the same technique as ScreenConfig carrying no Point.
+func TestScopeIsNotifierOnly(t *testing.T) {
+	_, onNotifier := reflect.TypeOf(hook.NotifierConfig{}).FieldByName("Paths")
+	require.True(t, onNotifier, "scope is declared on the Notifier kind")
+
+	_, onScreen := reflect.TypeOf(hook.ScreenConfig{}).FieldByName("Paths")
+	require.False(t, onScreen, "a Screen — directly or through the shared Spec — can never carry scope")
+
+	_, onSpec := reflect.TypeOf(hook.Spec{}).FieldByName("Paths")
+	require.False(t, onSpec, "the shared Spec must not grow scope: both kinds would inherit it")
+
+	// And a hooks.yaml Screen that writes Paths anyway acquires nothing: the
+	// field is not there to decode into, so the Screen gates every PR as always.
+	path := writeHooks(t, `
+Screens:
+  - Id: aaaa1111
+    Name: security screen
+    Harness: claude
+    Prompt: vet it
+    Paths:
+      - "*.go"
+    Enabled: true
+`)
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Screens, 1)
+	require.True(t, cfg.Screens[0].Enabled, "the Screen loads; it simply has no scope to acquire")
+}
+
 // TestLoadRejectsBadConfig is the preflight table (the boot gate of ADR 0023):
 // each misconfiguration class refuses startup with a sentinel error whose
 // message names the offending hook, so the user can fix hooks.yaml without
@@ -291,6 +359,21 @@ Notifiers:
 `,
 			wantErr: hook.ErrBadPoint,
 			wantMsg: []string{"review assist"},
+		},
+		{
+			name: "malformed path pattern on a notifier",
+			doc: `
+Notifiers:
+  - Name: go review assist
+    Harness: claude
+    Prompt: review it
+    Point: queue_entered
+    Paths:
+      - "*.go"
+      - "[bad"
+`,
+			wantErr: hook.ErrBadPattern,
+			wantMsg: []string{"go review assist", "[bad"},
 		},
 		{
 			name: "duplicate name within a kind",

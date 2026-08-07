@@ -6,13 +6,19 @@ import (
 	"time"
 )
 
-// NotifierInstance pairs a Notifier's declarative Spec and post-point with the
-// species implementation realizing it — the unit the runner fires. Production
-// wiring builds one per configured Notifier (main's buildNotifierRunner);
-// tests fake the Notifier interface.
+// NotifierInstance pairs a Notifier's declarative Spec, post-point, and
+// compiled path scope with the species implementation realizing it — the unit
+// the runner fires. Production wiring builds one per configured Notifier
+// (main's buildNotifierRunner); tests fake the Notifier interface.
+//
+// Scope carries the Notifier's compiled Paths rather than the Spec doing so:
+// scope exists on this kind ONLY, and a Spec field would hand it to Screens
+// too (ADR 0026). The zero Scope is the unscoped Notifier — it fires on every
+// PR, which is what every instance built before scope existed still gets.
 type NotifierInstance struct {
 	Spec     Spec
 	Point    Point
+	Scope    Scope
 	Notifier Notifier
 }
 
@@ -71,6 +77,17 @@ func NewNotifierRunner(ledger *FiredLedger, notifiers ...NotifierInstance) *Noti
 func (r *NotifierRunner) Fire(ctx context.Context, pr PRContext) {
 	for _, inst := range r.notifiers {
 		if !inst.Spec.Enabled || inst.Point != pr.Point {
+			continue
+		}
+		if !inst.Scope.Matches(pr.Files, pr.ChangedFiles) {
+			// Scope gates BEFORE the fire is spent: no ledger row, so the
+			// once-per-PR fire survives. The events are level-triggered, so a
+			// PR that later grows into scope still gets this Notifier's FIRST
+			// run (ADR 0026 decision 3, amending ADR 0021). Debug, not Info:
+			// every cycle re-presents every queued PR to every declining
+			// Notifier.
+			r.logger.Debug("notifier: out of scope for this PR; fire unspent",
+				"notifier", inst.Spec.Name, "pr", pr.Number, "point", pr.Point)
 			continue
 		}
 		marked, err := r.ledger.Mark(FireRecord{HookID: inst.Spec.ID, Number: pr.Number, Point: pr.Point, At: time.Now()})

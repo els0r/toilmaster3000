@@ -82,6 +82,16 @@ func queueEnteredCtx(number int) hook.PRContext {
 	}
 }
 
+// scopedCtx is queueEnteredCtx carrying the PR's changed-file paths — what a
+// Notifier's scope is matched against. changedFiles is passed separately so a
+// test can express a TRUNCATED fetch (fewer visible files than the PR touches).
+func scopedCtx(number int, changedFiles int, files ...string) hook.PRContext {
+	pr := queueEnteredCtx(number)
+	pr.Files = files
+	pr.ChangedFiles = changedFiles
+	return pr
+}
+
 // awaitCalls blocks until the notifier has seen n calls.
 func awaitCalls(t *testing.T, n *recordingNotifier, want int) {
 	t.Helper()
@@ -215,6 +225,94 @@ func TestMultipleNotifiersOnOnePointFireIndependently(t *testing.T) {
 		"each notifier fired exactly once for the PR")
 	require.Zero(t, off.callCount(), "a disabled notifier never fires")
 	require.False(t, ledger.Fired("id-off", 7), "and burns no ledger row")
+}
+
+// NR7: scope gates the fire BEFORE it is spent (ADR 0026 decision 3). An
+// out-of-scope Notifier neither dispatches nor appends a fired-ledger row, so
+// its once-per-PR fire is still unspent — and because queue events are
+// level-triggered, the same PR growing into scope later still gets that
+// Notifier's FIRST run. This is the amendment to ADR 0021's Consequences: no
+// REPEAT run after a fix-up push, but a first run remains available.
+func TestOutOfScopeNotifierKeepsItsUnspentFire(t *testing.T) {
+	n := &recordingNotifier{}
+	ledger := tempFires(t)
+	runner := hook.NewNotifierRunner(ledger, hook.NotifierInstance{
+		Spec:     notifierSpec("id-go", "go review assist"),
+		Point:    hook.QueueEntered,
+		Scope:    hook.NewScope([]string{"*.go"}),
+		Notifier: n,
+	})
+
+	// A docs-only PR enters the queue: the Go reviewer does not apply.
+	runner.Fire(context.Background(), scopedCtx(7, 1, "docs/adr/0026-notifier-scope.md"))
+	require.Never(t, func() bool { return n.callCount() > 0 }, 250*time.Millisecond, 50*time.Millisecond,
+		"an out-of-scope Notifier never runs")
+	require.False(t, ledger.Fired("id-go", 7), "and burns no ledger row — the fire is gated before it is spent")
+
+	// The docs tweak grows into a Go change; the queue re-presents the entry.
+	runner.Fire(context.Background(), scopedCtx(7, 2, "docs/adr/0026-notifier-scope.md", "internal/hook/scope.go"))
+	awaitCalls(t, n, 1)
+	require.True(t, ledger.Fired("id-go", 7), "the first run lands when the PR grows into scope")
+
+	// Spent now: once-per-PR-ever still governs everything after the first run.
+	runner.Fire(context.Background(), scopedCtx(7, 3, "internal/hook/scope.go", "internal/hook/hook.go", "main.go"))
+	require.Never(t, func() bool { return n.callCount() > 1 }, 250*time.Millisecond, 50*time.Millisecond,
+		"scope buys a first run, never a second")
+}
+
+// NR8: the polyglot case that motivated scope (ADR 0026). Two language-keyed
+// Notifiers share queue_entered as N flat siblings — never a hook composing or
+// dispatching other hooks — and each selects itself: a Go+bash PR runs both
+// independently, a bash-only PR runs only the bash one and leaves the Go
+// reviewer's fire unspent. The unscoped sibling is the cross-cutting reviewer
+// that owns the seam between languages: it fires on everything.
+func TestScopedNotifiersSelectThemselvesPerLanguage(t *testing.T) {
+	goRev, shRev, all := &recordingNotifier{}, &recordingNotifier{}, &recordingNotifier{}
+	ledger := tempFires(t)
+	runner := hook.NewNotifierRunner(ledger,
+		hook.NotifierInstance{Spec: notifierSpec("id-go", "go review assist"), Point: hook.QueueEntered,
+			Scope: hook.NewScope([]string{"*.go"}), Notifier: goRev},
+		hook.NotifierInstance{Spec: notifierSpec("id-sh", "bash review assist"), Point: hook.QueueEntered,
+			Scope: hook.NewScope([]string{"*.sh"}), Notifier: shRev},
+		hook.NotifierInstance{Spec: notifierSpec("id-x", "cross-cutting review"), Point: hook.QueueEntered,
+			Notifier: all})
+
+	// A polyglot PR: both language reviewers apply, each under its own key.
+	runner.Fire(context.Background(), scopedCtx(7, 2, "internal/hook/scope.go", "scripts/release.sh"))
+	awaitCalls(t, goRev, 1)
+	awaitCalls(t, shRev, 1)
+	awaitCalls(t, all, 1)
+	require.True(t, ledger.Fired("id-go", 7))
+	require.True(t, ledger.Fired("id-sh", 7))
+
+	// A bash-only PR: only the bash reviewer (and the unscoped one) runs.
+	runner.Fire(context.Background(), scopedCtx(8, 1, "scripts/release.sh"))
+	awaitCalls(t, shRev, 2)
+	awaitCalls(t, all, 2)
+	require.Never(t, func() bool { return goRev.callCount() > 1 }, 250*time.Millisecond, 50*time.Millisecond,
+		"the Go reviewer never comments on a bash-only PR")
+	require.False(t, ledger.Fired("id-go", 8), "and keeps its once-per-PR fire for #8")
+}
+
+// NR9: a Notifier whose scope cannot be determined fires. The cycle fetch caps
+// files at 100 per PR, so a list shorter than changedFiles is a window tm3k
+// cannot see past — and firing on it is inert where declining would be the
+// consequential act (ADR 0026 decision 5). The row is spent normally: a fire is
+// a fire, however it was decided.
+func TestNotifierFiresWhenTheFetchedFileListIsTruncated(t *testing.T) {
+	n := &recordingNotifier{}
+	ledger := tempFires(t)
+	runner := hook.NewNotifierRunner(ledger, hook.NotifierInstance{
+		Spec:     notifierSpec("id-go", "go review assist"),
+		Point:    hook.QueueEntered,
+		Scope:    hook.NewScope([]string{"*.go"}),
+		Notifier: n,
+	})
+
+	// 2 visible files, none matching, but the PR touches 120 — truncated.
+	runner.Fire(context.Background(), scopedCtx(7, 120, "docs/a.md", "docs/b.md"))
+	awaitCalls(t, n, 1)
+	require.True(t, ledger.Fired("id-go", 7), "an unknown-scope fire is spent like any other")
 }
 
 // NR6: a hung side effect is bounded by the hook's Timeout (the only tunable):
