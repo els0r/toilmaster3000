@@ -501,7 +501,7 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		// snapshot (the /outbound source of truth, zero after a failed fetch),
 		// merged from today's ledger via the same filter /merges serves — so the
 		// heartbeat needs no extra fetch and can never disagree with either tab.
-		body.ReadyCount = len(eng.Outbound().Ready)
+		body.ReadyCount = len(eng.Outbound()[github.OutboundStageReady])
 		body.MergedCount = len(todaysMerges(eng.Merges()))
 		return &statusOutput{Body: body}, nil
 	})

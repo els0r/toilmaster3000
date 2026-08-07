@@ -25,11 +25,11 @@ func TestUnresolvedThreadsFoldToInDiscussion(t *testing.T) {
 	eng.RunCycleOnce(context.Background())
 
 	ob := eng.Outbound()
-	require.Empty(t, ob.Ready, "an approved PR with an unresolved thread is not Ready")
-	require.Len(t, ob.InDiscussion, 1)
-	require.Equal(t, 6, ob.InDiscussion[0].Number)
-	require.Equal(t, 1, ob.InDiscussion[0].UnresolvedThreads, "the judged unresolved count rides the item")
-	require.Equal(t, 1, ob.Outgoing, "the partition still sums — In Discussion is one of its lists")
+	require.Empty(t, ob[github.OutboundStageReady], "an approved PR with an unresolved thread is not Ready")
+	require.Len(t, ob[github.OutboundStageInDiscussion], 1)
+	require.Equal(t, 6, ob[github.OutboundStageInDiscussion][0].Number)
+	require.Equal(t, 1, ob[github.OutboundStageInDiscussion][0].UnresolvedThreads, "the judged unresolved count rides the item")
+	require.Equal(t, 1, ob.Outgoing(), "the partition still sums — In Discussion is one of its lists")
 	require.Equal(t, 1, fake.ThreadsCallCount(), "threads ride one batched call per cycle, no N+1")
 }
 
@@ -63,8 +63,8 @@ func TestArmedInDiscussionHeldThenMergesOnResolution(t *testing.T) {
 	require.Len(t, fake.MergeCalls(), 1, "the first zero-unresolved cycle merges")
 	require.Len(t, eng.Merges(), 1, "the ledger append rides the merge")
 	ob := eng.Outbound()
-	require.Empty(t, ob.Ready, "Ready pruned atomically with the ledger append (ADR 0018)")
-	require.Zero(t, ob.Outgoing, "Outgoing follows the prune — the partition still sums")
+	require.Empty(t, ob[github.OutboundStageReady], "Ready pruned atomically with the ledger append (ADR 0018)")
+	require.Zero(t, ob.Outgoing(), "the derived Outgoing follows the prune — the partition still sums")
 }
 
 // D3: a FAILED threads call fails closed, exactly like a failed authored
@@ -88,8 +88,8 @@ func TestFailedThreadsFetchClearsOutboundAndMergesNothing(t *testing.T) {
 	require.Empty(t, fake.MergeCalls(), "no merge on guessed thread data — fail closed")
 	require.Empty(t, eng.Merges())
 	ob := eng.Outbound()
-	require.Zero(t, ob.Outgoing, "a failed threads fetch clears the outbound snapshot")
-	require.Empty(t, ob.Ready)
+	require.Zero(t, ob.Outgoing(), "a failed threads fetch clears the outbound snapshot")
+	require.Empty(t, ob[github.OutboundStageReady])
 	require.True(t, eng.ArmedSet()[21], "a failed fetch never touches the armed set")
 
 	// The next cycle's threads call succeeds: the still-armed Ready PR merges.
@@ -106,7 +106,7 @@ func TestNewThreadOnArmedReadyPRHoldsAgain(t *testing.T) {
 
 	eng.RunCycleOnce(context.Background())
 	require.NoError(t, eng.Arm(21))
-	require.Len(t, eng.Outbound().Ready, 1, "no threads yet: the armed PR sits in Ready (unmerged only for its UNKNOWN mergeability)")
+	require.Len(t, eng.Outbound()[github.OutboundStageReady], 1, "no threads yet: the armed PR sits in Ready (unmerged only for its UNKNOWN mergeability)")
 
 	// A reviewer opens a fresh thread on the armed, Ready PR.
 	fake.SetThreads(21, github.RawReviewThreads{Nodes: []github.ReviewThread{{IsResolved: false}}})
@@ -114,9 +114,9 @@ func TestNewThreadOnArmedReadyPRHoldsAgain(t *testing.T) {
 
 	require.Empty(t, fake.MergeCalls(), "held again — the merge step never saw it in Ready")
 	ob := eng.Outbound()
-	require.Empty(t, ob.Ready, "the PR left Ready for In Discussion")
-	require.Len(t, ob.InDiscussion, 1)
-	require.Equal(t, 21, ob.InDiscussion[0].Number)
+	require.Empty(t, ob[github.OutboundStageReady], "the PR left Ready for In Discussion")
+	require.Len(t, ob[github.OutboundStageInDiscussion], 1)
+	require.Equal(t, 21, ob[github.OutboundStageInDiscussion][0].Number)
 	require.True(t, eng.ArmedSet()[21], "still armed — the hold is not a disarm")
 }
 
@@ -134,7 +134,7 @@ func TestDiffOfInDiscussionPRReturnsFilesAndTotal(t *testing.T) {
 		{Filename: "api.go", Status: "modified", Additions: 12, Deletions: 2, Patch: "@@ -1 +1 @@"},
 	})
 	eng.RunCycleOnce(context.Background())
-	require.Len(t, eng.Outbound().InDiscussion, 1, "precondition: the PR sits in In Discussion")
+	require.Len(t, eng.Outbound()[github.OutboundStageInDiscussion], 1, "precondition: the PR sits in In Discussion")
 
 	files, total, err := eng.Diff(context.Background(), 91)
 	require.NoError(t, err)

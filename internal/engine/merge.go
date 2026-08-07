@@ -16,9 +16,14 @@ import (
 // AFTER the level-triggered reconciliation, so a just-disarmed PR never
 // merges); MERGEABLE is the final gh-land precondition — CONFLICTING and
 // UNKNOWN block the merge but never move the PR out of Ready.
-func (e *Engine) mergeArmedReady(ctx context.Context, ob Outbound) {
+//
+// It takes the READY LIST, not the whole snapshot: the Discussion gate is
+// enforced by this signature (ADR 0019), so no typo here can reach In
+// Discussion, and the aliasing the prune guards against (ADR 0018) is exactly
+// one slice header wide.
+func (e *Engine) mergeArmedReady(ctx context.Context, ready []OutboundItem) {
 	armedSet := e.armed.Set()
-	for _, it := range ob.Ready {
+	for _, it := range ready {
 		if !armedSet[it.Number] {
 			continue // Withheld: no consent, no merge — ever.
 		}
@@ -91,24 +96,25 @@ func (e *Engine) mergeOne(ctx context.Context, it OutboundItem) {
 }
 
 // pruneMergedFromOutbound removes a just-merged PR from the published outbound
-// snapshot's Ready list and decrements Outgoing so the partition still sums
-// (ADR 0018). It runs in the same critical section as the ledger append, so
-// /outbound and /merges can never disagree — the row leaves Ready in the same
-// atomic step that puts it in the ledger. Callers must hold e.mu. The Ready
-// slice is rebuilt, never shifted in place: mergeArmedReady is still ranging
-// over the published slice header, and both share the backing array.
+// snapshot's Ready list — and nothing else, because Outgoing is derived, so the
+// partition keeps summing for free (ADR 0018 as amended by ADR 0025). It runs
+// in the same critical section as the ledger append, so /outbound and /merges
+// can never disagree — the row leaves Ready in the same atomic step that puts
+// it in the ledger. Callers must hold e.mu. The Ready slice is REBUILT, never
+// shifted in place: mergeArmedReady is still ranging the slice header it was
+// handed, and both share the backing array.
 func (e *Engine) pruneMergedFromOutbound(number int) {
-	ready := make([]OutboundItem, 0, len(e.outbound.Ready))
-	for _, it := range e.outbound.Ready {
+	published := e.outbound[github.OutboundStageReady]
+	pruned := make([]OutboundItem, 0, len(published))
+	for _, it := range published {
 		if it.Number != number {
-			ready = append(ready, it)
+			pruned = append(pruned, it)
 		}
 	}
-	if len(ready) == len(e.outbound.Ready) {
+	if len(pruned) == len(published) {
 		return // not in the published snapshot; nothing to reconcile
 	}
-	e.outbound.Ready = ready
-	e.outbound.Outgoing--
+	e.outbound[github.OutboundStageReady] = pruned
 }
 
 // appendMergeRecord appends one merge as a JSON line to merges.jsonl, creating
