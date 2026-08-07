@@ -37,16 +37,42 @@ Screens:
 # miss, never a double-post. Several Notifiers may share one point (e.g. one
 # review-assist per language) — each keeps its own once-per-PR entry.
 #
-# The review-assist below runs the harness CLI WITH the authority to use your
-# gh auth: the agent fetches the PR's diff and posts its own review comment
-# (or requests changes) as YOUR identity. Its ceiling — never approve, never
-# merge — is prompt-enforced, not code-enforced. It ships DISABLED: review
-# the referenced prompt before enabling, then copy it to
-# .config/go-review-prompt.md and flip Enabled to true.
+# Paths optionally SCOPES a Notifier: it fires only on PRs touching a matching
+# changed file, so a language reviewer stays off the PRs it has nothing to say
+# about. Patterns are gitignore-style — one containing no "/" matches at any
+# depth ("*.go" covers main.go and internal/hook/hook.go alike), one containing
+# "/" keeps its directory scoping ("services/api/**"). Absent Paths fires on
+# every PR, which is exactly the cross-cutting reviewer that owns the seams
+# between languages. Scope is checked BEFORE the fire is spent, so a Notifier
+# that declines keeps its once-per-PR run for the day the PR grows into scope.
+# There is no Paths on Screens: a Screen must judge every PR it is configured
+# for (ADR 0026).
+#
+# The two review-assists below run the harness CLI WITH the authority to use
+# your gh auth: the agent fetches the PR's diff and posts its own review comment
+# (or requests changes) as YOUR identity. Their ceiling — never approve, never
+# merge — is prompt-enforced, not code-enforced. They ship DISABLED: review the
+# referenced prompt before enabling, then copy it to .config/ and flip Enabled
+# to true. Two siblings on one point is the whole polyglot mechanism — a Go+bash
+# PR gets one review per language, each written by a prompt that knows one
+# domain, and each failing independently of the other.
 Notifiers:
     - Name: go review assist
       Harness: claude
       PromptFile: .config/go-review-prompt.md
       Point: queue_entered
+      Paths:
+        - "*.go"
+        - go.mod
+      Timeout: 10m
+      Enabled: false
+
+    - Name: bash review assist
+      Harness: claude
+      PromptFile: .config/bash-review-prompt.md
+      Point: queue_entered
+      Paths:
+        - "*.sh"
+        - "*.bash"
       Timeout: 10m
       Enabled: false
