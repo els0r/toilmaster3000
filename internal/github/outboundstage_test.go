@@ -157,3 +157,75 @@ func TestClassifyOutboundStage(t *testing.T) {
 		})
 	}
 }
+
+// TestOutboundStagesIsTheClassifierCodomain closes the drift between the
+// ordered stage list and the fold that produces stages — the price of an open
+// set (ADR 0025). It drives ClassifyOutboundStage over its FULL finite input
+// space (isDraft x rollup shape x reviewDecision, unrecognised values included,
+// x unresolved count), collects the results into a set, and asserts
+// set-equality with OutboundStages() in both directions at once: nothing the
+// fold returns is missing from the list, and no listed stage is unreachable.
+func TestOutboundStagesIsTheClassifierCodomain(t *testing.T) {
+	checkRun := func(status, conclusion string) github.Check {
+		return github.Check{Typename: "CheckRun", Status: status, Conclusion: conclusion}
+	}
+	statusContext := func(state string) github.Check {
+		return github.Check{Typename: "StatusContext", State: state}
+	}
+
+	// Every rollup shape the fold discriminates on: green, failed, pending, the
+	// mixed fail+pending case, both legacy StatusContext branches, the empty
+	// rollup, and an unrecognised entry type.
+	rollups := [][]github.Check{
+		nil,
+		{},
+		{checkRun("COMPLETED", "SUCCESS")},
+		{checkRun("COMPLETED", "FAILURE")},
+		{checkRun("IN_PROGRESS", "")},
+		{checkRun("COMPLETED", "FAILURE"), checkRun("IN_PROGRESS", "")},
+		{statusContext("SUCCESS")},
+		{statusContext("PENDING")},
+		{statusContext("EXPECTED")},
+		{statusContext("ERROR")},
+		{statusContext("FAILURE")},
+		{{Typename: "SomethingGitHubAddedLater"}},
+	}
+	// Both recognised reviewDecision values, the empty one, plus two the fold
+	// does not recognise — the default branch is reachable either way.
+	decisions := []string{"", "APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED", "SOMETHING_NEW"}
+	// Zero, one, and many unresolved threads: the fold only tests > 0, so three
+	// points cover the axis.
+	unresolveds := []int{0, 1, 7}
+
+	var collected []github.OutboundStage
+	seen := map[github.OutboundStage]bool{}
+	for _, isDraft := range []bool{false, true} {
+		for _, checks := range rollups {
+			for _, decision := range decisions {
+				for _, unresolved := range unresolveds {
+					pr := github.PR{IsDraft: isDraft, Checks: checks, ReviewDecision: decision}
+					stage := github.ClassifyOutboundStage(pr, unresolved)
+					if !seen[stage] {
+						seen[stage] = true
+						collected = append(collected, stage)
+					}
+				}
+			}
+		}
+	}
+
+	require.ElementsMatch(t, github.OutboundStages(), collected,
+		"OutboundStages() must be exactly the classifier's codomain — no unlisted stage, no unreachable one")
+}
+
+// TestOutboundStagesReturnsACopy pins the reason the stage set is exported as a
+// function rather than a slice var: an importer that scribbles on the result
+// cannot corrupt the declaration every other caller reads.
+func TestOutboundStagesReturnsACopy(t *testing.T) {
+	stages := github.OutboundStages()
+	require.NotEmpty(t, stages)
+	stages[0] = github.OutboundStage("vandalised")
+
+	require.NotEqual(t, github.OutboundStage("vandalised"), github.OutboundStages()[0],
+		"OutboundStages returns a copy, so a mutating caller is isolated")
+}

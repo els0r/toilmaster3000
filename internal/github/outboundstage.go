@@ -39,6 +39,35 @@ const (
 	OutboundStageReady OutboundStage = "ready"
 )
 
+// outboundStages is the stage set in funnel order — which is also
+// ClassifyOutboundStage's precedence order. It is the ONE declaration of the
+// set (ADR 0025); everything downstream keys off the classifier's tag instead
+// of re-enumerating it.
+var outboundStages = []OutboundStage{
+	OutboundStageDraft,
+	OutboundStageRed,
+	OutboundStageRunning,
+	OutboundStageChangesRequested,
+	OutboundStageAwaitingApproval,
+	OutboundStageInDiscussion,
+	OutboundStageReady,
+}
+
+// OutboundStages returns the outbound stage set in funnel order. It is a
+// function returning a COPY, not an exported slice var, for the reason
+// engine.Outbound() copies its slices: an exported slice is mutable by any
+// importer, and this one is the declaration of record.
+//
+// The set is open by design — the classifier may grow a stage — so the
+// discipline is: loops that must be COMPLETE range the partition map; loops
+// that must be ORDERED range this list. A github test drives the fold over its
+// full input space and asserts set-equality with this list in both directions,
+// so neither an unlisted classifier branch nor an unreachable constant
+// survives.
+func OutboundStages() []OutboundStage {
+	return append([]OutboundStage(nil), outboundStages...)
+}
+
 // gh reviewDecision values the stage fold judges.
 const (
 	reviewDecisionApproved         = "APPROVED"
