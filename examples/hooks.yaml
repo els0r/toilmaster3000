@@ -56,10 +56,43 @@ Screens:
 # to true. Two siblings on one point is the whole polyglot mechanism — a Go+bash
 # PR gets one review per language, each written by a prompt that knows one
 # domain, and each failing independently of the other.
+#
+# WorkDir (Notifiers only) runs the harness process in that directory, which is
+# how the CLI finds the skills under it — .github/skills, .agents/skills,
+# .claude/skills. It must be an ABSOLUTE path; nothing is expanded, so no $VAR
+# and no ~. Read it as a GRANT: the run gets read access to that directory's
+# whole subtree, and reads outside it are denied by the CLI. tm3k never widens
+# that boundary, so choose the directory as carefully as you would choose what
+# to hand an agent that is also holding your gh auth while reading a stranger's
+# PR.
+#
+# Point it at a purpose-built, skills-only checkout — never a working clone. A
+# working clone carries untracked files that are untracked for a reason, and it
+# sits on whatever branch you last left it. Make one like this:
+#
+#     git worktree add --detach <dir> <default-branch>
+#     cd <dir> && git sparse-checkout set .github/skills && git checkout
+#
+# ~3 MB, no untracked files, shared object store, pinned to the base branch —
+# which is the right context for reviewing a diff. The tree is ambient: it is
+# NOT checked out at the PR's head.
+#
+# With WorkDir set, the prompt is a one-liner naming the skill, and the spelling
+# is harness-specific: "/golang-pr-review" for copilot (its skill mechanism), or
+# "Read and follow .github/skills/golang-pr-review/SKILL.md" for claude (a plain
+# file read). PromptFile is NOT re-based — it still resolves against tm3k's own
+# working directory. Anchoring is optional: the bash sibling below stays
+# unanchored and keeps its PromptFile, which is exactly how both worked before
+# WorkDir existed — examples/go-review-prompt.md is the unanchored Go prompt
+# this entry used to name, if you would rather not anchor at all. Whichever you
+# use, the posted review is required to open by
+# naming the profile it applied — a review that names none loaded no skill, and
+# that is the only signal tm3k can give you.
 Notifiers:
     - Name: go review assist
       Harness: claude
-      PromptFile: .config/go-review-prompt.md
+      Prompt: Read and follow .github/skills/golang-pr-review/SKILL.md
+      WorkDir: /absolute/path/to/your/skills-worktree
       Point: queue_entered
       Paths:
         - "*.go"
