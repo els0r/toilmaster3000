@@ -133,6 +133,22 @@ post-points Notifiers only): `pre_approve`, `post_approve`, `queue_entered`
 diverted it) — separate events, so a just-screened PR never auto-receives a
 second AI pass.
 
+**Firing discipline has two axes** (ADR 0026): *cadence* — how often a hook may
+fire (Screens per-head, Notifiers once per PR ever) — and *scope* — whether a
+Notifier applies to the PR at all. A Notifier's optional `Paths` matches the
+changed-file paths riding the cycle fetch (gitignore-style globs: a slashless
+pattern matches at any depth). Scope gates the fire *before* it is spent, so an
+out-of-scope Notifier keeps its once-per-PR fire and a PR that later grows into
+scope still gets its first run. Scope is **Notifier-only** — a scoped Screen
+could silently un-gate whole file classes, so the field does not exist on that
+kind. Language-keyed review-assists are N flat Notifiers that decline, never a
+hook that composes or dispatches other hooks.
+
+**Uncertainty resolves toward the harmless side, and the sides differ by kind**:
+a Screen with no verdict never proceeds; a Notifier whose scope is unknown (the
+cycle fetch caps files at 100 per PR, detectable against `changedFiles`) fires.
+Same principle, opposite direction — a Screen gates, a Notifier cannot.
+
 Screens are a **polled external signal, never an awaited call** (ADR 0022):
 the cycle never blocks — a missing verdict dispatches a run and the PR sits
 in the Screening segment; any `hold` diverts to Needs-Human-Review (divert,
@@ -509,6 +525,9 @@ invocations: `docs/development.md`.
 - **Outbound hook points & pre-approve Notifiers** — `pre_merge` would
   second-guess the Arm; a pre-approve warning is an intervention-window
   feature, not a notification (ADR 0021).
+- **`ExcludePaths` on Notifier scope** — `Paths` has no negation; excluding
+  `vendor/**` or generated files is not expressible. The failure it would
+  prevent is one spurious review comment, so it waits until it bites (ADR 0026).
 - **Per-hook `Env` override & a hooks UI editor** — hooks.yaml stays
   hand-edited and boot-loaded until either bites; until then hook `gh` side
   effects post as the runtime identity (ADR 0023).
