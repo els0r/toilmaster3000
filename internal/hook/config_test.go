@@ -336,6 +336,111 @@ Notifiers:
 	}
 }
 
+// TestLoadRejectsMissingPromptFile closes the pre-existing hole ADR 0027
+// decision 5 names, on BOTH kinds. A PromptFile is resolved at *fire* time —
+// for a Notifier that is after ledger.Mark has already appended the row, so a
+// mistyped path is a logged miss with the fire already spent: that PR loses
+// its review permanently, with no retry and no 3-strikes path (which is
+// Screens-only anyway). Boot is the only moment the typo can still be cheap.
+func TestLoadRejectsMissingPromptFile(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "review.md")
+	require.NoError(t, os.WriteFile(present, []byte("review it"), 0o644))
+	missing := filepath.Join(dir, "typo.md")
+
+	t.Run("screen naming a missing prompt file", func(t *testing.T) {
+		_, err := hook.Load(writeHooks(t, `
+Screens:
+  - Name: security screen
+    Harness: claude
+    PromptFile: `+missing+`
+    Enabled: true
+`))
+		require.ErrorIs(t, err, hook.ErrBadPromptFile)
+		require.ErrorContains(t, err, "security screen")
+		require.ErrorContains(t, err, "typo.md")
+	})
+
+	t.Run("notifier naming a missing prompt file", func(t *testing.T) {
+		_, err := hook.Load(writeHooks(t, `
+Notifiers:
+  - Name: go review assist
+    Harness: claude
+    PromptFile: `+missing+`
+    Point: queue_entered
+    Enabled: true
+`))
+		require.ErrorIs(t, err, hook.ErrBadPromptFile)
+		require.ErrorContains(t, err, "go review assist")
+		require.ErrorContains(t, err, "typo.md")
+	})
+
+	t.Run("a prompt file that exists boots", func(t *testing.T) {
+		cfg, err := hook.Load(writeHooks(t, `
+Screens:
+  - Name: security screen
+    Harness: claude
+    PromptFile: `+present+`
+    Enabled: true
+Notifiers:
+  - Name: go review assist
+    Harness: claude
+    PromptFile: `+present+`
+    Point: queue_entered
+    Enabled: true
+`))
+		require.NoError(t, err)
+		require.Len(t, cfg.Screens, 1)
+		require.Len(t, cfg.Notifiers, 1)
+	})
+}
+
+// TestDisabledHooksDeferExistenceChecks draws the line the two new preflights
+// share with checkHarnessBinaries: existence on disk is checked for the hooks
+// that can actually RUN, because a disabled hook can neither spend a fire nor
+// read a prompt. That keeps the shipped examples/hooks.yaml bootable — it
+// carries disabled entries naming a prompt file you have not copied yet and a
+// skills checkout only you can create — while the check still fires at the
+// exact moment it matters: the boot after Enabled is flipped to true.
+//
+// Well-formedness is NOT deferred. A relative WorkDir is refused on a disabled
+// Notifier too: "absolute path" is a property of what the operator wrote, not
+// of the filesystem, and catching it early costs nothing.
+func TestDisabledHooksDeferExistenceChecks(t *testing.T) {
+	dir := t.TempDir()
+	missingFile := filepath.Join(dir, "not-copied-yet.md")
+	missingDir := filepath.Join(dir, "skills-worktree")
+
+	cfg, err := hook.Load(writeHooks(t, `
+Screens:
+  - Name: security screen
+    Harness: claude
+    PromptFile: `+missingFile+`
+    Enabled: false
+Notifiers:
+  - Name: go review assist
+    Harness: copilot
+    Prompt: /golang-pr-review
+    Point: queue_entered
+    WorkDir: `+missingDir+`
+    Enabled: false
+`))
+	require.NoError(t, err, "a disabled hook names resources it does not need yet")
+	require.Len(t, cfg.Screens, 1)
+	require.Len(t, cfg.Notifiers, 1)
+
+	_, err = hook.Load(writeHooks(t, `
+Notifiers:
+  - Name: go review assist
+    Harness: copilot
+    Prompt: /golang-pr-review
+    Point: queue_entered
+    WorkDir: skills
+    Enabled: false
+`))
+	require.ErrorIs(t, err, hook.ErrBadWorkDir, "a relative WorkDir is malformed whether or not the hook runs")
+}
+
 // TestScopeIsNotifierOnly pins decision 1 of ADR 0026 structurally: Paths
 // exists on NotifierConfig and NOWHERE on the shared Spec, so no Screen can
 // carry it. A scoped Screen would have to resolve to proceed where it does not
