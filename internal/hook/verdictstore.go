@@ -150,7 +150,7 @@ func (s *VerdictStore) apply(rec VerdictRecord) {
 
 // load reads verdicts.jsonl into the latest-wins map; a missing file is the
 // empty store. Runs at construction, before the store is shared.
-func (s *VerdictStore) load() error {
+func (s *VerdictStore) load() (err error) {
 	f, err := os.Open(s.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -158,7 +158,11 @@ func (s *VerdictStore) load() error {
 		}
 		return fmt.Errorf("read verdicts.jsonl: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close verdicts.jsonl: %w", closeErr))
+		}
+	}()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -182,7 +186,8 @@ func (s *VerdictStore) load() error {
 }
 
 // appendLine writes one record as a JSON line through the shared .state append
-// idiom (internal/jsonl). Callers hold s.mu.
+// idiom (internal/jsonl), which checks the close: a row that fails at flush is
+// a failed append. Callers hold s.mu.
 func (s *VerdictStore) appendLine(rec VerdictRecord) error {
 	return jsonl.Append(s.path, rec)
 }
