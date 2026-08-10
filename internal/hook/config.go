@@ -72,11 +72,11 @@ type ScreenConfig struct {
 // (the same technique as ScreenConfig carrying no Point field).
 //
 // WorkDir is the harness process's working directory (ADR 0027): an absolute
-// path, so the CLI discovers that directory's ambient skills — and, because
-// discovery and reads resolve from the same root, it is also the run's read
-// ceiling, which tm3k never widens. Absent WorkDir is the unanchored Notifier,
-// running in tm3k's own cwd exactly as before the field existed. It lives here
-// and NOT on the shared Spec for the same unrepresentable-hazard reason as
+// path, so the CLI discovers that directory's ambient skills. It is the read
+// ceiling for Claude and Copilot; OpenCode treats a containing Git worktree as
+// its direct-tool boundary (ADR 0029). Absent WorkDir is the unanchored
+// Notifier, running in tm3k's own cwd exactly as before the field existed. It
+// lives here and NOT on the shared Spec for the same unrepresentable-hazard reason as
 // Paths: a working tree is mutable, unversioned input, so a Screen anchored to
 // one could return different verdicts for the same PR head for reasons no
 // ledger records — and a gate whose input is not reproducible is not a gate.

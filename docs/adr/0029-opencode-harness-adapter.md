@@ -62,12 +62,19 @@ return the run's result text, and nothing else.
 7. **`WorkDir` remains a read grant, not a sandbox.** It is the OpenCode
    process cwd and direct-tool workspace. The notifier denies
    `external_directory`, but trusted global configuration can still influence
-   the model context; operators keep the skills-only-worktree doctrine of ADR
-   0027.
+   the model context. Within Git, OpenCode treats the entire containing
+   worktree as internal for direct-tool access, so operators keep ADR 0027's
+   standalone skills-only-worktree doctrine rather than anchoring below a
+   broader checkout.
 8. **Existing pools remain the concurrency bound.** tm3k does not add a global
    OpenCode semaphore or rely on undocumented database overrides. OpenCode
    one-shot concurrency is empirically checked before release; failures remain
    bounded by each hook's existing timeout and failure contract.
+9. **Linux cancellation kills the OpenCode process tree.** OpenCode launches
+   shell tools detached on Linux. tm3k starts each CLI run in its own process
+   group and walks live descendants through `/proc` before terminating the
+   descendant groups and CLI group, so a timed-out Notifier cannot leave `gh`
+   running after its fire has been recorded.
 
 ## Considered Options
 

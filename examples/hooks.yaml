@@ -65,9 +65,11 @@ Screens:
 # and no ~. Read it as a GRANT: the run gets read access to that directory's
 # whole subtree. Claude and Copilot deny reads outside it; OpenCode denies
 # direct tool access outside it but is not a complete sandbox against trusted
-# global configuration. tm3k never widens the direct-tool boundary, so choose
-# the directory as carefully as you would choose what to hand an agent that is
-# also holding your gh auth while reading a stranger's PR.
+# global configuration. Within Git, OpenCode treats the containing worktree as
+# internal, so use a standalone skills-only worktree, not a nested directory in
+# a broader checkout. tm3k never widens the direct-tool boundary, so choose the
+# directory as carefully as you would choose what to hand an agent that is also
+# holding your gh auth while reading a stranger's PR.
 #
 # Point it at a purpose-built, skills-only checkout — never a working clone. A
 # working clone carries untracked files that are untracked for a reason, and it

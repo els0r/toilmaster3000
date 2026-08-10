@@ -158,6 +158,10 @@ func openCodeCmd(ctx context.Context, model, prompt, workDir, agent string) (*ex
 	if err != nil {
 		return nil, err
 	}
+	pwd, err := openCodePWD(workDir)
+	if err != nil {
+		return nil, err
+	}
 
 	args := []string{"run", "--agent", agent}
 	if model != "" {
@@ -169,9 +173,25 @@ func openCodeCmd(ctx context.Context, model, prompt, workDir, agent string) (*ex
 	cmd.Env = setEnv(cmd.Env, "OPENCODE_AUTO_SHARE", "false")
 	cmd.Env = setEnv(cmd.Env, "OPENCODE_DISABLE_AUTOUPDATE", "true")
 	cmd.Env = setEnv(cmd.Env, "OPENCODE_DISABLE_LSP_DOWNLOAD", "true")
+	cmd.Env = setEnv(cmd.Env, "PWD", pwd)
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.WaitDelay = cliWaitDelay
+	configureOpenCodeProcess(cmd)
 	return cmd, nil
+}
+
+// openCodePWD returns the directory OpenCode must treat as its project root.
+// OpenCode prefers PWD over process.cwd(), so retaining tm3k's parent PWD would
+// bypass an anchored Notifier's WorkDir.
+func openCodePWD(workDir string) (string, error) {
+	if workDir != "" {
+		return workDir, nil
+	}
+	pwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve OpenCode working directory: %w", err)
+	}
+	return pwd, nil
 }
 
 // openCodeConfig overlays one run-private tm3k agent onto the inherited inline

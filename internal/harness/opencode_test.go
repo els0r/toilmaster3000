@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -186,6 +187,7 @@ func TestOpenCodeCarriesWorkDirToProcessSeam(t *testing.T) {
 }
 
 func TestOpenCodeCmdUsesStdinAndRunLocalProfile(t *testing.T) {
+	t.Setenv("PWD", "/stale-parent-directory")
 	t.Setenv("OPENCODE_CONFIG_CONTENT", `{"provider":{"test":{"options":{"baseURL":"http://example.test"}}},"agent":{"other":{"mode":"primary"}}}`)
 	cmd, err := openCodeCmd(context.Background(), "test/model", "prompt text", "/srv/skills-worktree", openCodeNotifierAgent)
 
@@ -205,11 +207,13 @@ func TestOpenCodeCmdUsesStdinAndRunLocalProfile(t *testing.T) {
 	require.Equal(t, "false", env["OPENCODE_AUTO_SHARE"])
 	require.Equal(t, "true", env["OPENCODE_DISABLE_AUTOUPDATE"])
 	require.Equal(t, "true", env["OPENCODE_DISABLE_LSP_DOWNLOAD"])
+	require.Equal(t, "/srv/skills-worktree", env["PWD"], "OpenCode prefers PWD over cmd.Dir")
 	require.NotEmpty(t, env["OPENCODE_CONFIG_CONTENT"])
 
 	defaultModelCmd, err := openCodeCmd(context.Background(), "", "prompt text", "", openCodeScreenAgent)
 	require.NoError(t, err)
 	require.NotContains(t, defaultModelCmd.Args, "--model", "an empty hook Model uses the operator default")
+	require.Equal(t, mustGetwd(t), envMap(defaultModelCmd.Env)["PWD"], "an unanchored run uses tm3k's actual cwd")
 }
 
 func TestOpenCodeConfigPreservesInheritedSettingsAndReplacesReservedAgent(t *testing.T) {
@@ -292,4 +296,11 @@ func envMap(entries []string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func mustGetwd(t *testing.T) string {
+	t.Helper()
+	pwd, err := os.Getwd()
+	require.NoError(t, err)
+	return pwd
 }

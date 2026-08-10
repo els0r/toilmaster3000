@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"sync"
@@ -51,6 +52,12 @@ func (r FireRecord) key() FireKey {
 type FiredLedger struct {
 	path string
 
+	// openRead is the load-path seam, injectable so the close path is
+	// assertable: a read that fails only at close cannot be provoked in a temp
+	// directory. The append path needs no twin — internal/jsonl owns it and
+	// carries its own seam.
+	openRead func(name string) (io.ReadCloser, error)
+
 	mu    sync.Mutex
 	fired map[FireKey]bool
 }
@@ -59,11 +66,19 @@ type FiredLedger struct {
 // path and loads it. A missing file is the first-run case: the empty ledger,
 // nothing written until the first fire.
 func NewFiredLedger(path string) (*FiredLedger, error) {
-	l := &FiredLedger{path: path, fired: map[FireKey]bool{}}
+	l := &FiredLedger{
+		path:     path,
+		fired:    map[FireKey]bool{},
+		openRead: openFiredLedgerRead,
+	}
 	if err := l.load(); err != nil {
 		return nil, err
 	}
 	return l, nil
+}
+
+func openFiredLedgerRead(name string) (io.ReadCloser, error) {
+	return os.Open(name)
 }
 
 // Fired reports whether the (hookID, number) key has ever fired (locked read).
@@ -97,7 +112,7 @@ func (l *FiredLedger) Mark(rec FireRecord) (bool, error) {
 // load reads hookfires.jsonl into the fired set; a missing file is the empty
 // ledger. Runs at construction, before the ledger is shared.
 func (l *FiredLedger) load() (err error) {
-	f, err := os.Open(l.path)
+	f, err := l.openRead(l.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
