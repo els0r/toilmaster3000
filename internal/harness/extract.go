@@ -1,7 +1,7 @@
 // Package harness owns AI harness invocation (ADR 0023): adapters behind a
-// small interface — claude and copilot in MVP (ADR 0024) — that fetch a PR's
-// diff, compose the screen prompt, run the harness headless, and return what it
-// said. Above them sit the two AI species, which transcribe every run
+// small interface — claude, copilot, and opencode (ADR 0024) — that fetch a
+// PR's diff, compose the screen prompt, run the harness headless, and return
+// what it said. Above them sit the two AI species, which transcribe every run
 // (ADR 0028) and then do their kind's work with the text: AIScreen extracts a
 // verdict structurally, AINotifier ignores it. A run with no confident
 // extractable verdict errors as a failed attempt (ADR 0022's 3-strikes path);

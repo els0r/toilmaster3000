@@ -79,6 +79,22 @@ Notifiers:
 	require.False(t, n.Enabled)
 }
 
+func TestLoadAcceptsOpenCodeHarness(t *testing.T) {
+	path := writeHooks(t, `
+Screens:
+  - Id: aaaa1111
+    Name: security vet
+    Harness: opencode
+    Prompt: Vet this diff for malicious changes.
+    Enabled: true
+`)
+
+	cfg, err := hook.Load(path)
+
+	require.NoError(t, err)
+	require.Equal(t, "opencode", cfg.Screens[0].Harness)
+}
+
 // TestLoadSelfHealsMissingIds proves the settings.yaml self-heal precedent
 // applied to hook identity (ADR 0023): a hook missing Id gets a stable one
 // generated at boot and written back into the file, while a hook that already
@@ -541,12 +557,12 @@ Screens:
 			doc: `
 Notifiers:
   - Name: review assist
-    Harness: opencode
+    Harness: gemini
     Prompt: review it
     Point: queue_entered
 `,
 			wantErr: hook.ErrUnknownHarness,
-			wantMsg: []string{"review assist", "opencode"},
+			wantMsg: []string{"review assist", "gemini", "opencode"},
 		},
 		{
 			name: "empty harness",

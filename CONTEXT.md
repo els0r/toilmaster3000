@@ -164,30 +164,36 @@ disabling the screen.
 
 MVP species are AI-only (ADR 0023): declarative `Harness`/`Model`/`Prompt`
 entries in `.config/hooks.yaml`, realized by harness adapters
-(`internal/harness` — claude and copilot, ADR 0024; each runs hermetic,
-tool-locked to its leg) that fetch the diff themselves and return what the
-harness said. Extracting a **Verdict** from that text structurally — never
-fabricated in either direction — is the Screen species' work, not the
-adapter's (ADR 0028). **A Screen is
+(`internal/harness` — claude, copilot, and opencode, ADR 0024; each runs
+hermetic, tool-locked to its leg) that fetch the diff themselves and return what
+the harness said. Extracting a **Verdict** from that text structurally — never
+fabricated in either direction — is the Screen species' work, not the adapter's
+(ADR 0028). OpenCode inherits the trusted operator provider/configuration setup
+but overlays a tool-free Screen profile or a whole-`gh` Notifier profile; its
+shell-text permission matcher cannot safely restrict individual `gh` verbs, so
+the approval/merge ceiling remains prompt-enforced (ADR 0029). **A Screen is
 defense-in-depth, not a security boundary.** The review-assist Notifier may
-comment or request changes, **never approve** — that authority stays with
-rules + Screens inbound and the human in the queue.
+comment or request changes, **never approve** — that authority stays with rules
++ Screens inbound and the human in the queue.
 
 **`WorkDir` is the one sanctioned breach of hermeticity, and it is a read
-grant** (ADR 0027, amending ADR 0024). A Notifier may name an absolute
+grant** (ADR 0027, amending ADR 0024; amended by ADR 0029 for OpenCode). A
+Notifier may name an absolute
 directory to run the harness process in; ambient *instructions* stay off, but
 whatever the harness discovers from a working directory — skills and their
 supporting files — comes on. Discovery and reads resolve from the same root, so
 the anchor cannot be separated from read access to its subtree: the named
-directory **is** the ceiling, and tm3k never widens it. Doctrine: point it at a
-purpose-built, skills-only checkout, never a working clone — a working clone
-carries untracked files that are untracked for a reason, and sits on whatever
-branch you last left it. `WorkDir` is Notifier-only for that second reason: a
-Screen judging against a mutable tree is a gate with an irreproducible input.
-The tree is ambient and is **not** at the PR's head SHA. Which skill runs is
-named in the hook's `Prompt` — the harness-coupling escape hatch (ADR 0026) —
-and composition requires the posted review to name the profile it applied, since
-tm3k cannot verify that a skill resolved.
+directory **is** the ceiling for Claude and Copilot, and tm3k never widens it.
+OpenCode uses it as its direct-tool workspace and denies outside-directory tool
+access, but it is not a full sandbox against trusted global configuration.
+Doctrine: point it at a purpose-built, skills-only checkout, never a working
+clone — a working clone carries untracked files that are untracked for a reason,
+and sits on whatever branch you last left it. `WorkDir` is Notifier-only for
+that second reason: a Screen judging against a mutable tree is a gate with an
+irreproducible input. The tree is ambient and is **not** at the PR's head SHA.
+Which skill runs is named in the hook's `Prompt` — the harness-coupling escape
+hatch (ADR 0026) — and composition requires the posted review to name the
+profile it applied, since tm3k cannot verify that a skill resolved.
 
 ### Transcript / Transcript Sink
 An AI run's **account of itself**: the harness's result text, recorded verbatim

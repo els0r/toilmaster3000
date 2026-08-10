@@ -245,16 +245,16 @@ func run(ctx context.Context, cfg config) error {
 	return nil
 }
 
-// harnessAdapter is the full harness seam — both legs. Every MVP adapter
-// (claude, copilot) implements both, so one selection serves Screens and
-// Notifiers alike.
+// harnessAdapter is the full harness seam — both legs. Every adapter
+// (claude, copilot, opencode) implements both, so one selection serves Screens
+// and Notifiers alike.
 type harnessAdapter interface {
 	harness.Adapter
 	harness.Agent
 }
 
 // harnessFor returns the adapter behind a validated Spec's Harness
-// (ADR 0023/0024). Hook validation has already allowlisted the name, so an
+// (ADR 0023/0024/0029). Hook validation has already allowlisted the name, so an
 // unknown value here is a programming error — the error keeps that guarantee
 // visible instead of panicking.
 func harnessFor(name string) (harnessAdapter, error) {
@@ -263,6 +263,8 @@ func harnessFor(name string) (harnessAdapter, error) {
 		return harness.NewClaude(), nil
 	case "copilot":
 		return harness.NewCopilot(), nil
+	case "opencode":
+		return harness.NewOpenCode(), nil
 	}
 	return nil, fmt.Errorf("unvalidated harness %q", name)
 }
