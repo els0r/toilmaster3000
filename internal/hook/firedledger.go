@@ -96,7 +96,7 @@ func (l *FiredLedger) Mark(rec FireRecord) (bool, error) {
 
 // load reads hookfires.jsonl into the fired set; a missing file is the empty
 // ledger. Runs at construction, before the ledger is shared.
-func (l *FiredLedger) load() error {
+func (l *FiredLedger) load() (err error) {
 	f, err := os.Open(l.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -104,7 +104,11 @@ func (l *FiredLedger) load() error {
 		}
 		return fmt.Errorf("read hookfires.jsonl: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close hookfires.jsonl: %w", closeErr))
+		}
+	}()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -126,7 +130,8 @@ func (l *FiredLedger) load() error {
 }
 
 // appendLine writes one record as a JSON line through the shared .state append
-// idiom (internal/jsonl). Callers hold l.mu.
+// idiom (internal/jsonl), which checks the close: a row that fails at flush is
+// a failed append. Callers hold l.mu.
 func (l *FiredLedger) appendLine(rec FireRecord) error {
 	return jsonl.Append(l.path, rec)
 }
