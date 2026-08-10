@@ -178,14 +178,17 @@ comment or request changes, **never approve** — that authority stays with rule
 
 **`WorkDir` is the one sanctioned breach of hermeticity, and it is a read
 grant** (ADR 0027, amending ADR 0024; amended by ADR 0029 for OpenCode). A
-Notifier may name an absolute
-directory to run the harness process in; ambient *instructions* stay off, but
-whatever the harness discovers from a working directory — skills and their
-supporting files — comes on. Discovery and reads resolve from the same root, so
-the anchor cannot be separated from read access to its subtree: the named
-directory **is** the ceiling for Claude and Copilot, and tm3k never widens it.
-OpenCode uses it as its direct-tool workspace and denies outside-directory tool
-access, but it is not a full sandbox against trusted global configuration.
+Notifier may name an absolute directory to run the harness process in; ambient
+*instructions* stay off, but whatever the harness discovers from a working
+directory — skills and their supporting files — comes on. Discovery and reads
+resolve from the same root, so the anchor cannot be separated from read access
+to its subtree: the named directory **is** the ceiling for Claude and Copilot,
+and tm3k never widens it. OpenCode uses it as its direct-tool workspace and
+denies outside-directory tool access, but it is not a full sandbox against
+trusted global configuration — and where the directory sits inside a Git
+worktree, OpenCode treats that whole worktree as internal for direct-tool
+access, so the anchor must be a standalone skills-only worktree, never a nested
+directory in a broader checkout.
 Doctrine: point it at a purpose-built, skills-only checkout, never a working
 clone — a working clone carries untracked files that are untracked for a reason,
 and sits on whatever branch you last left it. `WorkDir` is Notifier-only for

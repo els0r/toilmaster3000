@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"sync"
@@ -80,6 +81,12 @@ func (r VerdictRecord) key() VerdictKey {
 type VerdictStore struct {
 	path string
 
+	// openRead is the load-path seam, injectable so the close path is
+	// assertable: a read that fails only at close cannot be provoked in a temp
+	// directory. The append path needs no twin — internal/jsonl owns it and
+	// carries its own seam.
+	openRead func(name string) (io.ReadCloser, error)
+
 	mu     sync.Mutex
 	latest map[VerdictKey]VerdictRecord
 	// errorStreak counts the consecutive TRAILING error rows per key — how
@@ -94,11 +101,20 @@ type VerdictStore struct {
 // file is the first-run case: the empty store, nothing written until the
 // first verdict.
 func NewVerdictStore(path string) (*VerdictStore, error) {
-	s := &VerdictStore{path: path, latest: map[VerdictKey]VerdictRecord{}, errorStreak: map[VerdictKey]int{}}
+	s := &VerdictStore{
+		path:        path,
+		latest:      map[VerdictKey]VerdictRecord{},
+		errorStreak: map[VerdictKey]int{},
+		openRead:    openVerdictStoreRead,
+	}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+func openVerdictStoreRead(name string) (io.ReadCloser, error) {
+	return os.Open(name)
 }
 
 // Latest returns the latest row for the (screenID, number, head) key (locked
@@ -151,7 +167,7 @@ func (s *VerdictStore) apply(rec VerdictRecord) {
 // load reads verdicts.jsonl into the latest-wins map; a missing file is the
 // empty store. Runs at construction, before the store is shared.
 func (s *VerdictStore) load() (err error) {
-	f, err := os.Open(s.path)
+	f, err := s.openRead(s.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
