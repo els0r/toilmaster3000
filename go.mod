@@ -5,6 +5,7 @@ go 1.26.3
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/danielgtaylor/huma/v2 v2.38.0
+	github.com/goccy/go-json v0.10.6
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1

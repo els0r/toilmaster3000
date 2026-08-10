@@ -21,7 +21,7 @@ ADR(s) your brief names.
 - `internal/hook` — hook config (`.config/hooks.yaml`, PascalCase, Id
   self-heal), kind interfaces (Screen/Notifier), verdict store, fired-ledger,
   runners. Pure folds live here; they get the heavy test tables.
-- `internal/harness` — AI harness adapters (claude), species (AIScreen,
+- `internal/harness` — AI harness adapters (claude, copilot, opencode), species (AIScreen,
   AINotifier), prompt composition, structural verdict extraction. The
   sanctioned home of hook-driven per-PR `gh` calls.
 - `internal/rule`, `internal/conventionalcommit` — matcher + title parser
@@ -44,8 +44,8 @@ ADR(s) your brief names.
   tests, the house's heaviest coverage.
 - **Stores** (`*.jsonl` append-only, latest-row-per-key wins; yaml Id
   self-heal): round-trip tests incl. reload — mirror the armed-store tests.
-- **Harness**: scripted fake adapters behind the harness interfaces; the real
-  `claude`/`gh` CLIs never execute in any test.
+- **Harness**: scripted fake adapters behind the harness interfaces; real
+  `claude`, `copilot`, `opencode`, and `gh` CLIs never execute in unit tests.
 - **HTTP handlers**: light — shape and status, not logic.
 
 ## Store & config idioms

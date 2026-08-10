@@ -32,8 +32,8 @@ type Request struct {
 // Adapter is the harness seam (ADR 0023): one headless AI invocation per
 // call — fetch the PR's diff, compose the prompt, run the harness, and return
 // what the harness said. An error is a failed attempt (the caller records it on
-// the 3-strikes path, ADR 0022). Two MVP adapters, claude and copilot (ADR
-// 0024); each further adapter (OpenCode) is one implementation here plus its
+// the 3-strikes path, ADR 0022). Three adapters implement it — claude, copilot,
+// and opencode (ADR 0024); each further one is one implementation here plus its
 // allowlist entry in the hook validator.
 //
 // It returns the run's result TEXT, not a verdict: extracting one is the Screen

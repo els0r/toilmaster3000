@@ -7,8 +7,9 @@
 # against the malicious-chore gap: it raises an attack's cost, it does NOT
 # guarantee safety.
 #
-# Fields: Harness selects the adapter ("claude" or "copilot" — ADR 0024);
-# Model is optional and passed through to the harness CLI; exactly one of
+# Fields: Harness selects the adapter ("claude", "copilot", or "opencode" —
+# ADR 0024/0028); Model is optional and passed through to the harness CLI. For
+# OpenCode it must be a provider/model identifier; exactly one of
 # Prompt (inline instructions) or PromptFile (a path read at run time,
 # relative to the working directory) must be set; Timeout bounds one run
 # (absent means 10m). Leave Id out of new entries — a stable one is generated
@@ -16,8 +17,9 @@
 #
 # Running a Screen shells out with your existing authentication: it fetches
 # each screened PR's diff via `gh pr diff` and runs the harness CLI headlessly
-# (the copilot harness needs `copilot login` done once on this machine).
-# Configuring the hook is the consent for those per-PR calls.
+# (the copilot harness needs `copilot login` done once on this machine;
+# OpenCode uses the provider/authentication configuration already active for
+# `opencode run`). Configuring the hook is the consent for those per-PR calls.
 #
 # This file ships as .config/hooks.yaml next to the binary if you opt in;
 # copy the referenced prompt file to .config/security-screen-prompt.md too.
@@ -61,10 +63,11 @@ Screens:
 # how the CLI finds the skills under it — .github/skills, .agents/skills,
 # .claude/skills. It must be an ABSOLUTE path; nothing is expanded, so no $VAR
 # and no ~. Read it as a GRANT: the run gets read access to that directory's
-# whole subtree, and reads outside it are denied by the CLI. tm3k never widens
-# that boundary, so choose the directory as carefully as you would choose what
-# to hand an agent that is also holding your gh auth while reading a stranger's
-# PR.
+# whole subtree. Claude and Copilot deny reads outside it; OpenCode denies
+# direct tool access outside it but is not a complete sandbox against trusted
+# global configuration. tm3k never widens the direct-tool boundary, so choose
+# the directory as carefully as you would choose what to hand an agent that is
+# also holding your gh auth while reading a stranger's PR.
 #
 # Point it at a purpose-built, skills-only checkout — never a working clone. A
 # working clone carries untracked files that are untracked for a reason, and it
@@ -79,10 +82,10 @@ Screens:
 #
 # With WorkDir set, the prompt is a one-liner naming the skill, and the spelling
 # is harness-specific: "/golang-pr-review" for copilot (its skill mechanism), or
-# "Read and follow .github/skills/golang-pr-review/SKILL.md" for claude (a plain
-# file read). PromptFile is NOT re-based — it still resolves against tm3k's own
-# working directory. Anchoring is optional: the bash sibling below stays
-# unanchored and keeps its PromptFile, which is exactly how both worked before
+# "Read and follow .github/skills/golang-pr-review/SKILL.md" for claude and
+# opencode (a plain file read). PromptFile is NOT re-based — it still resolves
+# against tm3k's own working directory. Anchoring is optional: the bash sibling
+# below stays unanchored and keeps its PromptFile, which is exactly how both worked before
 # WorkDir existed — examples/go-review-prompt.md is the unanchored Go prompt
 # this entry used to name, if you would rather not anchor at all. Whichever you
 # use, the posted review is required to open by

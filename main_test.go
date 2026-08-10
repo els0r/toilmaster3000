@@ -149,6 +149,28 @@ func TestCheckHarnessBinariesChecksOnlyEnabledHooks(t *testing.T) {
 	require.Equal(t, []string{"claude"}, looked)
 }
 
+func TestCheckHarnessBinariesChecksOpenCode(t *testing.T) {
+	cfg := hook.Config{Notifiers: []hook.NotifierConfig{{
+		Spec: hook.Spec{Name: "review assist", Harness: "opencode", Enabled: true},
+	}}}
+
+	var looked []string
+	err := checkHarnessBinaries(cfg, func(name string) (string, error) {
+		looked = append(looked, name)
+		return "/usr/local/bin/" + name, nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"opencode"}, looked)
+}
+
+func TestHarnessForOpenCode(t *testing.T) {
+	adapter, err := harnessFor("opencode")
+
+	require.NoError(t, err)
+	require.IsType(t, &harness.OpenCode{}, adapter)
+}
+
 // No hooks, no lookups: the no-hooks boot stays bit-for-bit as before.
 func TestCheckHarnessBinariesNoHooksNoLookups(t *testing.T) {
 	err := checkHarnessBinaries(hook.Config{}, func(string) (string, error) {
