@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/els0r/toilmaster3000/internal/hook"
@@ -76,10 +77,16 @@ const (
 // that exists for prose. Both species call it, so the rule cannot drift between
 // them (ADR 0014).
 //
+// "No text" means nothing but whitespace, not the empty string. A CLI that
+// answers with a bare newline said nothing, and the adapters already agree:
+// copilot rejects whitespace-only stdout as `empty copilot output` before a
+// species ever sees it. Testing the bare string here would have made the rule
+// mean one thing through copilot and another through claude.
+//
 // The policy sits here rather than in the sink deliberately: the sink writes
 // what it is given, and what is worth writing is the species layer's call.
 func transcribe(sink Transcriber, kind string, spec hook.Spec, pr hook.PRContext, text string) {
-	if text == "" {
+	if strings.TrimSpace(text) == "" {
 		return
 	}
 	sink.Transcribe(TranscriptRecord{

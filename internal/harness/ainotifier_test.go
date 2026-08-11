@@ -111,6 +111,17 @@ func TestAINotifierTranscribesNothingWithoutText(t *testing.T) {
 	}), silent)
 	require.NoError(t, quiet.Notify(context.Background(), queueCtx()))
 	require.Empty(t, silent.rows, "no text, no row — even on the success path")
+
+	// An agent that answered with a bare newline said nothing. The copilot
+	// adapter already rejects whitespace-only stdout upstream, so testing the
+	// bare empty string here would make the rule mean one thing through copilot
+	// and another through claude, whose envelope hands its result up verbatim.
+	blank := &recordingTranscriber{}
+	whitespace := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+		return "  \n\t\n", nil
+	}), blank)
+	require.NoError(t, whitespace.Notify(context.Background(), queueCtx()))
+	require.Empty(t, blank.rows, "whitespace is not an account of anything")
 }
 
 // AN4: the configured WorkDir lands on every Request the species issues, taken
