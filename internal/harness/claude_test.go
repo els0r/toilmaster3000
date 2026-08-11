@@ -119,6 +119,25 @@ func TestClaudeScreenSalvagesNothingFromAHalfWrittenEnvelope(t *testing.T) {
 	require.Empty(t, result)
 }
 
+// The envelope variant of the same rule: the CLI exited cleanly and then said
+// in its own envelope that the run ended badly (max turns, a tool failure).
+// It still reviewed the diff first, and that text is the only thing explaining
+// the strike the operator is about to see burnt in verdicts.jsonl.
+func TestClaudeScreenKeepsTheTextOfAnErroredEnvelope(t *testing.T) {
+	c := scriptedClaude(
+		func(context.Context, string, int) (string, error) { return "+x", nil },
+		func(context.Context, string, string, string) ([]byte, error) {
+			return []byte(`{"type":"result","subtype":"error_max_turns","is_error":true,` +
+				`"result":"I read the diff and got as far as the retry loop."}`), nil
+		},
+	)
+
+	result, err := c.Screen(context.Background(), composeReq())
+
+	require.ErrorContains(t, err, "errored", "an errored run is still a failed attempt")
+	require.Equal(t, "I read the diff and got as far as the retry loop.", result)
+}
+
 // scriptedClaudeAgent returns a Claude adapter whose side-effect seam is
 // scripted — the real claude CLI never runs in tests.
 func scriptedClaudeAgent(act func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Claude {

@@ -146,7 +146,9 @@ Both legs already had the text in hand. Neither had anywhere to put it.
   *before* they judge the error. The failure is untouched: still a failed
   attempt on the 3-strikes path, still a logged miss for a fire. The
   row-iff-text rule suppresses the runs that genuinely said nothing.
-- Still open, deliberately not fixed here: `Claude.Act` and `Claude.Screen`
-  return `"", err` when the CLI's JSON envelope reports an errored run, so a run
-  that did real work and then failed at the envelope still loses its text. Same
-  evidence-loss shape one layer down.
+- An errored claude envelope (`is_error: true`) returns its `result` alongside
+  the error. The flag says the run *ended* badly — max turns, a tool failure —
+  not that it said nothing on the way, and that text is the only thing
+  explaining the burnt strike the operator sees in `verdicts.jsonl`. The other
+  envelope failures still return `""`, because there genuinely is no text:
+  nothing was printed, or what was printed did not decode.
