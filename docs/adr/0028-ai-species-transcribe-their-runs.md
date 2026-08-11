@@ -125,6 +125,10 @@ Both legs already had the text in hand. Neither had anywhere to put it.
   shared state, and concurrent rows stay whole on O_APPEND plus **one** `Write`
   of the fully marshalled row. Splitting that into two writes would reopen the
   interleaving window.
+- Rows are written with HTML escaping OFF (`internal/jsonl`). `encoding/json`
+  escapes `<`, `>` and `&` by default — safe for JSON embedded in a page, which
+  no `.state` file is — and left on it would make a transcript quoting Go code
+  ungreppable in the one file that exists to be read with `grep` and `jq`.
 - Adapter-level failure narrows. Copilot's screen leg now has exactly one check
   of its own — empty stdout; prose carrying no verdict document is the species'
   failure, and it keeps its transcript.

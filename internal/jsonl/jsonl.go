@@ -48,9 +48,20 @@ func Append(path string, rec any) error {
 }
 
 // marshalLine encodes one record as its on-disk line, newline included.
+//
+// HTML escaping is OFF. encoding/json escapes <, > and & by default — a
+// browser-safety default for JSON embedded in a page, which no .state file
+// ever is. Left on, it mangles the prose these files are read for: a
+// transcript quoting `if a < b && c > d` lands as < and &, so a
+// `grep` over transcripts.jsonl misses text that is demonstrably in the file
+// and `less` shows escapes where the operator expected code. Verdict reasons
+// and PR titles carry the same characters. Both spellings decode identically,
+// so old rows keep reading and new rows read to a human too.
 func marshalLine(rec any) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(rec); err != nil {
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(rec); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
