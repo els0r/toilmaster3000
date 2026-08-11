@@ -80,6 +80,45 @@ func TestClaudeScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 	require.ErrorContains(t, err, "claude -p")
 }
 
+// A failed run that already SPOKE keeps its text — the copilot leg's rule.
+// claude writes its envelope and then exits non-zero on a shutdown or telemetry
+// error often enough that this is the common way a run fails AFTER doing its
+// work; discarding the stdout already in hand is the evidence loss ADR 0028
+// exists to end, one layer below where it was fixed.
+func TestClaudeScreenKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
+	c := scriptedClaude(
+		func(context.Context, string, int) (string, error) { return "+x", nil },
+		func(context.Context, string, string, string) ([]byte, error) {
+			return envelope(t, "Reviewed. One concern: the retry loop is unbounded."),
+				errors.New("claude -p: exit status 1: ")
+		},
+	)
+
+	result, err := c.Screen(context.Background(), composeReq())
+
+	require.ErrorContains(t, err, "claude -p", "the failure is still a failed attempt")
+	require.Equal(t, "Reviewed. One concern: the retry loop is unbounded.", result,
+		"what the run said outlives how it ended")
+}
+
+// Nothing is invented when nothing survived. A run killed before it wrote a
+// complete envelope leaves stdout that decodes to nothing, and the decode error
+// is discarded rather than masking the process failure that actually explains
+// the run.
+func TestClaudeScreenSalvagesNothingFromAHalfWrittenEnvelope(t *testing.T) {
+	c := scriptedClaude(
+		func(context.Context, string, int) (string, error) { return "+x", nil },
+		func(context.Context, string, string, string) ([]byte, error) {
+			return []byte(`{"type":"result","resu`), errors.New("claude -p: signal: killed")
+		},
+	)
+
+	result, err := c.Screen(context.Background(), composeReq())
+
+	require.ErrorContains(t, err, "signal: killed", "the process failure is the cause, not the decode")
+	require.Empty(t, result)
+}
+
 // scriptedClaudeAgent returns a Claude adapter whose side-effect seam is
 // scripted — the real claude CLI never runs in tests.
 func scriptedClaudeAgent(act func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Claude {

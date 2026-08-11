@@ -60,14 +60,19 @@ func (n *AINotifier) Notify(ctx context.Context, pr hook.PRContext) error {
 		URL:          pr.URL,
 		HeadSHA:      pr.HeadSHA,
 	})
-	if err != nil {
-		return err
-	}
 	// The transcript is the agent's account of what it did — recorded for the
 	// operator, never parsed, never acted on (ADR 0023: no verdict extraction
 	// on the Notifier side). It goes to the sink and nowhere else: by the time
 	// this runs the review is already posted, so a sink that fails changes
 	// nothing here (ADR 0028).
+	//
+	// Recorded BEFORE the error is judged, because a failed run is the one most
+	// worth having: an agent holding gh authority may have posted its review
+	// and then exited non-zero, and at-most-once means no later cycle re-runs
+	// it. The row-iff-text rule suppresses the runs that genuinely said nothing.
 	transcribe(n.sink, kindNotifier, n.spec, pr, transcript)
+	if err != nil {
+		return err
+	}
 	return nil
 }

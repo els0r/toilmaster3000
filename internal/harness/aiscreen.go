@@ -59,10 +59,15 @@ func (s *AIScreen) Screen(ctx context.Context, pr hook.PRContext) (hook.Verdict,
 		URL:          pr.URL,
 		HeadSHA:      pr.HeadSHA,
 	})
+	// Before the error, not after it: a run that printed its whole review and
+	// then exited non-zero — or was killed by the hook's timeout mid-sentence —
+	// is a FAILED attempt that still spoke, and its text is the only evidence
+	// of what the operator paid for. The row-iff-text rule already suppresses
+	// the runs that said nothing, so this costs an empty file no rows.
+	transcribe(s.sink, kindScreen, s.spec, pr, result)
 	if err != nil {
 		return hook.Verdict{}, err
 	}
-	transcribe(s.sink, kindScreen, s.spec, pr, result)
 
 	v, err := ExtractVerdictText(result)
 	if err != nil {

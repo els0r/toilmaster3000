@@ -43,6 +43,13 @@ type Request struct {
 // the transcript: a run that produced text and then failed to yield a verdict
 // keeps its account of itself, and ExtractVerdictText, always the
 // harness-neutral half, now has exactly one caller instead of one per adapter.
+//
+// Text and error are NOT exclusive. A CLI that printed its whole answer and
+// then exited non-zero, or was killed mid-sentence by the hook's timeout,
+// returns both: the text it managed, and the failure. Callers transcribe what
+// came back before they judge the error — a failed attempt that spoke is
+// exactly the run whose account is worth keeping. An empty transcript with an
+// error is a run that said nothing.
 type Adapter interface {
 	Screen(ctx context.Context, req Request) (transcript string, err error)
 }
@@ -61,6 +68,10 @@ type Adapter interface {
 // stay two interfaces regardless, because the authority differs: a screen run is
 // toolless, an act run carries gh. A screening-only adapter stays a one-method
 // implementation, and fakes script exactly the half they exercise.
+//
+// Text and error are not exclusive here either, and it matters more on this
+// leg: an agent holding gh authority may have posted its review and THEN failed,
+// so the run that errored is the run whose account the operator most needs.
 type Agent interface {
 	Act(ctx context.Context, req Request) (transcript string, err error)
 }

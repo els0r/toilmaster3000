@@ -55,7 +55,7 @@ func (c *Claude) Screen(ctx context.Context, req Request) (string, error) {
 	}
 	out, err := c.invoke(ctx, req.Model, ComposePrompt(req, diff), req.WorkDir)
 	if err != nil {
-		return "", err
+		return salvage(resultText(out)), err
 	}
 	return resultText(out)
 }
@@ -69,7 +69,7 @@ func (c *Claude) Screen(ctx context.Context, req Request) (string, error) {
 func (c *Claude) Act(ctx context.Context, req Request) (string, error) {
 	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir)
 	if err != nil {
-		return "", err
+		return salvage(resultText(out)), err
 	}
 	return resultText(out)
 }
@@ -140,13 +140,19 @@ func claudeCmd(ctx context.Context, model, prompt, workDir string, extraArgs ...
 }
 
 // runClaude runs one headless claude CLI pass and returns its stdout.
+//
+// Stdout comes back even when the run FAILED. A CLI that printed its whole
+// answer and then exited non-zero — or was killed by the hook's timeout mid-
+// sentence — has already produced the evidence, and discarding it here is the
+// evidence loss ADR 0028 exists to end, one layer below where it was fixed.
+// The error still stands; the caller decides what, if anything, survives.
 func runClaude(ctx context.Context, model, prompt, workDir string, extraArgs ...string) ([]byte, error) {
 	cmd := claudeCmd(ctx, model, prompt, workDir, extraArgs...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("claude -p: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return stdout.Bytes(), fmt.Errorf("claude -p: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }
