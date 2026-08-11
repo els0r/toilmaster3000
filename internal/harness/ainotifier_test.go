@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -43,7 +44,7 @@ func TestAINotifierRealizesTheNotifierKindFromItsSpec(t *testing.T) {
 	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(_ context.Context, req Request) (string, error) {
 		got = req
 		return "posted a review comment", nil
-	}))
+	}), &recordingTranscriber{})
 
 	err := notifier.Notify(context.Background(), queueCtx())
 
@@ -60,6 +61,58 @@ func TestAINotifierRealizesTheNotifierKindFromItsSpec(t *testing.T) {
 	}, got)
 }
 
+// AN5: a completed agent run is transcribed — the species' account of itself
+// goes to the sink, identified so a reader joins it to the hookfires.jsonl row
+// the fire wrote (hook_id + number) and reads it without joining anything
+// (hook_name + head). And the transcript is GONE from the log: prose in a log
+// line is what ADR 0028 exists to end.
+func TestAINotifierTranscribesItsRun(t *testing.T) {
+	spec := hook.Spec{ID: "n1", Name: "go review assist", Harness: "claude", Prompt: "review it"}
+	sink := &recordingTranscriber{}
+	logs := captureLogs(t)
+	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+		return "Review posted (one `COMMENTED` review, no approval, no merge).", nil
+	}), sink)
+
+	require.NoError(t, notifier.Notify(context.Background(), queueCtx()))
+
+	require.Len(t, sink.rows, 1)
+	got := sink.rows[0]
+	require.False(t, got.At.IsZero(), "the species stamps when the run finished")
+	got.At = time.Time{}
+	require.Equal(t, TranscriptRecord{
+		Kind:     "notifier",
+		HookID:   "n1",
+		HookName: "go review assist",
+		Number:   7,
+		Head:     "feedface", // which commit the agent actually reviewed
+		Text:     "Review posted (one `COMMENTED` review, no approval, no merge).",
+	}, got)
+	require.NotContains(t, logs.String(), "COMMENTED", "the transcript never reaches the log")
+}
+
+// AN6: nothing is transcribed when there is nothing the agent said. A failed
+// run has no account to give — the fire is already recorded in hookfires.jsonl
+// and the runner logs the miss — and an empty row would only be noise in a file
+// whose entire purpose is prose.
+func TestAINotifierTranscribesNothingWithoutText(t *testing.T) {
+	spec := hook.Spec{ID: "n1", Name: "go review assist", Harness: "claude", Prompt: "review it"}
+
+	failed := &recordingTranscriber{}
+	broken := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+		return "", errors.New("claude -p: signal: killed")
+	}), failed)
+	require.Error(t, broken.Notify(context.Background(), queueCtx()))
+	require.Empty(t, failed.rows, "a run that produced no text has no account to give")
+
+	silent := &recordingTranscriber{}
+	quiet := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+		return "", nil
+	}), silent)
+	require.NoError(t, quiet.Notify(context.Background(), queueCtx()))
+	require.Empty(t, silent.rows, "no text, no row — even on the success path")
+}
+
 // AN4: the configured WorkDir lands on every Request the species issues, taken
 // at construction exactly as repo is (ADR 0027). It arrives as a constructor
 // argument rather than off the Spec because WorkDir lives on NotifierConfig
@@ -74,7 +127,7 @@ func TestAINotifierCarriesItsConfiguredWorkDir(t *testing.T) {
 		agentFunc(func(_ context.Context, req Request) (string, error) {
 			anchored = req
 			return "posted a review comment", nil
-		}))
+		}), &recordingTranscriber{})
 	require.NoError(t, notifier.Notify(context.Background(), queueCtx()))
 	require.Equal(t, "/srv/skills-worktree", anchored.WorkDir)
 	require.Equal(t, "acme/widgets", anchored.Repo, "the anchor rides alongside repo, replacing nothing")
@@ -84,7 +137,7 @@ func TestAINotifierCarriesItsConfiguredWorkDir(t *testing.T) {
 		agentFunc(func(_ context.Context, req Request) (string, error) {
 			unanchored = req
 			return "posted a review comment", nil
-		}))
+		}), &recordingTranscriber{})
 	require.NoError(t, plain.Notify(context.Background(), queueCtx()))
 	require.Empty(t, unanchored.WorkDir)
 }
@@ -95,7 +148,7 @@ func TestAINotifierAgentFailureSurfacesAsError(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Prompt: "review it"}
 	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
 		return "", errors.New("claude -p: signal: killed")
-	}))
+	}), &recordingTranscriber{})
 
 	err := notifier.Notify(context.Background(), queueCtx())
 	require.ErrorContains(t, err, "claude -p")
@@ -112,7 +165,7 @@ func TestAINotifierReadsPromptFileAtRunTimeAndFailsClosed(t *testing.T) {
 	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(_ context.Context, req Request) (string, error) {
 		instructions = req.Instructions
 		return "", nil
-	}))
+	}), &recordingTranscriber{})
 
 	require.NoError(t, notifier.Notify(context.Background(), queueCtx()))
 	require.Equal(t, "go instructions", instructions)
@@ -122,7 +175,7 @@ func TestAINotifierReadsPromptFileAtRunTimeAndFailsClosed(t *testing.T) {
 	broken := NewAINotifier(missing, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
 		invoked = true
 		return "", nil
-	}))
+	}), &recordingTranscriber{})
 	err := broken.Notify(context.Background(), queueCtx())
 	require.ErrorContains(t, err, "prompt")
 	require.False(t, invoked, "a notifier without instructions must never invoke the harness")

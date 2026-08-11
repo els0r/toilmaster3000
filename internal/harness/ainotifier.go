@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/els0r/toilmaster3000/internal/hook"
 )
@@ -13,13 +12,13 @@ import (
 // Spec->Request translation (resolving the instructions, naming the model);
 // the agent does the rest itself — fetches the diff, posts the review comment
 // or requests changes as the runtime identity. No verdict comes back: the
-// transcript is logged here and otherwise ignored.
+// transcript is recorded in the sink and otherwise ignored (ADR 0028).
 type AINotifier struct {
 	spec    hook.Spec
 	repo    string
 	workDir string
 	agent   Agent
-	logger  *slog.Logger
+	sink    Transcriber
 }
 
 // NewAINotifier constructs the species over an already-validated Spec. repo is
@@ -33,8 +32,13 @@ type AINotifier struct {
 // no such parameter and never sets Request.WorkDir: the Screen exclusion is
 // enforced twice, once by the absent config field and once by the absent code
 // path.
-func NewAINotifier(spec hook.Spec, repo, workDir string, agent Agent) *AINotifier {
-	return &AINotifier{spec: spec, repo: repo, workDir: workDir, agent: agent, logger: slog.Default()}
+//
+// sink is required, not optional (ADR 0028): an AI species accounts for itself,
+// so there is no way to construct one with nowhere to put its account. The
+// obligation binds the SPECIES, never the kind — hook.Notifier is still one
+// method, so a non-AI Notifier owes no transcript.
+func NewAINotifier(spec hook.Spec, repo, workDir string, agent Agent, sink Transcriber) *AINotifier {
+	return &AINotifier{spec: spec, repo: repo, workDir: workDir, agent: agent, sink: sink}
 }
 
 // Notify runs one side-effecting agent pass for the PR. An error — unreadable
@@ -59,10 +63,11 @@ func (n *AINotifier) Notify(ctx context.Context, pr hook.PRContext) error {
 	if err != nil {
 		return err
 	}
-	// The transcript is the agent's account of what it did — logged for the
+	// The transcript is the agent's account of what it did — recorded for the
 	// operator, never parsed, never acted on (ADR 0023: no verdict extraction
-	// on the Notifier side).
-	n.logger.Info("notifier: agent run transcript",
-		"notifier", n.spec.Name, "pr", pr.Number, "transcript", transcript)
+	// on the Notifier side). It goes to the sink and nowhere else: by the time
+	// this runs the review is already posted, so a sink that fails changes
+	// nothing here (ADR 0028).
+	transcribe(n.sink, kindNotifier, n.spec, pr, transcript)
 	return nil
 }

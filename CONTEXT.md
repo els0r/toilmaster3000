@@ -51,6 +51,11 @@ Cross-cutting principles the entries below reference by name.
   change the engine itself performed (manual approve, robot merge) is applied
   to its published snapshots atomically with the ledger write; a change it
   merely *expects* is honest staleness for the next cycle to resolve.
+- **An AI species accounts for itself** (ADR 0028) — every AI harness run that
+  produced text is transcribed to the Transcript Sink, and the transcript can
+  never alter the run's outcome: it is written after the effect has landed, so a
+  sink that fails is a logged miss and nothing more. The obligation binds the AI
+  *species*, never the Notifier/Screen kinds — a non-AI species owes no account.
 - **Fail closed on load-bearing data** — a failed inbound fetch skips the whole
   cycle; a failed outbound or threads fetch clears the outbound snapshot and
   skips all merging that cycle. The robot never acts on stale data (ADR 0016,
@@ -160,8 +165,10 @@ disabling the screen.
 MVP species are AI-only (ADR 0023): declarative `Harness`/`Model`/`Prompt`
 entries in `.config/hooks.yaml`, realized by harness adapters
 (`internal/harness` — claude and copilot, ADR 0024; each runs hermetic,
-tool-locked to its leg) that fetch the diff themselves and extract
-verdicts structurally — never fabricated in either direction. **A Screen is
+tool-locked to its leg) that fetch the diff themselves and return what the
+harness said. Extracting a **Verdict** from that text structurally — never
+fabricated in either direction — is the Screen species' work, not the
+adapter's (ADR 0028). **A Screen is
 defense-in-depth, not a security boundary.** The review-assist Notifier may
 comment or request changes, **never approve** — that authority stays with
 rules + Screens inbound and the human in the queue.
@@ -181,6 +188,22 @@ The tree is ambient and is **not** at the PR's head SHA. Which skill runs is
 named in the hook's `Prompt` — the harness-coupling escape hatch (ADR 0026) —
 and composition requires the posted review to name the profile it applied, since
 tm3k cannot verify that a skill resolved.
+
+### Transcript / Transcript Sink
+An AI run's **account of itself**: the harness's result text, recorded verbatim
+by the species that ran it (ADR 0028). The **Transcript Sink** is where it goes
+— `.state/transcripts.jsonl`, append-only and **write-only**: tm3k never reads
+it back, so it is neither a Store nor a Ledger and loads nothing at boot. It
+exists for a human with `jq`.
+
+A row is written **iff the run produced text**, and carries no outcome: the
+species writes the transcript, the runner writes the verdict, and a fact belongs
+to one writer — `verdicts.jsonl` says what was decided, the sink says what was
+said. `hook_id` + `number` links a row back to the fire or verdict rows that own
+the outcome; `head` and `hook_name` ride along so a row reads without any join.
+Both AI species transcribe, which is why the Screen extracts its verdict from
+the text *after* recording it: a run that yields no verdict document is exactly
+the run whose text you need.
 
 ### Approved elsewhere
 An Incoming PR GitHub already reports `APPROVED` by someone other than tm3k
@@ -501,6 +524,11 @@ PR-State refresh (ADR 0007) and the merge step (ADR 0016).
   - `.state/hookfires.jsonl` — append-only Notifier fired-ledger
     (`hook_id, number, point, at`), loaded at boot; what makes at-most-once
     restart-safe (ADR 0021).
+  - `.state/transcripts.jsonl` — append-only AI-run transcripts
+    (`kind, hook_id, hook_name, number, head, at, transcript`), written by both
+    AI species, **never read back**: no boot load, no wire surface, and
+    therefore no line-length limit — a future reader must not inherit the
+    fired-ledger's 1 MB scanner buffer (ADR 0028).
 - **Preflight (fail fast at boot)**: `gh` installed and authenticated; `@me`
   resolved once; `:8666` free; and **the configured repo visible to the active
   `gh` identity** — load-bearing because the search API returns an **empty

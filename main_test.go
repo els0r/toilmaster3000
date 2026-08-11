@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/harness"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/stretchr/testify/require"
 )
@@ -161,7 +162,7 @@ func TestCheckHarnessBinariesNoHooksNoLookups(t *testing.T) {
 // configured screens must yield a nil screener — bit-for-bit today's engine
 // behavior — and configured screens must yield a consulting screener.
 func TestBuildScreenerNilWithoutScreens(t *testing.T) {
-	s, err := buildScreener(hook.Config{}, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"))
+	s, err := buildScreener(hook.Config{}, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"), harness.NewTranscriptSink(filepath.Join(t.TempDir(), "transcripts.jsonl")))
 	require.NoError(t, err)
 	require.Nil(t, s)
 }
@@ -171,7 +172,7 @@ func TestBuildScreenerNilWithNotifiersOnly(t *testing.T) {
 		Spec:  hook.Spec{ID: "n1", Name: "ping", Harness: "claude", Prompt: "p", Enabled: true},
 		Point: hook.PostApprove,
 	}}}
-	s, err := buildScreener(cfg, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"))
+	s, err := buildScreener(cfg, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"), harness.NewTranscriptSink(filepath.Join(t.TempDir(), "transcripts.jsonl")))
 	require.NoError(t, err)
 	require.Nil(t, s, "notifiers alone gate nothing — screens are the only screener input")
 }
@@ -180,7 +181,7 @@ func TestBuildScreenerConstructsScreensOverTheClaudeAdapter(t *testing.T) {
 	cfg := hook.Config{Screens: []hook.ScreenConfig{{
 		Spec: hook.Spec{ID: "s1", Name: "security", Harness: "claude", Prompt: "vet it", Enabled: true},
 	}}}
-	s, err := buildScreener(cfg, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"))
+	s, err := buildScreener(cfg, "acme/widgets", filepath.Join(t.TempDir(), "verdicts.jsonl"), harness.NewTranscriptSink(filepath.Join(t.TempDir(), "transcripts.jsonl")))
 	require.NoError(t, err)
 	require.NotNil(t, s)
 }
@@ -191,7 +192,7 @@ func TestBuildScreenerConstructsScreensOverTheClaudeAdapter(t *testing.T) {
 // opened — and configured Notifiers must yield a firing runner.
 func TestBuildNotifierRunnerNilWithoutNotifiers(t *testing.T) {
 	firesPath := filepath.Join(t.TempDir(), "hookfires.jsonl")
-	r, err := buildNotifierRunner(hook.Config{}, "acme/widgets", firesPath)
+	r, err := buildNotifierRunner(hook.Config{}, "acme/widgets", firesPath, harness.NewTranscriptSink(filepath.Join(t.TempDir(), "transcripts.jsonl")))
 	require.NoError(t, err)
 	require.Nil(t, r)
 	require.NoFileExists(t, firesPath, "zero notifiers: the ledger is not opened, let alone written")
@@ -201,7 +202,7 @@ func TestBuildNotifierRunnerNilWithScreensOnly(t *testing.T) {
 	cfg := hook.Config{Screens: []hook.ScreenConfig{{
 		Spec: hook.Spec{ID: "s1", Name: "security", Harness: "claude", Prompt: "vet it", Enabled: true},
 	}}}
-	r, err := buildNotifierRunner(cfg, "acme/widgets", filepath.Join(t.TempDir(), "hookfires.jsonl"))
+	r, err := buildNotifierRunner(cfg, "acme/widgets", filepath.Join(t.TempDir(), "hookfires.jsonl"), harness.NewTranscriptSink(filepath.Join(t.TempDir(), "transcripts.jsonl")))
 	require.NoError(t, err)
 	require.Nil(t, r, "screens alone announce nothing — notifiers are the only runner input")
 }
@@ -211,7 +212,7 @@ func TestBuildNotifierRunnerConstructsNotifiersOverTheClaudeAdapter(t *testing.T
 		Spec:  hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Prompt: "review it", Enabled: true},
 		Point: hook.QueueEntered,
 	}}}
-	r, err := buildNotifierRunner(cfg, "acme/widgets", filepath.Join(t.TempDir(), "hookfires.jsonl"))
+	r, err := buildNotifierRunner(cfg, "acme/widgets", filepath.Join(t.TempDir(), "hookfires.jsonl"), harness.NewTranscriptSink(filepath.Join(t.TempDir(), "transcripts.jsonl")))
 	require.NoError(t, err)
 	require.NotNil(t, r)
 }
@@ -235,7 +236,7 @@ func TestNotifierInstancesCompilePathsIntoScope(t *testing.T) {
 		},
 	}}
 
-	instances, err := notifierInstances(cfg, "acme/widgets")
+	instances, err := notifierInstances(cfg, "acme/widgets", harness.NewTranscriptSink(filepath.Join(t.TempDir(), "transcripts.jsonl")))
 	require.NoError(t, err)
 	require.Len(t, instances, 2)
 

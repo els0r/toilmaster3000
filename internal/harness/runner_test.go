@@ -72,7 +72,7 @@ func TestScreenerScreensEndToEndThroughTheClaudeAdapter(t *testing.T) {
 	store := newStore(t)
 	screener := hook.NewScreener(store, hook.ScreenInstance{
 		Spec:   spec,
-		Screen: NewAIScreen(spec, "acme/widgets", adapter),
+		Screen: NewAIScreen(spec, "acme/widgets", adapter, &recordingTranscriber{}),
 	})
 
 	// First pass: no verdict yet — the PR parks in Screening and a run
@@ -111,7 +111,7 @@ func TestScreenerHoldDivertsWithTheScreensReason(t *testing.T) {
 	store := newStore(t)
 	screener := hook.NewScreener(store, hook.ScreenInstance{
 		Spec:   spec,
-		Screen: NewAIScreen(spec, "acme/widgets", adapter),
+		Screen: NewAIScreen(spec, "acme/widgets", adapter, &recordingTranscriber{}),
 	})
 
 	screener.Consult(context.Background(), prCtx())
@@ -129,22 +129,22 @@ func TestScreenerDedupsInFlightRuns(t *testing.T) {
 	release := make(chan struct{})
 	var mu sync.Mutex
 	calls := 0
-	adapter := adapterFunc(func(ctx context.Context, _ Request) (hook.Verdict, error) {
+	adapter := adapterFunc(func(ctx context.Context, _ Request) (string, error) {
 		mu.Lock()
 		calls++
 		mu.Unlock()
 		select {
 		case <-release:
-			return hook.Verdict{Outcome: hook.Proceed, Reason: "ok"}, nil
+			return verdictText("proceed", "ok"), nil
 		case <-ctx.Done():
-			return hook.Verdict{}, ctx.Err()
+			return "", ctx.Err()
 		}
 	})
 	spec := securitySpec()
 	store := newStore(t)
 	screener := hook.NewScreener(store, hook.ScreenInstance{
 		Spec:   spec,
-		Screen: NewAIScreen(spec, "acme/widgets", adapter),
+		Screen: NewAIScreen(spec, "acme/widgets", adapter, &recordingTranscriber{}),
 	})
 
 	// Two cycles consult while the first run is still executing.
@@ -168,16 +168,16 @@ func TestScreenerDedupsInFlightRuns(t *testing.T) {
 // enforced where the Screener applies it, and that an adapter honoring
 // context cancellation yields a recorded error attempt — never a verdict.
 func TestScreenerTimeoutBecomesAnErrorAttempt(t *testing.T) {
-	adapter := adapterFunc(func(ctx context.Context, _ Request) (hook.Verdict, error) {
+	adapter := adapterFunc(func(ctx context.Context, _ Request) (string, error) {
 		<-ctx.Done() // the adapter contract: die with the context
-		return hook.Verdict{}, ctx.Err()
+		return "", ctx.Err()
 	})
 	spec := securitySpec()
 	spec.Timeout = hook.Duration(30 * time.Millisecond)
 	store := newStore(t)
 	screener := hook.NewScreener(store, hook.ScreenInstance{
 		Spec:   spec,
-		Screen: NewAIScreen(spec, "acme/widgets", adapter),
+		Screen: NewAIScreen(spec, "acme/widgets", adapter, &recordingTranscriber{}),
 	})
 
 	screener.Consult(context.Background(), prCtx())
@@ -214,7 +214,7 @@ func TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter(t *testing.T) {
 	runner := hook.NewNotifierRunner(ledger, hook.NotifierInstance{
 		Spec:     spec,
 		Point:    hook.QueueEntered,
-		Notifier: NewAINotifier(spec, "acme/widgets", "", agent),
+		Notifier: NewAINotifier(spec, "acme/widgets", "", agent, &recordingTranscriber{}),
 	})
 
 	pr := hook.PRContext{Point: hook.QueueEntered, Number: 7, Title: "feat: new endpoint",
@@ -259,7 +259,7 @@ func TestScreenerRecordsUnparseableOutputAsErrorAttempt(t *testing.T) {
 	store := newStore(t)
 	screener := hook.NewScreener(store, hook.ScreenInstance{
 		Spec:   spec,
-		Screen: NewAIScreen(spec, "acme/widgets", adapter),
+		Screen: NewAIScreen(spec, "acme/widgets", adapter, &recordingTranscriber{}),
 	})
 
 	screener.Consult(context.Background(), prCtx())

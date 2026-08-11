@@ -2,8 +2,6 @@ package harness
 
 import (
 	"context"
-
-	"github.com/els0r/toilmaster3000/internal/hook"
 )
 
 // Request is one harness run's input: which model to run, the operator's
@@ -32,27 +30,37 @@ type Request struct {
 }
 
 // Adapter is the harness seam (ADR 0023): one headless AI invocation per
-// call — fetch the PR's diff, compose the prompt, run the harness, extract
-// the verdict structurally. An error is a failed attempt (the caller records
-// it on the 3-strikes path, ADR 0022), never a fabricated verdict in either
-// direction. Two MVP adapters, claude and copilot (ADR 0024); each further
-// adapter (OpenCode) is one implementation here plus its allowlist entry in
-// the hook validator.
+// call — fetch the PR's diff, compose the prompt, run the harness, and return
+// what the harness said. An error is a failed attempt (the caller records it on
+// the 3-strikes path, ADR 0022). Two MVP adapters, claude and copilot (ADR
+// 0024); each further adapter (OpenCode) is one implementation here plus its
+// allowlist entry in the hook validator.
+//
+// It returns the run's result TEXT, not a verdict: extracting one is the Screen
+// species' job, not the harness's (ADR 0028). Each adapter still normalises its
+// own CLI's output into result text — claude decodes its JSON envelope, copilot
+// hands back silent-mode stdout — and stops there. Pulling extraction up buys
+// the transcript: a run that produced text and then failed to yield a verdict
+// keeps its account of itself, and ExtractVerdictText, always the
+// harness-neutral half, now has exactly one caller instead of one per adapter.
 type Adapter interface {
-	Screen(ctx context.Context, req Request) (hook.Verdict, error)
+	Screen(ctx context.Context, req Request) (transcript string, err error)
 }
 
 // Agent is the harness seam's side-effect half — the Notifier sibling of
 // Adapter (ADR 0023): one headless AI invocation run for its ACTIONS, not its
-// answer. Unlike Screen, nothing is extracted and nothing comes back to act
-// on: the agent itself holds the gh authority — it fetches the PR's diff and
-// posts its review comment / requests changes as the runtime identity — and
-// its authority ceiling (never approve, never merge) is prompt-enforced,
-// because tm3k cannot compel an agent holding gh auth (ADR 0023). The
-// returned transcript is logged by the caller and otherwise ignored. A
-// separate interface, not a second Adapter method: a screening-only adapter
-// stays a one-method implementation, and fakes script exactly the half they
-// exercise.
+// answer. Unlike Screen, nothing is extracted from what comes back: the agent
+// itself holds the gh authority — it fetches the PR's diff and posts its review
+// comment / requests changes as the runtime identity — and its authority
+// ceiling (never approve, never merge) is prompt-enforced, because tm3k cannot
+// compel an agent holding gh auth (ADR 0023).
+//
+// Both halves return a transcript, and that convergence is the point: a harness
+// run IS a transcript on either leg, and what a species does with it afterwards
+// — extract a verdict, or nothing at all — is species policy (ADR 0028). They
+// stay two interfaces regardless, because the authority differs: a screen run is
+// toolless, an act run carries gh. A screening-only adapter stays a one-method
+// implementation, and fakes script exactly the half they exercise.
 type Agent interface {
 	Act(ctx context.Context, req Request) (transcript string, err error)
 }

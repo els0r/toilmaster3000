@@ -7,18 +7,17 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-
-	"github.com/els0r/toilmaster3000/internal/hook"
 )
 
 // Copilot is the copilot harness adapter (ADR 0024): it runs the GitHub
 // Copilot CLI headless, reusing the operator's existing Copilot auth exactly
 // like the claude adapter reuses claude's. One Screen call is one full run —
 // fetch the PR's diff via `gh pr diff` (the sanctioned per-PR call —
-// configuring a hook is the consent), compose the prompt, invoke `copilot -p`
-// in silent mode, and extract the verdict structurally from the response
-// text. Every failure surfaces as an error — a failed attempt for the
-// caller's 3-strikes path — never a fabricated verdict.
+// configuring a hook is the consent), compose the prompt, and invoke
+// `copilot -p` in silent mode, whose stdout already IS the response text. Both
+// legs end at that text; judging it is the species' job (ADR 0028). Every
+// failure surfaces as an error — a failed attempt for the caller's 3-strikes
+// path — never a fabricated verdict.
 type Copilot struct {
 	// fetchDiff, invoke, and act are the process seams, injectable in tests so
 	// the real gh/copilot CLIs never execute there (the claude adapter's
@@ -40,31 +39,35 @@ func NewCopilot() *Copilot {
 	return &Copilot{fetchDiff: ghPRDiff, invoke: copilotInvoke, act: copilotActInvoke}
 }
 
-// Screen runs one screen pass for the PR: diff -> prompt -> copilot ->
-// verdict. The caller's context bounds the whole run (the Screener applies
-// the hook's Timeout); both child processes are killed on cancellation.
-func (c *Copilot) Screen(ctx context.Context, req Request) (hook.Verdict, error) {
+// Screen runs one screen pass for the PR: diff -> prompt -> copilot -> the
+// run's result text. The caller's context bounds the whole run (the Screener
+// applies the hook's Timeout); both child processes are killed on cancellation.
+//
+// The adapter stops at the text and does not extract a verdict — AIScreen does
+// that, so a run whose text yields no verdict still has its transcript recorded
+// (ADR 0028). Silent-mode stdout already IS the result text, so unlike claude
+// there is no envelope to unwrap first.
+func (c *Copilot) Screen(ctx context.Context, req Request) (string, error) {
 	diff, err := c.fetchDiff(ctx, req.Repo, req.Number)
 	if err != nil {
-		return hook.Verdict{}, fmt.Errorf("fetch diff for %s#%d: %w", req.Repo, req.Number, err)
+		return "", fmt.Errorf("fetch diff for %s#%d: %w", req.Repo, req.Number, err)
 	}
 	out, err := c.invoke(ctx, req.Model, ComposePrompt(req, diff), req.WorkDir)
 	if err != nil {
-		return hook.Verdict{}, err
+		return "", err
 	}
-	v, err := ExtractVerdictText(string(out))
-	if err != nil {
-		return hook.Verdict{}, fmt.Errorf("extract verdict: %w", err)
+	if len(bytes.TrimSpace(out)) == 0 {
+		return "", errors.New("empty copilot output")
 	}
-	return v, nil
+	return string(out), nil
 }
 
 // Act runs one side-effecting agent pass for the PR (the Agent seam): compose
 // the notify prompt — carrying the never-approve/never-merge ceiling — and
 // run the copilot CLI WITH the gh shell authority, so the agent fetches the
 // diff and posts its review itself as the runtime identity (ADR 0023). The
-// silent-mode response text is returned as the transcript for the caller to
-// log; nothing is extracted from it.
+// silent-mode response text is returned as the transcript for the species to
+// record; nothing is extracted from it.
 func (c *Copilot) Act(ctx context.Context, req Request) (string, error) {
 	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir)
 	if err != nil {
