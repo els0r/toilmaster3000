@@ -217,6 +217,31 @@ func TestBuildNotifierRunnerConstructsNotifiersOverTheClaudeAdapter(t *testing.T
 	require.NotNil(t, r)
 }
 
+// main wires the transcript sink unconditionally, and the comment there says
+// why: "construction touches no disk: with no hooks configured, nothing ever
+// transcribes and the file never appears." That claim is load-bearing — it is
+// what buys the absence of a nil-sink branch anywhere — and it is the sibling
+// of the fired-ledger assertion in TestBuildNotifierRunnerNilWithoutNotifiers.
+// Without it, an eager MkdirAll or an O_CREATE probe added to NewTranscriptSink
+// (the obvious way to surface write errors at boot) would start creating a
+// .state directory in the working tree of every operator running zero hooks,
+// and no test would fail.
+func TestTranscriptSinkConstructionTouchesNoDisk(t *testing.T) {
+	stateDir := filepath.Join(t.TempDir(), ".state")
+	transcriptsPath := filepath.Join(stateDir, "transcripts.jsonl")
+
+	sink := harness.NewTranscriptSink(transcriptsPath)
+	s, err := buildScreener(hook.Config{}, "acme/widgets", filepath.Join(stateDir, "verdicts.jsonl"), sink)
+	require.NoError(t, err)
+	require.Nil(t, s)
+	r, err := buildNotifierRunner(hook.Config{}, "acme/widgets", filepath.Join(stateDir, "hookfires.jsonl"), sink)
+	require.NoError(t, err)
+	require.Nil(t, r)
+
+	require.NoFileExists(t, transcriptsPath, "zero hooks: nothing transcribes, so the file never appears")
+	require.NoDirExists(t, stateDir, "not even the parent — an operator with no hooks gets no .state at all")
+}
+
 // A Notifier's configured Paths must reach the instance the runner fires, and
 // be compiled into its Scope ONCE here at boot — not re-normalised per match
 // (ADR 0026). Scope lives on the instance rather than the Spec because it
