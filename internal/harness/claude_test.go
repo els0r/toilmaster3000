@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/els0r/toilmaster3000/internal/hook"
 )
 
 // scriptedClaude returns a Claude adapter whose process seams are scripted:
@@ -18,7 +16,12 @@ func scriptedClaude(fetchDiff func(ctx context.Context, repo string, number int)
 	return &Claude{fetchDiff: fetchDiff, invoke: invoke}
 }
 
-func TestClaudeScreenFetchesComposesInvokesExtracts(t *testing.T) {
+// The screen leg fetches, composes, invokes, and unwraps its CLI's envelope —
+// and stops there. What comes back is the run's result text, verdict document
+// and surrounding prose intact: extraction belongs to the species (ADR 0028),
+// and the adapter handing over the whole text is what lets the species
+// transcribe it before judging it.
+func TestClaudeScreenFetchesComposesInvokesAndReturnsResultText(t *testing.T) {
 	req := composeReq()
 	var gotRepo string
 	var gotNumber int
@@ -30,14 +33,15 @@ func TestClaudeScreenFetchesComposesInvokesExtracts(t *testing.T) {
 		},
 		func(_ context.Context, model, prompt, _ string) ([]byte, error) {
 			gotModel, gotPrompt = model, prompt
-			return envelope(t, "```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```"), nil
+			return envelope(t, "Looks routine.\n```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```"), nil
 		},
 	)
 
-	v, err := c.Screen(context.Background(), req)
+	result, err := c.Screen(context.Background(), req)
 
 	require.NoError(t, err)
-	require.Equal(t, hook.Verdict{Outcome: hook.Proceed, Reason: "clean"}, v)
+	require.Equal(t, "Looks routine.\n```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```", result,
+		"the whole result text comes back, not a distillate of it")
 	// The diff was fetched for the request's PR, and the invoked prompt is
 	// exactly the composition over that fetched diff.
 	require.Equal(t, "acme/widgets", gotRepo)
@@ -176,6 +180,11 @@ func TestClaudeActFailuresSurfaceAsErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
+// Stdout that is not a result envelope never becomes text: the adapter's own
+// contract is the envelope, so a crashed or half-written run fails HERE and the
+// species is never handed something to transcribe as though it were an answer.
+// (Prose that decodes fine but carries no verdict document is the species'
+// problem, and it keeps its transcript — see AS5.)
 func TestClaudeScreenUnparseableOutputIsAFailedAttempt(t *testing.T) {
 	c := scriptedClaude(
 		func(context.Context, string, int) (string, error) { return "+x", nil },
@@ -184,8 +193,8 @@ func TestClaudeScreenUnparseableOutputIsAFailedAttempt(t *testing.T) {
 		},
 	)
 
-	v, err := c.Screen(context.Background(), composeReq())
+	result, err := c.Screen(context.Background(), composeReq())
 
 	require.Error(t, err)
-	require.Equal(t, hook.Verdict{}, v, "an unparseable run must never fabricate a verdict")
+	require.Empty(t, result, "a run whose envelope will not decode yields no text at all")
 }

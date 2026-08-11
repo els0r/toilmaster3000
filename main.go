@@ -42,15 +42,16 @@ import (
 var embeddedFrontend embed.FS
 
 const (
-	addr          = "localhost:8666"
-	statePath     = ".state/approvals.jsonl"
-	mergesPath    = ".state/merges.jsonl"
-	armedPath     = ".state/armed.json"
-	verdictsPath  = ".state/verdicts.jsonl"
-	hookFiresPath = ".state/hookfires.jsonl"
-	rulesPath     = ".config/rules.yaml"
-	settingsPath  = ".config/settings.yaml"
-	hooksPath     = ".config/hooks.yaml"
+	addr            = "localhost:8666"
+	statePath       = ".state/approvals.jsonl"
+	mergesPath      = ".state/merges.jsonl"
+	armedPath       = ".state/armed.json"
+	verdictsPath    = ".state/verdicts.jsonl"
+	hookFiresPath   = ".state/hookfires.jsonl"
+	transcriptsPath = ".state/transcripts.jsonl"
+	rulesPath       = ".config/rules.yaml"
+	settingsPath    = ".config/settings.yaml"
+	hooksPath       = ".config/hooks.yaml"
 )
 
 // config is the resolved startup configuration: the candidate set (repo +
@@ -181,11 +182,16 @@ func run(ctx context.Context, cfg config) error {
 		slog.Info("hooks loaded", "screens", len(hooks.Screens), "notifiers", len(hooks.Notifiers))
 	}
 
-	screener, err := buildScreener(hooks, cfg.repo, verdictsPath)
+	// One sink serves both species (ADR 0028). Constructed unconditionally
+	// because construction touches no disk: with no hooks configured, nothing
+	// ever transcribes and the file never appears.
+	transcripts := harness.NewTranscriptSink(transcriptsPath)
+
+	screener, err := buildScreener(hooks, cfg.repo, verdictsPath, transcripts)
 	if err != nil {
 		return fmt.Errorf("build screener: %w", err)
 	}
-	notifiers, err := buildNotifierRunner(hooks, cfg.repo, hookFiresPath)
+	notifiers, err := buildNotifierRunner(hooks, cfg.repo, hookFiresPath, transcripts)
 	if err != nil {
 		return fmt.Errorf("build notifier runner: %w", err)
 	}
@@ -269,7 +275,7 @@ func harnessFor(name string) (harnessAdapter, error) {
 // empty; see harness.NewAIScreen). With zero configured Screens the screener
 // is nil and the engine behaves bit-for-bit as before screens existed: the
 // verdict store is not even opened.
-func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener, error) {
+func buildScreener(hooks hook.Config, repo, verdictsPath string, transcripts harness.Transcriber) (*hook.Screener, error) {
 	if len(hooks.Screens) == 0 {
 		return nil, nil
 	}
@@ -285,7 +291,7 @@ func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener
 		}
 		instances = append(instances, hook.ScreenInstance{
 			Spec:   sc.Spec,
-			Screen: harness.NewAIScreen(sc.Spec, repo, adapter),
+			Screen: harness.NewAIScreen(sc.Spec, repo, adapter, transcripts),
 		})
 	}
 	return hook.NewScreener(store, instances...), nil
@@ -299,11 +305,11 @@ func buildScreener(hooks hook.Config, repo, verdictsPath string) (*hook.Screener
 // PRContext.Repo empty; the AIScreen precedent). With zero configured
 // Notifiers the runner is nil and the engine behaves bit-for-bit as before
 // Notifiers existed: the fired-ledger is not even opened.
-func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.NotifierRunner, error) {
+func buildNotifierRunner(hooks hook.Config, repo, firesPath string, transcripts harness.Transcriber) (*hook.NotifierRunner, error) {
 	if len(hooks.Notifiers) == 0 {
 		return nil, nil
 	}
-	instances, err := notifierInstances(hooks, repo)
+	instances, err := notifierInstances(hooks, repo, transcripts)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +327,7 @@ func buildNotifierRunner(hooks hook.Config, repo, firesPath string) (*hook.Notif
 // per match (ADR 0026). Scope rides the instance and WorkDir rides the species
 // rather than either riding the Spec, because both exist on the Notifier kind
 // alone: no Screen has an anchor to acquire (ADR 0027).
-func notifierInstances(hooks hook.Config, repo string) ([]hook.NotifierInstance, error) {
+func notifierInstances(hooks hook.Config, repo string, transcripts harness.Transcriber) ([]hook.NotifierInstance, error) {
 	instances := make([]hook.NotifierInstance, 0, len(hooks.Notifiers))
 	for _, nc := range hooks.Notifiers {
 		agent, err := harnessFor(nc.Harness)
@@ -332,7 +338,7 @@ func notifierInstances(hooks hook.Config, repo string) ([]hook.NotifierInstance,
 			Spec:     nc.Spec,
 			Point:    nc.Point,
 			Scope:    hook.NewScope(nc.Paths),
-			Notifier: harness.NewAINotifier(nc.Spec, repo, nc.WorkDir, agent),
+			Notifier: harness.NewAINotifier(nc.Spec, repo, nc.WorkDir, agent, transcripts),
 		})
 	}
 	return instances, nil

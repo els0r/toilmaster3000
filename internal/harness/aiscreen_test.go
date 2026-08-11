@@ -12,11 +12,19 @@ import (
 )
 
 // adapterFunc adapts a bare function to the Adapter seam — the scripted fake
-// of the species tests.
-type adapterFunc func(ctx context.Context, req Request) (hook.Verdict, error)
+// of the species tests. It returns result TEXT, as the seam now does: what a
+// screen run yields is what the harness said, and turning that into a verdict
+// is the species' job (ADR 0028).
+type adapterFunc func(ctx context.Context, req Request) (string, error)
 
-func (f adapterFunc) Screen(ctx context.Context, req Request) (hook.Verdict, error) {
+func (f adapterFunc) Screen(ctx context.Context, req Request) (string, error) {
 	return f(ctx, req)
+}
+
+// verdictText is a result text carrying exactly the instructed verdict document
+// — what an adapter hands a species on a well-behaved run.
+func verdictText(outcome, reason string) string {
+	return "I reviewed the diff.\n\n```json\n{\"verdict\": \"" + outcome + "\", \"reason\": \"" + reason + "\"}\n```\n"
 }
 
 // prCtx is the PRContext the species tests share — Repo deliberately empty,
@@ -32,13 +40,37 @@ func prCtx() hook.PRContext {
 	}
 }
 
+// AS5 is why extraction moved up out of the adapter (ADR 0028). A run whose
+// text carries no verdict document is a failed attempt on the 3-strikes path,
+// and its text is the ONLY evidence of why the agent answered the way it did.
+// The species transcribes before it extracts, so the evidence outlives the
+// failure — before this, "no verdict document in harness result" was the most
+// opaque error in tm3k and the harness threw away the one thing that explained
+// it.
+func TestAIScreenTranscribesTheTextThatFailedExtraction(t *testing.T) {
+	spec := hook.Spec{ID: "s1", Name: "security", Harness: "claude", Prompt: "look closely"}
+	sink := &recordingTranscriber{}
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(context.Context, Request) (string, error) {
+		return "I looked at the diff and it seems fine to me.", nil // prose, no fenced document
+	}), sink)
+
+	v, err := screen.Screen(context.Background(), prCtx())
+
+	require.ErrorContains(t, err, "verdict")
+	require.Equal(t, hook.Verdict{}, v, "prose is never scanned for keywords (ADR 0023)")
+	require.Len(t, sink.rows, 1, "the text that failed extraction is exactly the evidence worth keeping")
+	require.Equal(t, "I looked at the diff and it seems fine to me.", sink.rows[0].Text)
+	require.Equal(t, "screen", sink.rows[0].Kind)
+	require.Equal(t, "feedface", sink.rows[0].Head, "per-head keying is the screen's whole invalidation story")
+}
+
 func TestAIScreenRealizesTheScreenKindFromItsSpec(t *testing.T) {
 	spec := hook.Spec{ID: "s1", Name: "security", Harness: "claude", Model: "sonnet", Prompt: "look closely"}
 	var got Request
-	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(_ context.Context, req Request) (hook.Verdict, error) {
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(_ context.Context, req Request) (string, error) {
 		got = req
-		return hook.Verdict{Outcome: hook.Proceed, Reason: "clean"}, nil
-	}))
+		return verdictText("proceed", "clean"), nil
+	}), &recordingTranscriber{})
 
 	v, err := screen.Screen(context.Background(), prCtx())
 
@@ -67,10 +99,10 @@ func TestAIScreenRealizesTheScreenKindFromItsSpec(t *testing.T) {
 func TestAIScreenNeverAnchorsItsRun(t *testing.T) {
 	spec := hook.Spec{ID: "s1", Name: "security", Harness: "copilot", Prompt: "look closely"}
 	var got Request
-	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(_ context.Context, req Request) (hook.Verdict, error) {
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(_ context.Context, req Request) (string, error) {
 		got = req
-		return hook.Verdict{Outcome: hook.Proceed}, nil
-	}))
+		return verdictText("proceed", "clean"), nil
+	}), &recordingTranscriber{})
 
 	_, err := screen.Screen(context.Background(), prCtx())
 	require.NoError(t, err)
@@ -82,10 +114,10 @@ func TestAIScreenReadsPromptFileAtRunTime(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("first version"), 0o644))
 	spec := hook.Spec{ID: "s1", Name: "security", Harness: "claude", PromptFile: path}
 	var instructions []string
-	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(_ context.Context, req Request) (hook.Verdict, error) {
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(_ context.Context, req Request) (string, error) {
 		instructions = append(instructions, req.Instructions)
-		return hook.Verdict{Outcome: hook.Proceed}, nil
-	}))
+		return verdictText("proceed", "clean"), nil
+	}), &recordingTranscriber{})
 
 	_, err := screen.Screen(context.Background(), prCtx())
 	require.NoError(t, err)
@@ -102,10 +134,10 @@ func TestAIScreenReadsPromptFileAtRunTime(t *testing.T) {
 func TestAIScreenUnreadablePromptFileIsAFailedAttempt(t *testing.T) {
 	spec := hook.Spec{ID: "s1", Name: "security", Harness: "claude", PromptFile: filepath.Join(t.TempDir(), "missing.md")}
 	invoked := false
-	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(context.Context, Request) (hook.Verdict, error) {
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(context.Context, Request) (string, error) {
 		invoked = true
-		return hook.Verdict{}, nil
-	}))
+		return "", nil
+	}), &recordingTranscriber{})
 
 	v, err := screen.Screen(context.Background(), prCtx())
 

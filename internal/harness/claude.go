@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/els0r/toilmaster3000/internal/hook"
 )
 
 // Claude is the claude harness adapter (ADR 0023): it runs the claude CLI
@@ -17,7 +15,8 @@ import (
 // does. One Screen call is one full run — fetch the PR's diff via
 // `gh pr diff` (no checkout; the sanctioned per-PR call — configuring a hook
 // is the consent), compose the prompt, invoke `claude -p` with the
-// machine-readable output mode, and extract the verdict structurally. Every
+// machine-readable output mode, and unwrap the result envelope. Both legs end
+// at the run's result text; judging it is the species' job (ADR 0028). Every
 // failure surfaces as an error — a failed attempt for the caller's 3-strikes
 // path — never a fabricated verdict.
 type Claude struct {
@@ -41,30 +40,31 @@ func NewClaude() *Claude {
 	return &Claude{fetchDiff: ghPRDiff, invoke: claudeInvoke, act: claudeActInvoke}
 }
 
-// Screen runs one screen pass for the PR: diff -> prompt -> claude -> verdict.
-// The caller's context bounds the whole run (the Screener applies the hook's
-// Timeout); both child processes are killed on cancellation.
-func (c *Claude) Screen(ctx context.Context, req Request) (hook.Verdict, error) {
+// Screen runs one screen pass for the PR: diff -> prompt -> claude -> the run's
+// result text. The caller's context bounds the whole run (the Screener applies
+// the hook's Timeout); both child processes are killed on cancellation.
+//
+// The adapter stops at the text and does not extract a verdict — AIScreen does
+// that, so a run whose text yields no verdict still has its transcript recorded
+// (ADR 0028). Decoding the JSON envelope stays here: that part is claude's, not
+// the harness-neutral half's.
+func (c *Claude) Screen(ctx context.Context, req Request) (string, error) {
 	diff, err := c.fetchDiff(ctx, req.Repo, req.Number)
 	if err != nil {
-		return hook.Verdict{}, fmt.Errorf("fetch diff for %s#%d: %w", req.Repo, req.Number, err)
+		return "", fmt.Errorf("fetch diff for %s#%d: %w", req.Repo, req.Number, err)
 	}
 	out, err := c.invoke(ctx, req.Model, ComposePrompt(req, diff), req.WorkDir)
 	if err != nil {
-		return hook.Verdict{}, err
+		return "", err
 	}
-	v, err := ExtractVerdict(out)
-	if err != nil {
-		return hook.Verdict{}, fmt.Errorf("extract verdict: %w", err)
-	}
-	return v, nil
+	return resultText(out)
 }
 
 // Act runs one side-effecting agent pass for the PR (the Agent seam): compose
 // the notify prompt — carrying the never-approve/never-merge ceiling — and
 // run the claude CLI WITH the gh tool authority, so the agent fetches the
 // diff and posts its review itself as the runtime identity (ADR 0023). The
-// decoded result text is returned as the transcript for the caller to log;
+// decoded result text is returned as the transcript for the species to record;
 // nothing is extracted from it.
 func (c *Claude) Act(ctx context.Context, req Request) (string, error) {
 	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir)

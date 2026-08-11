@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/els0r/toilmaster3000/internal/hook"
 )
 
 // scriptedCopilot returns a Copilot adapter whose process seams are scripted:
@@ -18,7 +16,10 @@ func scriptedCopilot(fetchDiff func(ctx context.Context, repo string, number int
 	return &Copilot{fetchDiff: fetchDiff, invoke: invoke}
 }
 
-func TestCopilotScreenFetchesComposesInvokesExtracts(t *testing.T) {
+// Copilot's screen leg is claude's minus the envelope: silent-mode stdout
+// already IS the result text, so the adapter hands it over whole and the
+// species extracts from it (ADR 0028).
+func TestCopilotScreenFetchesComposesInvokesAndReturnsResultText(t *testing.T) {
 	req := composeReq()
 	var gotRepo string
 	var gotNumber int
@@ -35,10 +36,11 @@ func TestCopilotScreenFetchesComposesInvokesExtracts(t *testing.T) {
 		},
 	)
 
-	v, err := c.Screen(context.Background(), req)
+	result, err := c.Screen(context.Background(), req)
 
 	require.NoError(t, err)
-	require.Equal(t, hook.Verdict{Outcome: hook.Proceed, Reason: "clean"}, v)
+	require.Equal(t, "Reviewed.\n\n```json\n{\"verdict\": \"proceed\", \"reason\": \"clean\"}\n```\n", result,
+		"the whole result text comes back, not a distillate of it")
 	// The diff was fetched for the request's PR, and the invoked prompt is
 	// exactly the composition over that fetched diff.
 	require.Equal(t, "acme/widgets", gotRepo)
@@ -77,18 +79,24 @@ func TestCopilotScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 	require.ErrorContains(t, err, "copilot -p")
 }
 
-func TestCopilotScreenUnparseableOutputIsAFailedAttempt(t *testing.T) {
+// Silence is copilot's only adapter-level failure. With no envelope to decode,
+// the CLI's stdout either is the result text or there is none — a run that said
+// nothing is a failed attempt, and every OTHER disappointment (prose with no
+// verdict document in it) now belongs to the species, which keeps the text as
+// its transcript before failing. This is the one adapter check that survives
+// the move; there is nothing else at this layer left to judge.
+func TestCopilotScreenSilentOutputIsAFailedAttempt(t *testing.T) {
 	c := scriptedCopilot(
 		func(context.Context, string, int) (string, error) { return "+x", nil },
 		func(context.Context, string, string, string) ([]byte, error) {
-			return []byte("I looked at it. CAN PROCEED!"), nil
+			return []byte("   \n\t "), nil
 		},
 	)
 
-	v, err := c.Screen(context.Background(), composeReq())
+	result, err := c.Screen(context.Background(), composeReq())
 
-	require.Error(t, err)
-	require.Equal(t, hook.Verdict{}, v, "an unparseable run must never fabricate a verdict")
+	require.ErrorContains(t, err, "empty copilot output")
+	require.Empty(t, result)
 }
 
 // scriptedCopilotAgent returns a Copilot adapter whose side-effect seam is

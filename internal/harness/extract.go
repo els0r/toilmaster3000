@@ -1,9 +1,11 @@
 // Package harness owns AI harness invocation (ADR 0023): adapters behind a
 // small interface — claude and copilot in MVP (ADR 0024) — that fetch a PR's
-// diff, compose the screen prompt, run the harness headless, and extract the
-// verdict structurally. A run with no confident extractable verdict errors as
-// a failed attempt (ADR 0022's 3-strikes path); an adapter never fabricates a
-// verdict in either direction.
+// diff, compose the screen prompt, run the harness headless, and return what it
+// said. Above them sit the two AI species, which transcribe every run
+// (ADR 0028) and then do their kind's work with the text: AIScreen extracts a
+// verdict structurally, AINotifier ignores it. A run with no confident
+// extractable verdict errors as a failed attempt (ADR 0022's 3-strikes path);
+// nothing here ever fabricates a verdict in either direction.
 package harness
 
 import (
@@ -16,21 +18,11 @@ import (
 	"github.com/els0r/toilmaster3000/internal/hook"
 )
 
-// ExtractVerdict decodes one claude CLI run's stdout (`claude -p
-// --output-format json`, a single result envelope) and extracts the Screen's
-// verdict from the envelope's result field via ExtractVerdictText.
-func ExtractVerdict(output []byte) (hook.Verdict, error) {
-	result, err := resultText(output)
-	if err != nil {
-		return hook.Verdict{}, err
-	}
-	return ExtractVerdictText(result)
-}
-
 // ExtractVerdictText extracts the Screen's verdict structurally from one
-// harness run's result text — the harness-neutral half of extraction (claude
-// decodes its JSON envelope first; copilot's silent-mode stdout IS the result
-// text, ADR 0024). The designated location is a fenced code block carrying
+// harness run's result text. It is the whole of extraction and has exactly one
+// caller, AIScreen — the adapters hand back result text and stop (ADR 0028),
+// so the harness-neutral half is the only half there is. The designated
+// location is a fenced code block carrying
 // exactly the instructed JSON document {"verdict": "proceed"|"hold",
 // "reason": "..."}. Exactly one well-formed document in the result is the
 // verdict; anything else — none, several (e.g. a second one echoed out of the
@@ -57,9 +49,9 @@ func ExtractVerdictText(result string) (hook.Verdict, error) {
 // resultText decodes one claude CLI run's stdout (`claude -p --output-format
 // json`, a single result envelope) and returns its result text. Everything
 // else on stdout — crash text, partial output, a non-result envelope, an
-// errored run — is an error. Shared by both harness legs: ExtractVerdict
-// parses the text further (the Screen side), Act returns it verbatim as the
-// transcript (the Notifier side).
+// errored run — is an error. Shared by both claude legs, which now return the
+// same thing: the run's result text, for the species to transcribe and then do
+// with as its kind requires.
 func resultText(output []byte) (string, error) {
 	if len(bytes.TrimSpace(output)) == 0 {
 		return "", errors.New("empty claude output")
