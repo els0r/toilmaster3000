@@ -106,7 +106,10 @@ func TestTranscriptSinkKeepsConcurrentRowsWhole(t *testing.T) {
 // happens after the run has had its effect, so the write must never fail the
 // caller (that is why Transcribe returns nothing) — but a transcript silently
 // vanishing is the one way this design could mislead an operator, so the miss
-// is logged. The log carries the failure; it never carries the transcript.
+// is logged, and the text goes with it as a last resort. The sink is the only
+// copy: the fire is already marked in hookfires.jsonl, so at-most-once means no
+// later cycle produces another, and an agent that posted a review as the
+// operator's identity would otherwise leave no record of it anywhere.
 func TestTranscriptSinkReportsAWriteItCannotMake(t *testing.T) {
 	// A parent that is a regular file: neither MkdirAll nor OpenFile can win.
 	blocked := filepath.Join(t.TempDir(), "not-a-dir")
@@ -121,7 +124,24 @@ func TestTranscriptSinkReportsAWriteItCannotMake(t *testing.T) {
 
 	require.Contains(t, logs.String(), "transcript")
 	require.Contains(t, logs.String(), path, "the operator needs to know which sink is failing")
-	require.NotContains(t, logs.String(), "posted a review comment", "the log never carries the transcript")
+	require.Contains(t, logs.String(), "posted a review comment",
+		"an escaped copy in the log beats no copy of what was said in the operator's name")
+}
+
+// TS5b: the fallback is the failure path's alone. A sink that wrote the row has
+// put the prose where it belongs, and repeating it in the log is the exact
+// thing ADR 0028 exists to end — the species tests assert the same from above.
+func TestTranscriptSinkKeepsProseOutOfTheLogWhenItWrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transcripts.jsonl")
+
+	logs := captureLogs(t)
+	NewTranscriptSink(path).Transcribe(TranscriptRecord{
+		Kind: "notifier", HookID: "n1", HookName: "go review assist",
+		Number: 7, Text: "posted a review comment",
+	})
+
+	require.Equal(t, []string{"posted a review comment"}, transcriptTexts(t, path))
+	require.NotContains(t, logs.String(), "posted a review comment")
 }
 
 // recordingTranscriber is the in-memory sink of the species tests: it captures
