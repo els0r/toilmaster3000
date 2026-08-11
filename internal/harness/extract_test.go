@@ -155,6 +155,19 @@ func TestResultText(t *testing.T) {
 			wantErr: "error",
 		},
 		{
+			// is_error says the run ENDED badly, not that it said nothing on the
+			// way. The text it wrote before tripping the flag is the only thing
+			// that explains the burnt strike the operator sees in verdicts.jsonl,
+			// so it comes back with the error rather than instead of it.
+			name: "an errored envelope keeps the text the run produced",
+			out: func(t *testing.T) []byte {
+				return []byte(`{"type":"result","subtype":"error_max_turns","is_error":true,` +
+					`"result":"I read the diff and got as far as the retry loop."}`)
+			},
+			want:    "I read the diff and got as far as the retry loop.",
+			wantErr: "error",
+		},
+		{
 			name: "unexpected envelope type",
 			out: func(t *testing.T) []byte {
 				return []byte(`{"type":"message","result":"whatever"}`)
@@ -168,6 +181,9 @@ func TestResultText(t *testing.T) {
 			got, err := resultText(tt.out(t))
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
+				// Asserted on BOTH branches: what survives a failure is as much
+				// the contract as what a success returns.
+				require.Equal(t, tt.want, got)
 				return
 			}
 			require.NoError(t, err)

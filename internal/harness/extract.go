@@ -52,6 +52,14 @@ func ExtractVerdictText(result string) (hook.Verdict, error) {
 // errored run — is an error. Shared by both claude legs, which now return the
 // same thing: the run's result text, for the species to transcribe and then do
 // with as its kind requires.
+//
+// An ERRORED envelope returns its result text alongside the error. `is_error`
+// means the CLI ended badly — max turns, a tool failure — not that it said
+// nothing on the way: the run may have reviewed the diff and written several
+// paragraphs first, and that text is the only thing explaining the burnt
+// strike the operator is about to see in verdicts.jsonl. Every other failure
+// here returns "" because there genuinely is no text: nothing was printed, or
+// what was printed did not decode.
 func resultText(output []byte) (string, error) {
 	if len(bytes.TrimSpace(output)) == 0 {
 		return "", errors.New("empty claude output")
@@ -70,7 +78,7 @@ func resultText(output []byte) (string, error) {
 		return "", fmt.Errorf("unexpected claude envelope type %q", env.Type)
 	}
 	if env.IsError {
-		return "", fmt.Errorf("claude run errored (subtype %q)", env.Subtype)
+		return env.Result, fmt.Errorf("claude run errored (subtype %q)", env.Subtype)
 	}
 	return env.Result, nil
 }
