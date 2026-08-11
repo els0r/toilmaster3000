@@ -28,13 +28,42 @@ type VerdictKey struct {
 // on-disk shape of one line in verdicts.jsonl (the json tags serve that disk
 // format, the approvals.jsonl idiom). Outcome is proceed|hold|error — error
 // is a recorded failed attempt, never a Screen's verdict (ADR 0022).
+//
+// The key is spelled `hook_id` on disk, as it is in hookfires.jsonl and
+// transcripts.jsonl: a Screen is a hook, and this is its stable hook Id
+// (ADR 0023). It was `screen_id` until ADR 0028, which made the three files
+// joinable by hand — a reader keying on `.hook_id` silently dropped every
+// verdict row. The Go field keeps the ScreenID name because a verdict is a
+// Screen's alone; only the disk spelling is shared.
 type VerdictRecord struct {
-	ScreenID string    `json:"screen_id"`
+	ScreenID string    `json:"hook_id"`
 	Number   int       `json:"number"`
 	Head     string    `json:"head"`
 	Outcome  Outcome   `json:"outcome"`
 	Reason   string    `json:"reason"`
 	At       time.Time `json:"at"`
+}
+
+// UnmarshalJSON decodes one verdicts.jsonl row, accepting the legacy
+// `screen_id` spelling of the key alongside today's `hook_id`. An operator's
+// existing file predates the rename and must keep loading — the 3-strikes
+// count and every stored verdict live in it — so the old name is read forever
+// and written never. Rewriting the file at boot was rejected: an append-only
+// ledger that mutates itself on upgrade is a worse trade than one dead field
+// name.
+func (r *VerdictRecord) UnmarshalJSON(data []byte) error {
+	type row VerdictRecord // sheds this method, so no recursion
+	aux := struct {
+		*row
+		LegacyScreenID string `json:"screen_id"`
+	}{row: (*row)(r)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if r.ScreenID == "" {
+		r.ScreenID = aux.LegacyScreenID
+	}
+	return nil
 }
 
 // key projects a record onto its store key.

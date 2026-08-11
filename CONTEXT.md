@@ -518,9 +518,11 @@ PR-State refresh (ADR 0007) and the merge step (ADR 0016).
   - `.state/armed.json` — the persisted armed set; the first mutable per-PR
     state in tm3k.
   - `.state/verdicts.jsonl` — append-only screen-run rows
-    (`screen_id, number, head, outcome: proceed|hold|error, reason, at`);
+    (`hook_id, number, head, outcome: proceed|hold|error, reason, at`);
     latest row per key wins (level-triggered), `error` rows are the persisted
-    attempt count so 3-strikes survives restarts (ADR 0022).
+    attempt count so 3-strikes survives restarts (ADR 0022). Rows written
+    before ADR 0028 spell the key `screen_id`; both load, only `hook_id` is
+    written.
   - `.state/hookfires.jsonl` — append-only Notifier fired-ledger
     (`hook_id, number, point, at`), loaded at boot; what makes at-most-once
     restart-safe (ADR 0021).

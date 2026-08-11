@@ -64,7 +64,7 @@ type PR struct {
 	Files []string
 	// HeadSHA is gh's headRefOid from the same single gh list call: the commit
 	// the PR's head currently points at. Screen verdicts key on it
-	// (screen_id, number, head — ADR 0022), so a new push re-screens and an
+	// (hook_id, number, head — ADR 0022), so a new push re-screens and an
 	// unchanged head reuses its stored verdict. Riding the batched call keeps
 	// screening free of per-PR fetches.
 	HeadSHA string
