@@ -45,7 +45,7 @@ func readJSONL[T any](path string) ([]T, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var ordered []T
 	scanner := bufio.NewScanner(f)

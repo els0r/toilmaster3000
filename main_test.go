@@ -72,7 +72,7 @@ func TestCheckRepoVisiblePasses(t *testing.T) {
 func TestListenBindsFreePort(t *testing.T) {
 	ln, err := listen("localhost:0")
 	require.NoError(t, err)
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	require.NotNil(t, ln)
 }
 
@@ -81,7 +81,7 @@ func TestListenPortInUse(t *testing.T) {
 	// Bind a port first, then assert a second listen on the same address fails.
 	first, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	defer first.Close()
+	defer func() { _ = first.Close() }()
 
 	_, err = listen(first.Addr().String())
 	require.Error(t, err)

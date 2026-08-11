@@ -92,7 +92,7 @@ func TestPipelineEmptyBeforeFirstCycle(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + apiPrefix + "/pipeline")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var raw map[string]any
@@ -169,7 +169,7 @@ func TestQueueScreenHoldsEmptyOnRuleRoutedEntries(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + apiPrefix + "/queue")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var raw []map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&raw))
 	require.Len(t, raw, 1)

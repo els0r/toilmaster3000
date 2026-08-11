@@ -207,9 +207,9 @@ type Engine struct {
 	notifiers *hook.NotifierRunner
 	logger    *slog.Logger
 
-	mu     sync.Mutex
-	dedup  map[int]bool
-	feed   []Approval // newest-first
+	mu    sync.Mutex
+	dedup map[int]bool
+	feed  []Approval // newest-first
 	// merges is the in-memory merge ledger, newest-first — loaded from
 	// merges.jsonl at startup, appended on every successful outbound merge
 	// (see merges.go). Durable by design: a merged PR leaves the is:open pull

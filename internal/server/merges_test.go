@@ -113,7 +113,7 @@ func TestMergesEndpointEmptyIsArray(t *testing.T) {
 
 	resp, err := http.Get(url + apiPrefix + "/merges")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var raw json.RawMessage

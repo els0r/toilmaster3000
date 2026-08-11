@@ -166,7 +166,7 @@ func getJSON(t *testing.T, url string, into any) {
 	t.Helper()
 	resp, err := http.Get(url)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(into))
 }
@@ -213,7 +213,7 @@ func TestStatusNeverRun(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + apiPrefix + "/status")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
@@ -235,7 +235,7 @@ func TestOpenAPIReachable(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + "/openapi.json")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var doc map[string]any
@@ -279,7 +279,7 @@ func TestSPAServedWithFallback(t *testing.T) {
 		resp, err := http.Get(srv.URL + path)
 		require.NoError(t, err)
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "path %s", path)
 		require.Contains(t, string(body), "toilmaster3000", "path %s serves the SPA shell", path)
@@ -288,7 +288,7 @@ func TestSPAServedWithFallback(t *testing.T) {
 	// The SPA fallback must not swallow the JSON API.
 	resp, err := http.Get(srv.URL + apiPrefix + "/status")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, resp.Header.Get("Content-Type"), "application/json")
 }
@@ -974,7 +974,7 @@ func doJSON(t *testing.T, method, url string, body any, into any) int {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if into != nil && resp.StatusCode/100 == 2 {
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(into))
 	}
@@ -998,7 +998,7 @@ func errorMessage(t *testing.T, method, url string, body any) (int, string) {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, string(raw)
@@ -1286,7 +1286,7 @@ func TestPRDiffUntrackedIs404(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + apiPrefix + "/prs/999/diff")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
@@ -1419,7 +1419,7 @@ func TestManualApproveRacesCycleSafely(t *testing.T) {
 		// test goroutine); correctness is asserted on the test goroutine below.
 		resp, err := http.Post(srv.URL+apiPrefix+"/queue/90/approve", "application/json", nil)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}()
 	wg.Wait()
@@ -2065,7 +2065,7 @@ func TestAnalyticsRangeValidation(t *testing.T) {
 	} {
 		resp, err := http.Get(url)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		require.GreaterOrEqual(t, resp.StatusCode, 400, "rejected: %s", url)
 		require.Less(t, resp.StatusCode, 500, "client error, not a server crash: %s", url)
 	}
