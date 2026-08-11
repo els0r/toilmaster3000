@@ -1,14 +1,12 @@
 package harness
 
 import (
-	"encoding/json"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/els0r/toilmaster3000/internal/hook"
+	"github.com/els0r/toilmaster3000/internal/jsonl"
 )
 
 // TranscriptRecord is one AI run's account of itself: the on-disk shape of one
@@ -141,26 +139,8 @@ func (s *TranscriptSink) Transcribe(rec TranscriptRecord) {
 	}
 }
 
-// append writes the one line. Callers get the error; nobody above Transcribe
-// ever does.
+// append writes the one line through the shared .state append idiom
+// (internal/jsonl). Callers get the error; nobody above Transcribe ever does.
 func (s *TranscriptSink) append(rec TranscriptRecord) error {
-	line, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	if dir := filepath.Dir(s.path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	// ONE Write of the whole row: see the type comment — this is what keeps
-	// concurrent rows from interleaving without a lock.
-	_, err = f.Write(append(line, '\n'))
-	return err
+	return jsonl.Append(s.path, rec)
 }

@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/els0r/toilmaster3000/internal/jsonl"
 )
 
 // FireKey identifies one Notifier fire's subject: which hook fired for which
@@ -124,24 +125,8 @@ func (l *FiredLedger) load() error {
 	return nil
 }
 
-// appendLine writes one record as a JSON line, creating the parent directory
-// and file if needed. Callers hold l.mu.
+// appendLine writes one record as a JSON line through the shared .state append
+// idiom (internal/jsonl). Callers hold l.mu.
 func (l *FiredLedger) appendLine(rec FireRecord) error {
-	if dir := filepath.Dir(l.path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	line, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(append(line, '\n'))
-	return err
+	return jsonl.Append(l.path, rec)
 }
