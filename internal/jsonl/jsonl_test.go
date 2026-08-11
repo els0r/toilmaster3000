@@ -1,6 +1,8 @@
 package jsonl
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,6 +80,61 @@ func TestAppendSurfacesAWriteItCannotMake(t *testing.T) {
 	require.NoError(t, os.WriteFile(blocked, []byte("x"), 0o644))
 
 	require.Error(t, Append(filepath.Join(blocked, "rows.jsonl"), row{ID: "a"}))
+}
+
+// J4b: a row that lands in the page cache and fails at flush is a failed
+// append, not a success. Every caller acts on the error — the verdict store
+// refuses to update memory, the transcript sink logs a miss — so a discarded
+// close error would tell all of them a row reached disk that never did.
+func TestAppendSurfacesACloseFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rows.jsonl")
+	flushed := &closeFailingWriter{err: errors.New("quota exceeded")}
+	restore := stubOpenAppend(t, flushed)
+	defer restore()
+
+	require.ErrorIs(t, Append(path, row{ID: "a", Text: "posted a review"}), flushed.err)
+	require.NotEmpty(t, flushed.written, "the write itself succeeded; only the flush failed")
+}
+
+// J4c: when both the write and the close fail, the write error is the one
+// returned — it names the cause, and the close error is its echo.
+func TestAppendPrefersTheWriteErrorOverTheCloseError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rows.jsonl")
+	broken := &closeFailingWriter{
+		err:      errors.New("closed late"),
+		writeErr: errors.New("no space left on device"),
+	}
+	restore := stubOpenAppend(t, broken)
+	defer restore()
+
+	require.ErrorIs(t, Append(path, row{ID: "a"}), broken.writeErr)
+}
+
+// closeFailingWriter is the flush-failure fake: a sink whose Close (and
+// optionally Write) reports the error a full or network-backed filesystem
+// would report, which no temp directory can be made to produce.
+type closeFailingWriter struct {
+	err      error
+	writeErr error
+	written  []byte
+}
+
+func (w *closeFailingWriter) Write(p []byte) (int, error) {
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
+	w.written = append(w.written, p...)
+	return len(p), nil
+}
+
+func (w *closeFailingWriter) Close() error { return w.err }
+
+// stubOpenAppend points the opener at a fake for one test.
+func stubOpenAppend(t *testing.T, wc io.WriteCloser) func() {
+	t.Helper()
+	prev := openAppend
+	openAppend = func(string) (io.WriteCloser, error) { return wc, nil }
+	return func() { openAppend = prev }
 }
 
 // J5: concurrent appends produce whole, separate lines. The transcript sink
