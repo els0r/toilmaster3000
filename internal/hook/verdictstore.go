@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/els0r/toilmaster3000/internal/jsonl"
 )
 
 // VerdictKey identifies one screen run's subject: which Screen judged which
@@ -151,24 +152,8 @@ func (s *VerdictStore) load() error {
 	return nil
 }
 
-// appendLine writes one record as a JSON line, creating the parent directory
-// and file if needed. Callers hold s.mu.
+// appendLine writes one record as a JSON line through the shared .state append
+// idiom (internal/jsonl). Callers hold s.mu.
 func (s *VerdictStore) appendLine(rec VerdictRecord) error {
-	if dir := filepath.Dir(s.path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	line, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(append(line, '\n'))
-	return err
+	return jsonl.Append(s.path, rec)
 }

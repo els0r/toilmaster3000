@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/els0r/toilmaster3000/internal/jsonl"
 )
 
 // load reads the existing approvals.jsonl (if any) into the dedup set and the
@@ -75,27 +77,10 @@ func newestFirst[T any](ordered []T) []T {
 	return out
 }
 
-// appendJSONL appends one record as a JSON line to an append-only ledger,
-// creating the .state directory and file if needed. Both ledgers append
-// through here. Callers must hold e.mu.
+// appendJSONL appends one record as a JSON line to an append-only ledger.
+// Both ledgers append through here, and the idiom itself lives in
+// internal/jsonl — shared with every other .state writer. Callers must hold
+// e.mu.
 func appendJSONL(path string, rec any) error {
-	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	line, err := json.Marshal(rec)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		return err
-	}
-	return nil
+	return jsonl.Append(path, rec)
 }
