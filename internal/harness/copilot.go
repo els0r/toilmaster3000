@@ -56,10 +56,7 @@ func (c *Copilot) Screen(ctx context.Context, req Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(bytes.TrimSpace(out)) == 0 {
-		return "", errors.New("empty copilot output")
-	}
-	return string(out), nil
+	return copilotText(out)
 }
 
 // Act runs one side-effecting agent pass for the PR (the Agent seam): compose
@@ -73,6 +70,18 @@ func (c *Copilot) Act(ctx context.Context, req Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return copilotText(out)
+}
+
+// copilotText normalises one copilot run's stdout into the run's result text —
+// the copilot twin of claude's resultText, and shared by both legs for the same
+// reason that one is (ADR 0014): a normalisation that lives in two places grows
+// a second failure shape in only one of them.
+//
+// Silent mode makes stdout exactly the agent's response, so there is no
+// envelope to unwrap and exactly one thing to check: that the run said anything
+// at all. A silent run is a failed attempt, never an empty transcript.
+func copilotText(out []byte) (string, error) {
 	if len(bytes.TrimSpace(out)) == 0 {
 		return "", errors.New("empty copilot output")
 	}
