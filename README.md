@@ -140,9 +140,9 @@ hold your team's tokens and history and never belong in a commit.
   conventional-commit parser, the rule matcher (author/title/diff predicates,
   Approve-vs-Review precedence, breaking-change routing), the validator, and the
   two GitHub folds. `gh` shell-out and HTTP handlers get lighter coverage;
-  the frontend uses vitest. There is no CI — `make check` regenerates the
-  committed spec + types and fails on any drift; run it before committing a DTO
-  change.
+  the frontend uses vitest. GitHub Actions runs build, drift check, vet, lint
+  and both test suites on every PR; `make check` is the same drift guard locally
+  — run it before committing a DTO change.
 
 ```sh
 make dev-api   # terminal 1: go run .  (API on :8666)

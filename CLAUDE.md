@@ -31,8 +31,13 @@ Always go through `make` — a bare `go build .` fails on a clean checkout becau
 `frontend/dist` is a generated, git-ignored artifact the binary embeds.
 
 - `make build` / `make run` / `make test` — build, serve on :8666, test both sides.
-- `make check` — the drift guard. There is **no CI**; run it before committing any
-  wire-DTO change, or the committed `openapi.json` / `schema.d.ts` go stale.
+- `make lint` — `golangci-lint run ./...`. Part of the definition of done, not a
+  cleanup pass: lint clean before you hand work over.
+- `make check` — the drift guard. Run it before committing any wire-DTO change,
+  or the committed `openapi.json` / `schema.d.ts` go stale.
+
+CI (`.github/workflows/ci.yml`) runs build, check, vet, lint and test on every
+PR — but it is the backstop, not the loop. Run the same commands locally first.
 
 Full command list, the two-terminal dev loop, single-test invocations, and the
 binary's run requirements: **`docs/development.md`**.

@@ -124,10 +124,11 @@ summary is a claim, not evidence.
   the same package, and the report's per-AC test names must exist in the diff.
   Failing either is a rejected report, not a style nit.
 - **Run the gates yourself**, on the PR branch in a throwaway worktree (cleaned
-  up after). There is no CI, so this is the only gate:
-  - `make test` (Go + frontend), `make check` (OpenAPI/type drift).
-  - Plus, as relevant: `go test -race ./internal/...`, `go vet`, `tsc --noEmit`,
-    full `vitest run`.
+  up after). CI runs the same gates, but waiting on it is not verifying — and a
+  red CI on a PR you opened is a report you should have caught locally:
+  - `make test` (Go + frontend, `-race`), `make lint` (golangci-lint),
+    `make check` (OpenAPI/type drift).
+  - Plus, as relevant: `go vet`, `tsc --noEmit`, full `vitest run`.
   - Cheap drift check: regenerate `openapi.json` from the Go DTOs and `diff`
     against the committed spec.
 - **Merge when green and mergeable.** Use **rebase merge** to keep `main`'s
