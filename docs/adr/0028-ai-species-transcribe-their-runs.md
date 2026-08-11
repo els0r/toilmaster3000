@@ -121,10 +121,12 @@ Both legs already had the text in hand. Neither had anywhere to put it.
   the operator's signal that a transcript exists.
 - Screen runs are now transcribed too — they never were before, since the text
   never left the adapter.
-- `TranscriptSink` carries no mutex, unlike every sibling in `.state/`: it has no
-  shared state, and concurrent rows stay whole on O_APPEND plus **one** `Write`
-  of the fully marshalled row. Splitting that into two writes would reopen the
-  interleaving window.
+- `TranscriptSink` holds a mutex, like every sibling in `.state/`. The first
+  draft went without one, resting wholeness on O_APPEND plus **one** `Write` of
+  the fully marshalled row — but `os.File.Write` loops on a short write, so a
+  40 KB row split at a quota boundary can have a concurrent species' row land in
+  the gap, and nothing ever reads the file to notice. The single write stays;
+  the lock is what makes a row whole.
 - Rows are written with HTML escaping OFF (`internal/jsonl`). `encoding/json`
   escapes `<`, `>` and `&` by default — safe for JSON embedded in a page, which
   no `.state` file is — and left on it would make a transcript quoting Go code

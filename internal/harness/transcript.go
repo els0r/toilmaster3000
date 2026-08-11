@@ -3,6 +3,7 @@ package harness
 import (
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/els0r/toilmaster3000/internal/hook"
@@ -104,15 +105,18 @@ func transcribe(sink Transcriber, kind string, spec hook.Spec, pr hook.PRContext
 // (VerdictStore, FiredLedger), and this is loaded never and consulted never.
 // It gates nothing, so there is nothing to hold in memory.
 //
-// It carries no mutex, unlike every sibling in .state/, because it has no
-// shared state to guard: the path is immutable and each Transcribe opens its
-// own descriptor. Concurrent runs — up to four notifiers plus the screen pool —
-// stay whole on the strength of O_APPEND and ONE Write of the fully marshalled
-// row. That last part is load-bearing: splitting the line and the newline into
-// two writes would open the interleaving window this design closes.
+// It holds the mutex every sibling in .state/ holds, and for the reason they
+// do: up to four notifier runs plus the screen pool append concurrently, and a
+// transcript is far past the size any single write is atomic at. O_APPEND plus
+// one Write is NOT enough on its own — os.File.Write loops on a short write,
+// issuing a second write(2) after it, so a row split at a quota boundary can
+// have a neighbour's row land in the gap. The lock is what makes a row whole;
+// the single write is what keeps it from being split needlessly.
 type TranscriptSink struct {
 	path   string
 	logger *slog.Logger
+
+	mu sync.Mutex
 }
 
 // NewTranscriptSink constructs the sink over the given transcripts.jsonl path.
@@ -133,6 +137,8 @@ func NewTranscriptSink(path string) *TranscriptSink {
 // names the sink and the run, never the transcript — putting the prose back in
 // the log is the exact thing this type exists to stop.
 func (s *TranscriptSink) Transcribe(rec TranscriptRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.append(rec); err != nil {
 		s.logger.Warn("transcript not recorded; the run itself stands",
 			"path", s.path, "hook", rec.HookName, "pr", rec.Number, "error", err)
@@ -140,7 +146,8 @@ func (s *TranscriptSink) Transcribe(rec TranscriptRecord) {
 }
 
 // append writes the one line through the shared .state append idiom
-// (internal/jsonl). Callers get the error; nobody above Transcribe ever does.
+// (internal/jsonl). Callers hold s.mu. Callers get the error; nobody above
+// Transcribe ever does.
 func (s *TranscriptSink) append(rec TranscriptRecord) error {
 	return jsonl.Append(s.path, rec)
 }
