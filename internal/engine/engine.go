@@ -71,6 +71,13 @@ type QueueItem struct {
 	Title  string `json:"title"`
 	Author string `json:"author"`
 	URL    string `json:"url"`
+	// Head is the PR's head SHA as the cycle fetch saw it. Unlike every other
+	// field here it is not for display — it is deliberately absent from
+	// server.QueueItem — and exists so ApproveManually can hand a hook the head
+	// its PRContext owes (ADR 0021): the queue snapshot is the only record of a
+	// queued PR the manual-override path holds, so without it every transcript
+	// and every hook payload on that path reads head-less.
+	Head string `json:"head"`
 	// Additions, Deletions, and ChangedFiles are the PR's diff magnitude, carried
 	// from the candidate fetch so a human triaging the queue can tell a small fix
 	// from a large refactor. They are display-only here — the diff-size rule
@@ -393,6 +400,7 @@ func (e *Engine) ApproveManually(ctx context.Context, number int) error {
 			Title:        item.Title,
 			Author:       item.Author,
 			URL:          item.URL,
+			HeadSHA:      item.Head,
 			ChangedFiles: item.ChangedFiles,
 			Reasons:      item.Reasons,
 			Manual:       true,
@@ -619,6 +627,7 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 				Title:        pr.Title,
 				Author:       pr.Author,
 				URL:          pr.URL,
+				Head:         pr.HeadSHA,
 				Additions:    pr.Additions,
 				Deletions:    pr.Deletions,
 				ChangedFiles: pr.ChangedFiles,
@@ -779,6 +788,7 @@ func queueItemForHolds(pr github.PR, holds []hook.HoldDetail) QueueItem {
 		Title:        pr.Title,
 		Author:       pr.Author,
 		URL:          pr.URL,
+		Head:         pr.HeadSHA,
 		Additions:    pr.Additions,
 		Deletions:    pr.Deletions,
 		ChangedFiles: pr.ChangedFiles,

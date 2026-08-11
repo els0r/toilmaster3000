@@ -128,8 +128,10 @@ type Approval struct {
 
 // QueueItem is the wire shape of one Needs-Human-Review queue entry: a PR routed
 // here for one or more reasons (carried as a list). Snake_case mirrors the
-// engine's QueueItem exactly, plus the derived TitleParts (computed
-// parse-on-read in queueItemToBody).
+// engine's QueueItem, plus the derived TitleParts (computed parse-on-read in
+// queueItemToBody) and minus its Head: the head SHA is carried in the engine
+// read-model only to serve the manual-override hook payload, and the queue UI
+// renders nothing from it.
 type QueueItem struct {
 	Number     int        `json:"number"`
 	Title      string     `json:"title"`
