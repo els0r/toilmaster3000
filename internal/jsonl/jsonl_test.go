@@ -51,6 +51,24 @@ func TestAppendRejectsAnUnmarshallableRecordWithoutTouchingDisk(t *testing.T) {
 	require.NoFileExists(t, path, "nothing opened, nothing created")
 }
 
+// J3b: code text survives the round trip to disk unescaped. encoding/json
+// escapes <, > and & by default for JSON embedded in a page; no .state file is
+// ever that, and left on it makes a transcript quoting Go code ungreppable in
+// the one file whose entire purpose is being read with grep and jq.
+func TestAppendDoesNotEscapeCodeText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rows.jsonl")
+	const code = "if a < b && c > d { <-ctx.Done() }"
+
+	require.NoError(t, Append(path, row{ID: "a", Text: code}))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(data), code, "grep over the file finds what the file says")
+	for _, escape := range []string{"\\u003c", "\\u003e", "\\u0026"} {
+		require.NotContains(t, string(data), escape, "no \\uXXXX escapes where the operator expects code")
+	}
+}
+
 // J4: a write that cannot be made is an error, not a silent no-op — every
 // caller decides for itself what a failed append means (the verdict store
 // refuses to update memory, the sink logs a miss), and none of them can decide
