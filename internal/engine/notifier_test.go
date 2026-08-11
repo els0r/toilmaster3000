@@ -311,6 +311,8 @@ func TestPostApproveFiresOnManualOverrideWithManualFlag(t *testing.T) {
 	require.Equal(t, "docs: gate me", got.Title)
 	require.True(t, got.Manual, "a manual override carries manual=true")
 	require.Equal(t, []string{"docs gate"}, got.Reasons, "the point extra: the reasons the human overrode")
+	require.Equal(t, "h12", got.HeadSHA,
+		"the override path owes a head like every other point: an AI species records it, and a head-less row cannot say which commit was reviewed")
 
 	// The next cycle sees the PR as a standing dedup member — no re-announce.
 	eng.RunCycleOnce(context.Background())
