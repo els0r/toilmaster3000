@@ -42,9 +42,16 @@ yields a Verdict, a Notifier anything that fires a side effect.
    and extracts the verdict **structurally**: prose "CAN PROCEED" in agent
    chatter means nothing, and a run with no confident extractable
    `proceed`/`hold` **errors as a failed attempt** (ADR 0022's 3-strikes
-   path). The adapter never fabricates a verdict in either direction. This is
-   the sanctioned home of hook-driven per-PR `gh` calls: **configuring a hook
-   is the consent** (the one-batched-call doctrine, amended).
+   path). The adapter never fabricates a verdict in either direction.
+   (**Amended by ADR 0028**: extraction is no longer the adapter's. `Adapter.
+   Screen` returns the run's result *text*, converging with `Agent.Act`, and
+   `AIScreen` transcribes it before extracting — so a run that produced text
+   and then yielded no verdict keeps the one thing explaining why. Everything
+   else here stands: the adapter still normalises its own CLI's output, and
+   structural extraction, never prose keywords, is still what turns text into
+   a verdict.) This is the sanctioned home of hook-driven per-PR `gh` calls:
+   **configuring a hook is the consent** (the one-batched-call doctrine,
+   amended).
 4. **The generic exec/webhook species is deferred, not designed.** When a
    non-AI hook is actually wanted (Slack, a CI-runner screen), it arrives as
    a new species implementing the same kind interface — the contract gets
