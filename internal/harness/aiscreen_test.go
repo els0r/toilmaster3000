@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,6 +63,26 @@ func TestAIScreenTranscribesTheTextThatFailedExtraction(t *testing.T) {
 	require.Equal(t, "I looked at the diff and it seems fine to me.", sink.rows[0].Text)
 	require.Equal(t, "screen", sink.rows[0].Kind)
 	require.Equal(t, "feedface", sink.rows[0].Head, "per-head keying is the screen's whole invalidation story")
+}
+
+// AS6 is AS5 one layer down: the adapter itself failed — a non-zero exit, a
+// timeout kill — after the CLI had already printed its answer. That run burns
+// one of three strikes and re-spends a paid harness call, so the operator
+// deciding whether to keep the screen configured needs to see what it said. The
+// error is unchanged: still a failed attempt, never a fabricated verdict.
+func TestAIScreenTranscribesARunThatFailedAfterSpeaking(t *testing.T) {
+	spec := hook.Spec{ID: "s1", Name: "security", Harness: "copilot", Prompt: "look closely"}
+	sink := &recordingTranscriber{}
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(context.Context, Request) (string, error) {
+		return verdictText("hold", "unbounded retry loop"), errors.New("copilot -p: exit status 1")
+	}), sink)
+
+	v, err := screen.Screen(context.Background(), prCtx())
+
+	require.ErrorContains(t, err, "copilot -p")
+	require.Equal(t, hook.Verdict{}, v, "a failed run yields no verdict, however well-formed its text")
+	require.Len(t, sink.rows, 1, "a failed attempt that spoke still accounts for itself")
+	require.Equal(t, verdictText("hold", "unbounded retry loop"), sink.rows[0].Text)
 }
 
 func TestAIScreenRealizesTheScreenKindFromItsSpec(t *testing.T) {

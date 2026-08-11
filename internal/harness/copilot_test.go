@@ -79,6 +79,41 @@ func TestCopilotScreenInvokeFailureIsAFailedAttempt(t *testing.T) {
 	require.ErrorContains(t, err, "copilot -p")
 }
 
+// A failed run that already SPOKE keeps its text. Silent-mode stdout is the
+// answer itself, so a copilot pass that reviewed the diff and then exited
+// non-zero on the way out has produced the whole evidence — and returning nil
+// here is the evidence loss ADR 0028 exists to end, one layer below where it
+// was fixed. The error stands; the species transcribes what came back before it
+// judges the error.
+func TestCopilotScreenKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
+	c := scriptedCopilot(
+		func(context.Context, string, int) (string, error) { return "+x", nil },
+		func(context.Context, string, string, string) ([]byte, error) {
+			return []byte("Reviewed. One concern: the retry loop is unbounded."),
+				errors.New("copilot -p: exit status 1: telemetry flush failed")
+		},
+	)
+
+	result, err := c.Screen(context.Background(), composeReq())
+
+	require.ErrorContains(t, err, "copilot -p", "the failure is still a failed attempt")
+	require.Equal(t, "Reviewed. One concern: the retry loop is unbounded.", result,
+		"what the run said outlives how it ended")
+}
+
+func TestCopilotActKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
+	c := scriptedCopilotAgent(func(context.Context, string, string, string) ([]byte, error) {
+		return []byte("Posted a review comment on #42."),
+			errors.New("copilot -p: exit status 1")
+	})
+
+	transcript, err := c.Act(context.Background(), composeReq())
+
+	require.ErrorContains(t, err, "copilot -p")
+	require.Equal(t, "Posted a review comment on #42.", transcript,
+		"the agent holds gh authority: a run that failed AFTER posting is the one worth recording")
+}
+
 // Silence is copilot's only adapter-level failure. With no envelope to decode,
 // the CLI's stdout either is the result text or there is none — a run that said
 // nothing is a failed attempt, and every OTHER disappointment (prose with no

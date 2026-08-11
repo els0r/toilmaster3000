@@ -140,6 +140,12 @@ Both legs already had the text in hand. Neither had anywhere to put it.
 - Adapter-level failure narrows. Copilot's screen leg now has exactly one check
   of its own — empty stdout; prose carrying no verdict document is the species'
   failure, and it keeps its transcript.
+- Text and error are not exclusive at the harness seams. A CLI that printed its
+  whole answer and then exited non-zero — or was killed mid-sentence by the
+  hook's timeout — returns both, and both species transcribe what came back
+  *before* they judge the error. The failure is untouched: still a failed
+  attempt on the 3-strikes path, still a logged miss for a fire. The
+  row-iff-text rule suppresses the runs that genuinely said nothing.
 - Still open, deliberately not fixed here: `Claude.Act` and `Claude.Screen`
   return `"", err` when the CLI's JSON envelope reports an errored run, so a run
   that did real work and then failed at the envelope still loses its text. Same

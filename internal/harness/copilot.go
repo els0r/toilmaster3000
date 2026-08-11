@@ -54,7 +54,7 @@ func (c *Copilot) Screen(ctx context.Context, req Request) (string, error) {
 	}
 	out, err := c.invoke(ctx, req.Model, ComposePrompt(req, diff), req.WorkDir)
 	if err != nil {
-		return "", err
+		return salvage(copilotText(out)), err
 	}
 	return copilotText(out)
 }
@@ -68,7 +68,7 @@ func (c *Copilot) Screen(ctx context.Context, req Request) (string, error) {
 func (c *Copilot) Act(ctx context.Context, req Request) (string, error) {
 	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir)
 	if err != nil {
-		return "", err
+		return salvage(copilotText(out)), err
 	}
 	return copilotText(out)
 }
@@ -142,13 +142,18 @@ func copilotCmd(ctx context.Context, model, prompt, workDir string, extraArgs ..
 }
 
 // runCopilot runs one headless copilot CLI pass and returns its stdout.
+//
+// Stdout comes back even when the run FAILED — the claude leg's rule, and it
+// bites harder here: silent-mode stdout IS the answer, so a copilot run that
+// reviewed the diff and then exited non-zero loses everything it said if this
+// returns nil. The error still stands; the caller decides what survives.
 func runCopilot(ctx context.Context, model, prompt, workDir string, extraArgs ...string) ([]byte, error) {
 	cmd := copilotCmd(ctx, model, prompt, workDir, extraArgs...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("copilot -p: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return stdout.Bytes(), fmt.Errorf("copilot -p: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }

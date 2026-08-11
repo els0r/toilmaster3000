@@ -75,6 +75,15 @@ func resultText(output []byte) (string, error) {
 	return env.Result, nil
 }
 
+// salvage keeps a normalisation's text and drops its error. It is called on
+// exactly one path: a CLI run that ALREADY failed — a non-zero exit, a timeout
+// kill — where whatever the process managed to print is the run's account of
+// itself and the process error is the failure that matters. A normalisation
+// error there is expected (a half-written envelope decodes to nothing) and
+// reporting it would only mask the real cause. The empty string is the honest
+// answer when nothing survived.
+func salvage(text string, _ error) string { return text }
+
 // decodeVerdictDocument reports whether a fenced block is a well-formed
 // verdict document, and decodes it. Well-formed means exactly the instructed
 // shape: one JSON object, no unknown fields (an embellished or foreign

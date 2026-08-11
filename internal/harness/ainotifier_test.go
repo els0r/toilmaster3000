@@ -124,6 +124,26 @@ func TestAINotifierTranscribesNothingWithoutText(t *testing.T) {
 	require.Empty(t, blank.rows, "whitespace is not an account of anything")
 }
 
+// AN7: a run that spoke and then FAILED is transcribed. The agent holds gh
+// authority, so by the time a non-zero exit or a timeout kill lands it may
+// already have posted its review as the operator's identity — and at-most-once
+// means no later cycle re-runs the fire. The species records what came back
+// before it judges the error; the Notify error is untouched, so the runner
+// still logs its miss.
+func TestAINotifierTranscribesARunThatFailedAfterSpeaking(t *testing.T) {
+	spec := hook.Spec{ID: "n1", Name: "go review assist", Harness: "copilot", Prompt: "review it"}
+	sink := &recordingTranscriber{}
+	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+		return "Posted a review comment on #7.", errors.New("copilot -p: exit status 1")
+	}), sink)
+
+	err := notifier.Notify(context.Background(), queueCtx())
+
+	require.ErrorContains(t, err, "copilot -p", "a failed fire is still a logged miss for the runner")
+	require.Len(t, sink.rows, 1, "the run that failed after posting is the one worth recording")
+	require.Equal(t, "Posted a review comment on #7.", sink.rows[0].Text)
+}
+
 // AN4: the configured WorkDir lands on every Request the species issues, taken
 // at construction exactly as repo is (ADR 0027). It arrives as a constructor
 // argument rather than off the Spec because WorkDir lives on NotifierConfig
