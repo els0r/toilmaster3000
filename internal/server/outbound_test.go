@@ -235,7 +235,7 @@ func TestOutboundEmptyBeforeFirstCycle(t *testing.T) {
 
 	resp, err := http.Get(srv.URL + apiPrefix + "/outbound")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var raw map[string]any

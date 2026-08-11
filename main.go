@@ -225,7 +225,7 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return fmt.Errorf("preflight: bind listen port: %w", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	// The matcher (Slice 4) reads the resolved @me token off the engine.
 	eng.SetSelfLogin(selfLogin)

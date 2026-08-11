@@ -848,7 +848,7 @@ func newSPAHandler(spa fs.FS) (http.Handler, error) {
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name != "" {
 			if f, err := spa.Open(name); err == nil {
-				f.Close()
+				_ = f.Close()
 				fileServer.ServeHTTP(w, r)
 				return
 			}

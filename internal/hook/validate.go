@@ -26,7 +26,7 @@ var (
 	// ErrAmbiguousPrompt rejects a hook setting both Prompt and PromptFile —
 	// the spec is Prompt|PromptFile, exactly one; silently preferring either
 	// would run instructions the user did not intend.
-	ErrAmbiguousPrompt = errors.New("Prompt and PromptFile are mutually exclusive")
+	ErrAmbiguousPrompt = errors.New("prompt and PromptFile are mutually exclusive")
 	// ErrBadPromptFile rejects a PromptFile that does not resolve to a readable
 	// file, on either kind (ADR 0027). Instructions are resolved at RUN time,
 	// and for a Notifier that is after the fired-ledger row is appended — so a
@@ -70,13 +70,13 @@ func (c Config) validate() error {
 	names := map[string]bool{}
 	for i, s := range c.Screens {
 		l := label("screen", i, s.Name)
-		if err := s.Spec.validate(l, names); err != nil {
+		if err := s.validate(l, names); err != nil {
 			return err
 		}
 	}
 	for i, n := range c.Notifiers {
 		l := label("notifier", i, n.Name)
-		if err := n.Spec.validate(l, names); err != nil {
+		if err := n.validate(l, names); err != nil {
 			return err
 		}
 		if !postPoints[n.Point] {
