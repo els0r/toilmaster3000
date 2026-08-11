@@ -29,7 +29,10 @@ of thing as CI: an external signal the loop polls, never awaits.
 2. **Verdicts are per-head and persisted**: append-only
    `.state/verdicts.jsonl`, rows
    `(screen_id, number, head, outcome: proceed|hold|error, reason, at)`;
-   the latest row per key wins. A new push changes the key, so the store
+   the latest row per key wins. (**Amended by ADR 0028**: the key is written
+   as `hook_id`, the spelling `hookfires.jsonl` and `transcripts.jsonl`
+   already used — a Screen is a hook and this is its stable hook `Id`. Rows
+   written under the old name still load; nothing else changes.) A new push changes the key, so the store
    misses and the PR re-screens — no invalidation logic exists or is needed.
 3. **Conjunctive fold, all holds collected.** Every enabled Screen must say
    `proceed`; any `hold` diverts the PR to Needs-Human-Review —

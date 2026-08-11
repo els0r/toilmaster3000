@@ -1,7 +1,11 @@
 package hook_test
 
 import (
+	"encoding/json"
+	"maps"
+	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -33,6 +37,60 @@ func TestVerdictPersistsAcrossReload(t *testing.T) {
 	got, ok = reloaded.Latest("scr-1", 42, "abc123")
 	require.True(t, ok, "the verdict survives a restart")
 	require.Equal(t, rec, got)
+}
+
+// V1b: the key is spelled hook_id on disk — the same name hookfires.jsonl and
+// transcripts.jsonl use — so an operator can join the three files by field with
+// jq. It was screen_id until ADR 0028, and the mismatch was invisible: a join
+// keyed on .hook_id returned the transcripts alone and silently dropped every
+// outcome row.
+func TestVerdictRowSpellsItsKeyHookID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "verdicts.jsonl")
+	s, err := hook.NewVerdictStore(path)
+	require.NoError(t, err)
+	require.NoError(t, s.Append(hook.VerdictRecord{
+		ScreenID: "scr-1", Number: 42, Head: "abc123",
+		Outcome: hook.Hold, Reason: "unbounded retry loop",
+		At: time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC),
+	}))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var keys map[string]any
+	require.NoError(t, json.Unmarshal(data, &keys))
+	require.ElementsMatch(t,
+		[]string{"hook_id", "number", "head", "outcome", "reason", "at"},
+		slices.Collect(maps.Keys(keys)))
+	require.Equal(t, "scr-1", keys["hook_id"])
+}
+
+// V1c: a file written before the rename still loads. The 3-strikes count and
+// every stored verdict live in it, so an operator upgrading must not silently
+// lose them — the old name is read forever and written never. Loading it and
+// appending must also not fork the key: the legacy row and the new one are the
+// same key, latest-wins.
+func TestVerdictStoreReadsTheLegacyScreenIDSpelling(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "verdicts.jsonl")
+	legacy := `{"screen_id":"scr-1","number":42,"head":"abc123","outcome":"hold",` +
+		`"reason":"unbounded retry loop","at":"2026-08-06T10:00:00Z"}` + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(legacy), 0o644))
+
+	s, err := hook.NewVerdictStore(path)
+	require.NoError(t, err)
+	got, ok := s.Latest("scr-1", 42, "abc123")
+	require.True(t, ok, "a pre-rename verdict is not lost on upgrade")
+	require.Equal(t, hook.Hold, got.Outcome)
+	require.Equal(t, "unbounded retry loop", got.Reason)
+
+	// The same key, not a second one: appending under the new spelling wins.
+	require.NoError(t, s.Append(hook.VerdictRecord{
+		ScreenID: "scr-1", Number: 42, Head: "abc123",
+		Outcome: hook.Proceed, Reason: "bound added",
+		At: time.Date(2026, 8, 6, 11, 0, 0, 0, time.UTC),
+	}))
+	got, ok = s.Latest("scr-1", 42, "abc123")
+	require.True(t, ok)
+	require.Equal(t, hook.Proceed, got.Outcome, "one key, latest row wins across the rename")
 }
 
 // V2: the latest row per key wins — an error attempt followed by a proceed

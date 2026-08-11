@@ -103,6 +103,16 @@ Both legs already had the text in hand. Neither had anywhere to put it.
    user-editable, so an old row may name a hook since renamed — that is history,
    not staleness; the key never moves.
 
+   "Already legible" only holds if the key has ONE name, and it did not:
+   `verdicts.jsonl` spelled it `screen_id`, so `jq -s ... .hook_id` over the
+   three files silently dropped every outcome row and returned the transcripts
+   alone — a reader had to open Go source to discover the rename, which is the
+   one thing a write-only, jq-only file exists to avoid. `verdicts.jsonl` now
+   writes `hook_id` too (a Screen is a hook; this is its stable hook `Id`,
+   ADR 0023). Rows written under the old name still load, forever: an
+   append-only ledger that rewrites itself on upgrade is a worse trade than one
+   dead field name. This amends ADR 0022's row format.
+
    `head` is the head tm3k **observed** when the point fired, not a pin on what
    the agent read. Neither species pins its fetch to it — `gh pr diff` takes a
    number, and a Notifier's agent fetches the PR itself under its own `gh`

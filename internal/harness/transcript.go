@@ -22,6 +22,11 @@ import (
 // No run ID is minted for the exact 1:1 — it would cost a field on two
 // committed on-disk formats to disambiguate rows a reader opens together anyway.
 //
+// The join works by FIELD NAME: all three files spell the key hook_id, so
+// `jq -s` over them keyed on .hook_id joins what it should. verdicts.jsonl
+// spelled it screen_id until ADR 0028 and the mismatch was invisible — the join
+// returned the transcripts alone, silently dropping every outcome row.
+//
 // Head and HookName are not part of that link. They are carried so a row reads
 // without a join at all: which commit the run was dispatched for, and what the
 // hook was called when it ran. HookName is user-editable, so an old row may
