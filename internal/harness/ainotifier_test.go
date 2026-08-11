@@ -85,7 +85,7 @@ func TestAINotifierTranscribesItsRun(t *testing.T) {
 		HookID:   "n1",
 		HookName: "go review assist",
 		Number:   7,
-		Head:     "feedface", // which commit the agent actually reviewed
+		Head:     "feedface", // the head observed at dispatch, not a pin on what was read
 		Text:     "Review posted (one `COMMENTED` review, no approval, no merge).",
 	}, got)
 	require.NotContains(t, logs.String(), "COMMENTED", "the transcript never reaches the log")

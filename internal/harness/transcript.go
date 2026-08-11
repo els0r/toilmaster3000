@@ -23,10 +23,18 @@ import (
 // committed on-disk formats to disambiguate rows a reader opens together anyway.
 //
 // Head and HookName are not part of that link. They are carried so a row reads
-// without a join at all: which commit the agent actually reviewed, and what the
+// without a join at all: which commit the run was dispatched for, and what the
 // hook was called when it ran. HookName is user-editable, so an old row may
 // name a hook that has since been renamed — that is history, not staleness; the
 // key never moves.
+//
+// Head is the head tm3k OBSERVED when the point fired — the SHA a Screen's
+// verdict rows key on (ADR 0022) — and deliberately not a claim about what the
+// agent read. Neither species pins its fetch to it: the Screen's `gh pr diff`
+// takes a number, not a SHA, and the Notifier's agent fetches the PR itself
+// under its own gh authority. A push between dispatch and run means the agent
+// saw a newer diff than this field names. Pinning would be a change to what a
+// run IS, not to how it is recorded, so it does not belong here (ADR 0028).
 type TranscriptRecord struct {
 	Kind     string    `json:"kind"` // "screen" | "notifier"
 	HookID   string    `json:"hook_id"`
