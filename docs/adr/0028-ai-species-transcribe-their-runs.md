@@ -97,6 +97,15 @@ Both legs already had the text in hand. Neither had anywhere to put it.
    user-editable, so an old row may name a hook since renamed — that is history,
    not staleness; the key never moves.
 
+   `head` is the head tm3k **observed** when the point fired, not a pin on what
+   the agent read. Neither species pins its fetch to it — `gh pr diff` takes a
+   number, and a Notifier's agent fetches the PR itself under its own `gh`
+   authority — so a push between dispatch and run leaves the row naming the
+   older commit. Pinning is a change to what a run *is*, not to how it is
+   recorded; it is out of scope here and would be its own decision. The field
+   is recorded for what it truly is: the SHA a Screen's verdict rows key on
+   (ADR 0022), and the commit the run was dispatched for.
+
 7. **Unbounded; no rotation, no per-row cap.** A few KB per run on a
    single-workstation tool is low single-digit MB a year. Truncation would cut
    exactly the part worth having on the day an agent posts something wrong.
