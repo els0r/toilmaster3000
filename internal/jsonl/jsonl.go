@@ -15,6 +15,7 @@ package jsonl
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -27,6 +28,13 @@ import (
 // included, goes out in one Write: callers that hold a lock get atomicity from
 // the lock, and the single write is what keeps a partial line from reaching
 // disk ahead of an error.
+//
+// Close is checked, not deferred. On a quota'd or network-backed filesystem a
+// write can succeed into the page cache and fail at flush, and every caller
+// here acts on a failed append — the verdict store refuses to update memory,
+// the transcript sink logs a miss. Discarding the close error would hand all
+// of them a success for a row that never reached disk. The write error wins
+// when both fail: it names the cause, and the close error is its echo.
 func Append(path string, rec any) error {
 	line, err := marshalLine(rec)
 	if err != nil {
@@ -37,14 +45,28 @@ func Append(path string, rec any) error {
 			return err
 		}
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := openAppend(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	_, err = f.Write(line)
-	return err
+	_, writeErr := f.Write(line)
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
+}
+
+// openAppend opens the ledger for appending. It is a package var so the close
+// path is assertable: a write that fails only at flush is real on a quota'd or
+// network-backed filesystem and cannot be provoked in a temp directory.
+var openAppend = func(path string) (io.WriteCloser, error) {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 // marshalLine encodes one record as its on-disk line, newline included.
