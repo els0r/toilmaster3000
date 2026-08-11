@@ -12,8 +12,9 @@ Always go through `make` — a bare `go build .` fails on a clean checkout becau
 make build         # generate -> npm build -> go build -> ./toilmaster3000
 make run           # build, then serve on http://localhost:8666
 make test          # Go + frontend
-make test-go       # go test ./...
+make test-go       # go test -race ./...
 make test-frontend # cd frontend && vitest run
+make lint          # golangci-lint run ./...
 make generate      # dump openapi.json from Go DTOs, regen frontend TS types
 make check         # regenerate the committed spec + types, fail on any drift
 ```
@@ -42,8 +43,21 @@ poll-driven rerenders with the API mocked).
 
 ## The drift guard
 
-There is **no CI**. `make check` is the drift guard — run it before committing
-any wire-DTO change, or the committed `openapi.json` / `schema.d.ts` go stale.
+`make check` is the drift guard — run it before committing any wire-DTO change,
+or the committed `openapi.json` / `schema.d.ts` go stale.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+one job that does `make build`, `make check`, `go vet ./...`, golangci-lint and
+`make test` — the same commands you run locally, in the same order. It is a
+backstop, not the loop; a PR should arrive green.
+
+The build step comes first because everything Go-side needs `frontend/dist`,
+which a clean checkout does not have. Lint runs through
+[`golangci-lint-action`](https://github.com/golangci/golangci-lint-action) with
+the version pinned in the workflow; `.golangci.yml` keeps the default linter set
+and only lifts the caps that would otherwise hide repeat findings, plus `gofmt`.
 
 ## Run requirements
 

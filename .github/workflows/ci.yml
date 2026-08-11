@@ -1,0 +1,59 @@
+# CI runs exactly what the Makefile exposes locally, in the same order, so a
+# green run here means `make build`, `make check`, `go vet`, `make lint` and
+# `make test` were green on the branch. One job, not four: every Go step needs
+# frontend/dist (main.go embeds it), and building it once is cheaper than
+# rebuilding it per job.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a branch supersedes the run still in flight for it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # A clean checkout has no frontend/dist — it is generated and git-ignored,
+      # and the binary embeds it, so nothing Go-side compiles until this runs.
+      - name: Build
+        run: make build
+
+      # The drift guard: regenerating the wire contract must not change the
+      # committed openapi.json / schema.d.ts.
+      - name: Check generated contract
+        run: make check
+
+      - name: Vet
+        run: go vet ./...
+
+      # Same linters as a local `make lint`; the action supplies the pinned
+      # binary and caches it between runs.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          args: ./...
+
+      - name: Test
+        run: make test

@@ -1,4 +1,4 @@
-.PHONY: all frontend build run dev-api dev-web test test-go test-frontend generate check clean package install
+.PHONY: all frontend build run dev-api dev-web test test-go test-frontend lint generate check clean package install
 
 # The Go binary embeds frontend/dist, so the frontend must be built first; the
 # frontend's types are generated from the OpenAPI spec, so generate runs first.
@@ -34,15 +34,24 @@ dev-web:
 
 test: test-go test-frontend
 
+# -race everywhere: the engine runs its cycle loop on its own goroutine while
+# the HTTP handlers read the snapshots, so a data race is a real failure mode
+# here, not a theoretical one. The suite is small enough that it stays fast.
 test-go:
-	go test ./...
+	go test -race ./...
 
 test-frontend:
 	cd frontend && npm test
 
+# lint is part of the definition of done, alongside test. It depends on frontend
+# because golangci-lint type-checks the root package, which embeds frontend/dist
+# — without it the load fails before a single linter runs.
+lint: frontend
+	golangci-lint run ./...
+
 # check guards against drift: regenerate the committed spec + types and fail if
-# they differ from what's checked in. There is no CI, so run this before
-# committing a DTO change.
+# they differ from what's checked in. CI runs it on every PR; run it locally
+# before committing a DTO change so you find the drift first.
 check: generate
 	git diff --exit-code openapi.json frontend/src/api/schema.d.ts
 

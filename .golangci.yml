@@ -1,0 +1,14 @@
+# golangci-lint keeps its default linter set (errcheck, govet, ineffassign,
+# staticcheck, unused) — the point of this file is only to stop the defaults
+# from hiding work.
+version: "2"
+
+issues:
+  # The defaults cap repeats (3 of the same message, 50 per linter), so a wide
+  # class of findings looks like a handful. Report all of them.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
