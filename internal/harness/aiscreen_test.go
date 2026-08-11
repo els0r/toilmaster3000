@@ -65,6 +65,33 @@ func TestAIScreenTranscribesTheTextThatFailedExtraction(t *testing.T) {
 	require.Equal(t, "feedface", sink.rows[0].Head, "per-head keying is the screen's whole invalidation story")
 }
 
+// AS5b is the case AS5 leaves uncovered and the overwhelmingly common one: a
+// screen run that DID yield a verdict is transcribed too. Without it the suite
+// stays green if transcribe is moved down into the extraction-failure branch —
+// the natural "only keep the evidence when it failed" simplification, which
+// AS5's own name invites — and screen transcription silently vanishes for every
+// successful run while CONTEXT.md still claims every AI run that produced text
+// is recorded. The verdict is the outcome; the transcript is what was said, and
+// the sink holds one for each.
+func TestAIScreenTranscribesTheRunThatYieldedItsVerdict(t *testing.T) {
+	spec := hook.Spec{ID: "s1", Name: "security", Harness: "claude", Prompt: "look closely"}
+	sink := &recordingTranscriber{}
+	result := verdictText("proceed", "clean")
+	screen := NewAIScreen(spec, "acme/widgets", adapterFunc(func(context.Context, Request) (string, error) {
+		return result, nil
+	}), sink)
+
+	v, err := screen.Screen(context.Background(), prCtx())
+
+	require.NoError(t, err)
+	require.Equal(t, hook.Verdict{Outcome: hook.Proceed, Reason: "clean"}, v)
+	require.Len(t, sink.rows, 1, "a successful run accounts for itself like any other")
+	require.Equal(t, result, sink.rows[0].Text, "the whole text, verdict document and prose alike")
+	require.Equal(t, "screen", sink.rows[0].Kind)
+	require.Equal(t, "s1", sink.rows[0].HookID)
+	require.Equal(t, "feedface", sink.rows[0].Head, "per-head keying is the screen's whole invalidation story")
+}
+
 // AS6 is AS5 one layer down: the adapter itself failed — a non-zero exit, a
 // timeout kill — after the CLI had already printed its answer. That run burns
 // one of three strikes and re-spends a paid harness call, so the operator
