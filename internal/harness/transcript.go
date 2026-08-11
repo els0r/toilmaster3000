@@ -133,15 +133,22 @@ func NewTranscriptSink(path string) *TranscriptSink {
 // FiredLedger.appendLine idiom).
 //
 // Every failure ends here as a logged miss: the run whose account this is has
-// already happened, and nothing upstream may be told otherwise. The log line
-// names the sink and the run, never the transcript — putting the prose back in
-// the log is the exact thing this type exists to stop.
+// already happened, and nothing upstream may be told otherwise.
+//
+// The failed write carries the transcript into the log as a LAST RESORT. Prose
+// in a log line is what ADR 0028 exists to end, and on the success path it is
+// gone — but the sink is now the only copy, and the fire is already marked in
+// hookfires.jsonl, so at-most-once means no later cycle will produce another.
+// Dropping the text here would mean an agent said something as the operator's
+// identity, on GitHub, with no record of it anywhere. An escaped, hard-to-read
+// copy beats none; the ugliness is the point at which the operator notices.
 func (s *TranscriptSink) Transcribe(rec TranscriptRecord) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.append(rec); err != nil {
-		s.logger.Warn("transcript not recorded; the run itself stands",
-			"path", s.path, "hook", rec.HookName, "pr", rec.Number, "error", err)
+		s.logger.Warn("transcript not recorded; falling back to the log, the run itself stands",
+			"path", s.path, "hook", rec.HookName, "pr", rec.Number, "error", err,
+			"transcript", rec.Text)
 	}
 }
 

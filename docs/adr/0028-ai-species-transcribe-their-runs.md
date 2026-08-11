@@ -72,8 +72,14 @@ Both legs already had the text in hand. Neither had anywhere to put it.
    because a disk write hiccuped. Every other `.state` writer returns an error
    *because the error changes behaviour*; here it must change nothing, ever, so
    the invariant lives in the type rather than in two callers' discipline. The
-   sink logs its own write failures — naming the sink and the run, never the
-   transcript.
+   sink logs its own write failures — naming the sink and the run, **and the
+   transcript, as a last resort**. Deleting the old log line made the sink the
+   only copy; the fire is already marked in `hookfires.jsonl`, so at-most-once
+   means no later cycle produces another. Dropping the text on a failed write
+   would leave an agent having spoken as the operator's identity on GitHub with
+   no record anywhere. An escaped, hard-to-read copy beats none, and the
+   ugliness is what makes the operator notice. On the success path the prose is
+   gone from the log, which is the whole point.
 
 5. **A row iff there is text, and it carries no outcome.** A run that produced
    nothing has no account to give, and the failure is already recorded by
