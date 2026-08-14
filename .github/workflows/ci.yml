@@ -1,8 +1,13 @@
-# CI runs exactly what the Makefile exposes locally, in the same order, so a
-# green run here means `make build`, `make check`, `go vet`, `make lint` and
-# `make test` were green on the branch. One job, not four: every Go step needs
-# frontend/dist (main.go embeds it), and building it once is cheaper than
-# rebuilding it per job.
+# Six checks, one per signal, each named for the kind of fix it demands and each
+# re-runnable on its own. No job needs another: a Go failure and a frontend
+# failure surface in the same run instead of the first hiding the second.
+#
+# Only `smoke` needs the real frontend/dist. No Go test reads the built SPA —
+# the server tests inject an fstest.MapFS stand-in and main_test.go never
+# touches the embed — and `//go:embed all:frontend/dist` only needs the
+# directory to be non-empty to compile. `make dist-stub` supplies that, which
+# keeps the Go jobs off the node toolchain entirely; `smoke` is the job that
+# proves the shipped binary really embeds the SPA.
 name: CI
 
 on:
@@ -19,7 +24,88 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  # Bundling and behavior of the SPA. No Go anywhere.
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Build the SPA
+        run: npm run build
+        working-directory: frontend
+
+      - name: Test
+        run: npm test
+        working-directory: frontend
+
+  # The Go suite, race detector on. make test-go stubs frontend/dist itself.
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: make test-go
+
+  lint-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # golangci-lint type-checks the root package, which embeds frontend/dist,
+      # so something has to be there before any linter loads it.
+      - name: Stub frontend/dist
+        run: make dist-stub
+
+      # Same linters as a local `make lint-go`; the action supplies the pinned
+      # binary and caches it between runs. Its default set includes govet, so
+      # there is no separate vet step — it could not fail without this one
+      # failing too.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          args: ./...
+
+  # The frontend's type check. vite build does not typecheck, so this is the
+  # only place a type error reddens.
+  lint-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Typecheck
+        run: npm run lint
+        working-directory: frontend
+
+  # The drift guard: regenerating the wire contract from the Go DTOs must not
+  # change the committed openapi.json / schema.d.ts.
+  contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -34,26 +120,32 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # A clean checkout has no frontend/dist — it is generated and git-ignored,
-      # and the binary embeds it, so nothing Go-side compiles until this runs.
-      - name: Build
-        run: make build
+      - run: npm ci
+        working-directory: frontend
 
-      # The drift guard: regenerating the wire contract must not change the
-      # committed openapi.json / schema.d.ts.
       - name: Check generated contract
         run: make check
 
-      - name: Vet
-        run: go vet ./...
+  # The only job that builds for real, and the only one that inspects the
+  # artifact: the tagged tests assert the binary embeds the actual SPA, which
+  # every other job's stub would satisfy vacuously.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-      # Same linters as a local `make lint`; the action supplies the pinned
-      # binary and caches it between runs.
-      - name: Lint
-        uses: golangci/golangci-lint-action@v9
+      - uses: actions/setup-go@v7
         with:
-          version: v2.12
-          args: ./...
+          go-version-file: go.mod
 
-      - name: Test
-        run: make test
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Build and smoke-test the embedded SPA
+        run: make smoke
