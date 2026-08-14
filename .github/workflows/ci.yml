@@ -99,7 +99,7 @@ jobs:
       - run: npm ci
         working-directory: frontend
 
-      - name: Typecheck
+      - name: Typecheck and lint
         run: npm run lint
         working-directory: frontend
 
