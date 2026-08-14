@@ -133,8 +133,8 @@ describe("polling lifecycle", () => {
   ] as const)(
     "a $policy-policy fetch in flight at unmount settles quietly on $outcome",
     async ({ usePolling, outcome }) => {
-      let settle = (_: string) => {};
-      let fail = (_: Error) => {};
+      let settle: (v: string) => void = () => {};
+      let fail: (e: Error) => void = () => {};
       const fetcher = () =>
         new Promise<string>((resolve, reject) => {
           settle = resolve;
