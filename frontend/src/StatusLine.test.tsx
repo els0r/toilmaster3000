@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { StatusLine } from "./StatusLine";
 import type { CycleStatus } from "./api";
 
@@ -79,5 +79,57 @@ describe("StatusLine", () => {
     expect(screen.getByTestId("hb-ready")).toHaveTextContent("2");
     expect(screen.getByText(/merged/i)).toBeInTheDocument();
     expect(screen.getByTestId("hb-merged")).toHaveTextContent("1");
+  });
+});
+
+// The countdown is the strip's liveness cue: it ticks down towards the next
+// poll and restarts the moment a fresh status lands.
+describe("StatusLine — next-sync countdown", () => {
+  const status = (over: Partial<CycleStatus> = {}): CycleStatus => ({
+    last_run: "2026-06-18T10:00:00Z",
+    outcome: "ok",
+    approved_count: 0,
+    queue_count: 0,
+    dropped_count: 0,
+    staging_count: 0,
+    ready_count: 0,
+    merged_count: 0,
+    ...over,
+  });
+
+  it("ticks down to the next poll and restarts when a fresh status lands", async () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(
+        <StatusLine status={status()} pollMs={10_000} />,
+      );
+      expect(screen.getByText(/next sync in 10s/i)).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(4_000);
+      });
+      expect(screen.getByText(/next sync in 6s/i)).toBeInTheDocument();
+
+      // A fresh poll: same shape, new identity — the countdown starts over.
+      rerender(<StatusLine status={status({ ready_count: 1 })} pollMs={10_000} />);
+      expect(screen.getByText(/next sync in 10s/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("floors the countdown at 'now' once the poll is overdue", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<StatusLine status={status()} pollMs={10_000} />);
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000);
+      });
+
+      expect(screen.getByText(/next sync now/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
