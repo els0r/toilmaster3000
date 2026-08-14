@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchStatus, type CycleStatus } from "./api";
 import { timeAgo, useNow } from "./time";
 
@@ -27,11 +27,12 @@ export function StatusLine({
 
   const now = useNow(1000);
   // Record when the displayed status last changed identity (i.e. a fresh poll
-  // landed) so the "next sync" countdown restarts from each poll.
-  const polledAtRef = useRef(now);
-  useEffect(() => {
-    polledAtRef.current = Date.now();
-  }, [status]);
+  // landed) so the "next sync" countdown restarts from each poll. The timestamp
+  // is state adjusted during render, not a ref: the countdown below reads it
+  // while rendering, and a ref read during render can go stale against what is
+  // on screen.
+  const [polled, setPolled] = useState({ status, at: now });
+  if (polled.status !== status) setPolled({ status, at: now });
 
   if (!status) {
     return (
@@ -60,7 +61,7 @@ export function StatusLine({
 
   const nextInS = Math.max(
     0,
-    Math.ceil((pollMs - (now - polledAtRef.current)) / 1000),
+    Math.ceil((pollMs - (now - polled.at)) / 1000),
   );
   const nextSyncText = nextInS <= 0 ? "now" : `in ${nextInS}s`;
 
