@@ -1,4 +1,4 @@
-.PHONY: all frontend dist-stub build run dev-api dev-web test test-go test-frontend smoke lint lint-go lint-frontend generate check clean package install
+.PHONY: all frontend frontend-deps dist-stub build run dev-api dev-web test test-go test-frontend smoke lint lint-go lint-frontend generate check clean package install
 
 # The Go binary embeds frontend/dist, so the frontend must be built first; the
 # frontend's types are generated from the OpenAPI spec, so generate runs first.
@@ -16,6 +16,20 @@ generate:
 
 frontend: generate
 	cd frontend && npm run build
+
+# frontend-deps is dist-stub's mirror image on the node side: it bootstraps the
+# toolchain only when frontend/node_modules is ABSENT, so a warm tree pays
+# nothing and a fresh clone gets a lint result instead of `tsc: command not
+# found`. The node-side targets take it; the Go-side ones must never, since
+# keeping them off npm entirely is what makes them fast. npm ci rather than
+# install: it only ever runs on an absent tree, where the lockfile is exactly
+# what you want installed and cannot be rewritten by the install.
+frontend-deps:
+	@if [ -d frontend/node_modules ]; then \
+		echo "frontend/node_modules present - skipping install"; \
+	else \
+		cd frontend && npm ci; \
+	fi
 
 # dist-stub satisfies the embed directive without a node toolchain: main.go
 # does `//go:embed all:frontend/dist`, which only needs the directory to be
@@ -70,7 +84,7 @@ test:
 test-go: dist-stub
 	go test -race ./...
 
-test-frontend:
+test-frontend: frontend-deps
 	cd frontend && npm test
 
 # smoke is the one target that needs the real artifact: it builds for real, then
@@ -95,7 +109,7 @@ lint-go: dist-stub
 
 # The frontend's type check. It lives in lint, not build: vite alone does not
 # typecheck, so this is the only thing that reddens on a type error.
-lint-frontend:
+lint-frontend: frontend-deps
 	cd frontend && npm run lint
 
 # check guards against drift: regenerate the committed spec + types and fail if
