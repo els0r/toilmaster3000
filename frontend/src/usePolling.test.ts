@@ -126,13 +126,13 @@ describe("polling lifecycle", () => {
   // throw, no unhandled rejection, no React warning — on either policy and
   // whichever way it settles.
   it.each([
-    ["keep", usePollingRefetchable, "resolve"],
-    ["keep", usePollingRefetchable, "reject"],
-    ["clear", usePollingClearable, "resolve"],
-    ["clear", usePollingClearable, "reject"],
+    { policy: "keep", usePolling: usePollingRefetchable, outcome: "resolve" },
+    { policy: "keep", usePolling: usePollingRefetchable, outcome: "reject" },
+    { policy: "clear", usePolling: usePollingClearable, outcome: "resolve" },
+    { policy: "clear", usePolling: usePollingClearable, outcome: "reject" },
   ] as const)(
-    "a %s-policy fetch in flight at unmount settles quietly when it %ss",
-    async (_policy, usePolling, outcome) => {
+    "a $policy-policy fetch in flight at unmount settles quietly on $outcome",
+    async ({ usePolling, outcome }) => {
       let settle = (_: string) => {};
       let fail = (_: Error) => {};
       const fetcher = () =>
