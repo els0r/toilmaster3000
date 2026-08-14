@@ -1,4 +1,4 @@
-.PHONY: all frontend dist-stub build run dev-api dev-web test test-go test-frontend lint lint-go lint-frontend generate check clean package install
+.PHONY: all frontend dist-stub build run dev-api dev-web test test-go test-frontend smoke lint lint-go lint-frontend generate check clean package install
 
 # The Go binary embeds frontend/dist, so the frontend must be built first; the
 # frontend's types are generated from the OpenAPI spec, so generate runs first.
@@ -72,6 +72,12 @@ test-go: dist-stub
 
 test-frontend:
 	cd frontend && npm test
+
+# smoke is the one target that needs the real artifact: it builds for real, then
+# runs the tagged tests that assert the binary embeds the actual SPA. The tag
+# keeps them out of test-go, where they would run against the stub.
+smoke: build
+	go test -tags smoke .
 
 # lint is part of the definition of done, alongside test, and mirrors test's
 # split and exit-code aggregation.
