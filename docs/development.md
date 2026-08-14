@@ -12,13 +12,14 @@ Always go through `make` — a bare `go build .` fails on a clean checkout becau
 make build         # generate -> npm build -> go build -> ./toilmaster3000
 make run           # build, then serve on http://localhost:8666
 make dist-stub     # placeholder frontend/dist so Go-only work needs no node
+make frontend-deps # npm ci, but only when frontend/node_modules is absent
 make test          # Go + frontend, both halves, aggregated exit code
 make test-go       # dist-stub, then go test -race ./...
-make test-frontend # cd frontend && vitest run
+make test-frontend # frontend-deps, then vitest run
 make smoke         # real build, then go test -tags smoke .
 make lint          # lint-go + lint-frontend, aggregated exit code
 make lint-go       # dist-stub, then golangci-lint run ./...
-make lint-frontend # cd frontend && tsc --noEmit
+make lint-frontend # frontend-deps, then tsc --noEmit
 make generate      # dump openapi.json from Go DTOs, regen frontend TS types
 make check         # regenerate the committed spec + types, fail on any drift
 ```
@@ -31,6 +32,10 @@ Each signal has exactly one home. A type error reddens `lint-frontend`, a
 bundling error reddens the frontend build, Go style reddens `lint-go`. The trade
 is explicit: `npm run build` is `vite build` alone, so a plain `make build` no
 longer typechecks — `make lint` is what does.
+
+Both halves bootstrap what they need, so any of them works on a fresh clone:
+`dist-stub` for the Go side, `frontend-deps` for the node side. Each fires only
+when its artifact is absent, so a warm tree pays nothing for either.
 
 ## The dist stub
 
