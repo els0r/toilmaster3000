@@ -6,6 +6,12 @@ import { fetchDiff, type FileDiff, type PRDiff } from "./api";
 // doesn't blow out the card (CONTEXT "Diff card").
 const EXPAND_THRESHOLD = 40;
 
+// Result is one settled fetch tagged with the request that asked for it: the
+// PR number plus the retry counter. Keeping the tag on the value is what lets
+// the card tell "not fetched yet" from "fetched, but for a PR we have since
+// left" without resetting state from inside the effect.
+type Result = { request: string; diff: PRDiff | null; error: string | null };
+
 // DiffCard is the pop-up that opens when a PR's Diff pill is clicked. It
 // fetches the PR's changed files on demand and renders them per-file so a human
 // can skim the change without leaving tm3k. It is a skim aid, NOT a GitHub
@@ -21,29 +27,39 @@ export function DiffCard({
   q: { number: number; url: string };
   onClose: () => void;
 }) {
-  const [diff, setDiff] = useState<PRDiff | null>(null);
-  const [error, setError] = useState<string | null>(null);
   // reload is bumped by Retry to re-run the fetch effect after a failure.
   const [reload, setReload] = useState(0);
+  const [result, setResult] = useState<Result | null>(null);
+  // request identifies the fetch the card is currently showing. A result is
+  // rendered only while it still carries the current request, so a PR change or
+  // a Retry drops back to the loading state by comparison at render time —
+  // no clearing setState inside the effect, and no cascading render.
+  const request = `${q.number}:${reload}`;
+  const current = result?.request === request ? result : null;
+  const diff = current?.diff ?? null;
+  const error = current?.error ?? null;
 
   // Fetch the diff on open (and whenever the PR changes). The alive flag drops a
   // late response after the card is closed/reopened so it never lands on a stale
   // card.
   useEffect(() => {
     let alive = true;
-    setDiff(null);
-    setError(null);
     fetchDiff(q.number)
       .then((d) => {
-        if (alive) setDiff(d);
+        if (alive) setResult({ request, diff: d, error: null });
       })
       .catch((e) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
+        if (alive)
+          setResult({
+            request,
+            diff: null,
+            error: e instanceof Error ? e.message : String(e),
+          });
       });
     return () => {
       alive = false;
     };
-  }, [q.number, reload]);
+  }, [q.number, request]);
 
   // Esc closes the card, matching the backdrop click and × button.
   useEffect(() => {

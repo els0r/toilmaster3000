@@ -34,14 +34,22 @@ export function RulesSection() {
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const refetch = useCallback(async () => {
-    try {
-      setRules(await fetchRules());
-      setFetchError(null);
-    } catch (e) {
-      setFetchError(messageOf(e));
-    }
-  }, []);
+  // refetch is a promise chain rather than an async body on purpose: the mount
+  // effect below calls it, and every state update it makes must land in a
+  // continuation — never synchronously in the effect, which would cascade a
+  // render.
+  const refetch = useCallback(
+    () =>
+      fetchRules()
+        .then((r) => {
+          setRules(r);
+          setFetchError(null);
+        })
+        .catch((e: unknown) => {
+          setFetchError(messageOf(e));
+        }),
+    [],
+  );
 
   useEffect(() => {
     void refetch();
