@@ -19,7 +19,7 @@ make test-frontend # frontend-deps, then vitest run
 make smoke         # real build, then go test -tags smoke .
 make lint          # lint-go + lint-frontend, aggregated exit code
 make lint-go       # dist-stub, then golangci-lint run ./...
-make lint-frontend # frontend-deps, then tsc --noEmit
+make lint-frontend # frontend-deps, then tsc --noEmit + eslint src
 make generate      # dump openapi.json from Go DTOs, regen frontend TS types
 make check         # regenerate the committed spec + types, fail on any drift
 ```
@@ -28,10 +28,10 @@ make check         # regenerate the committed spec + types, fail on any drift
 stopping at the first failure — a Go failure must not leave the frontend's state
 unknown.
 
-Each signal has exactly one home. A type error reddens `lint-frontend`, a
-bundling error reddens the frontend build, Go style reddens `lint-go`. The trade
-is explicit: `npm run build` is `vite build` alone, so a plain `make build` no
-longer typechecks — `make lint` is what does.
+Each signal has exactly one home. A type error or an eslint finding reddens
+`lint-frontend`, a bundling error reddens the frontend build, Go style reddens
+`lint-go`. The trade is explicit: `npm run build` is `vite build` alone, so a
+plain `make build` no longer typechecks — `make lint` is what does.
 
 Both halves bootstrap what they need, so any of them works on a fresh clone:
 `dist-stub` for the Go side, `frontend-deps` for the node side. Each fires only
@@ -124,6 +124,26 @@ the version pinned in the workflow; `.golangci.yml` keeps the default linter set
 and only lifts the caps that would otherwise hide repeat findings, plus `gofmt`.
 
 CI is a backstop, not the loop; a PR should arrive green.
+
+## Linting
+
+Both sides lint, and both configs take the same stance: keep the stock
+recommended set and let it speak. `.golangci.yml` only lifts the caps that hide
+repeat findings; `frontend/eslint.config.js` is the flat config assembling
+`@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks` and
+`eslint-plugin-react-refresh` at their recommended settings — nothing disabled,
+no baseline, and no `eslint-disable` directive anywhere in `frontend/src`.
+
+The react-hooks plugin is on its v7 line deliberately: its `recommended` config
+carries the React-Compiler-derived rules (`set-state-in-effect`, `refs`,
+`purity`, `immutability`, …) on top of `rules-of-hooks` and `exhaustive-deps`.
+Those extra rules are the reason the plugin earns its place — they catch
+correctness smells a type checker cannot see.
+
+`npm run lint` is `tsc --noEmit && eslint src --max-warnings 0`: a warning fails
+the same as an error, so a finding cannot accumulate quietly. Everything picks
+that script up — `make lint-frontend`, the `lint-frontend` CI job, and a bare
+`npm run lint` in `frontend/`.
 
 ## Run requirements
 

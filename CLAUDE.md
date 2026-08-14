@@ -31,10 +31,11 @@ Always go through `make` — a bare `go build .` fails on a clean checkout becau
 `frontend/dist` is a generated, git-ignored artifact the binary embeds.
 
 - `make build` / `make run` / `make test` — build, serve on :8666, test both sides.
-- `make lint` — `lint-go` (golangci-lint) + `lint-frontend` (`tsc --noEmit`);
-  both halves run even when the first fails, as `make test`'s two do. Part of
-  the definition of done, not a cleanup pass: lint clean before you hand work
-  over.
+- `make lint` — `lint-go` (golangci-lint) + `lint-frontend` (`tsc --noEmit` +
+  eslint, warnings included); both halves run even when the first fails, as
+  `make test`'s two do. Part of the definition of done, not a cleanup pass:
+  lint clean before you hand work over. Both configs keep the stock recommended
+  set and disable nothing — see `docs/development.md` § Linting.
 - `make check` — the drift guard. Run it before committing any wire-DTO change,
   or the committed `openapi.json` / `schema.d.ts` go stale.
 
