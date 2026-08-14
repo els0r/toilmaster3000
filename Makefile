@@ -1,4 +1,4 @@
-.PHONY: all frontend build run dev-api dev-web test test-go test-frontend lint generate check clean package install
+.PHONY: all frontend dist-stub build run dev-api dev-web test test-go test-frontend lint lint-go lint-frontend generate check clean package install
 
 # The Go binary embeds frontend/dist, so the frontend must be built first; the
 # frontend's types are generated from the OpenAPI spec, so generate runs first.
@@ -17,6 +17,28 @@ generate:
 frontend: generate
 	cd frontend && npm run build
 
+# dist-stub satisfies the embed directive without a node toolchain: main.go
+# does `//go:embed all:frontend/dist`, which only needs the directory to be
+# non-empty to compile. Go-side work (test, lint) therefore does not need the
+# real SPA — no npm install, no vite build. It writes the placeholder ONLY when
+# the directory is absent, so a real build is never clobbered, and the shell
+# carries a visible marker so a binary accidentally built on the stub is
+# obvious rather than mysteriously blank. `make smoke` is the guard that the
+# shipped binary embeds the real SPA.
+dist-stub:
+	@if [ -d frontend/dist ]; then \
+		echo "frontend/dist present - leaving the existing build untouched"; \
+	else \
+		mkdir -p frontend/dist; \
+		printf '%s\n' \
+			'<!doctype html>' \
+			'<html lang="en">' \
+			'  <head><meta charset="utf-8" /><title>toilmaster3000 build stub</title></head>' \
+			'  <body>toilmaster3000 build stub - run make build</body>' \
+			'</html>' > frontend/dist/index.html; \
+		echo "wrote frontend/dist/index.html (toilmaster3000 build stub)"; \
+	fi
+
 build: frontend
 	go build -o toilmaster3000 .
 
@@ -32,22 +54,43 @@ dev-api: frontend
 dev-web:
 	cd frontend && npm run dev
 
-test: test-go test-frontend
+# test runs BOTH halves and aggregates their exit codes rather than stopping at
+# the first failure: as plain prerequisites a Go failure meant the frontend
+# suite never ran, so a red run named one side and left the other unknown.
+test:
+	@rc=0; \
+	$(MAKE) test-go || rc=1; \
+	$(MAKE) test-frontend || rc=1; \
+	exit $$rc
 
 # -race everywhere: the engine runs its cycle loop on its own goroutine while
 # the HTTP handlers read the snapshots, so a data race is a real failure mode
 # here, not a theoretical one. The suite is small enough that it stays fast.
-test-go:
+# No Go test reads the built SPA, so the stub is enough to satisfy the embed.
+test-go: dist-stub
 	go test -race ./...
 
 test-frontend:
 	cd frontend && npm test
 
-# lint is part of the definition of done, alongside test. It depends on frontend
-# because golangci-lint type-checks the root package, which embeds frontend/dist
-# — without it the load fails before a single linter runs.
-lint: frontend
+# lint is part of the definition of done, alongside test, and mirrors test's
+# split and exit-code aggregation.
+lint:
+	@rc=0; \
+	$(MAKE) lint-go || rc=1; \
+	$(MAKE) lint-frontend || rc=1; \
+	exit $$rc
+
+# golangci-lint type-checks the root package, which embeds frontend/dist, so
+# something must be there before a single linter runs — but it need not be the
+# real SPA. The stub keeps a Go-only lint off the node toolchain entirely.
+lint-go: dist-stub
 	golangci-lint run ./...
+
+# The frontend's type check. It lives in lint, not build: vite alone does not
+# typecheck, so this is the only thing that reddens on a type error.
+lint-frontend:
+	cd frontend && npm run lint
 
 # check guards against drift: regenerate the committed spec + types and fail if
 # they differ from what's checked in. CI runs it on every PR; run it locally
