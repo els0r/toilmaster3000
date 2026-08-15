@@ -15,6 +15,34 @@
 # (absent means 10m). Leave Id out of new entries — a stable one is generated
 # and written back into this file at boot.
 #
+# Requires (optional, either kind) declares the preconditions a hook needs in
+# order to run, hard-checked at boot (ADR 0031): Forge names the forge it
+# targets ("github" or "gitlab" — absent means forge-agnostic, applies
+# everywhere), and Tools lists extra binaries that must be on PATH beyond the
+# active forge's own CLI. tm3k cannot see what a hook's prompt/skill actually
+# does, so this is the operator asserting it and tm3k enforcing the assertion:
+#
+#     Requires:
+#       Forge: gitlab
+#       Tools:
+#         - jq
+#
+# At boot every ENABLED hook is classified against the running instance. A
+# hook scoped to the other forge, or naming the other forge's CLI in Tools
+# (e.g. "glab" here, since this instance runs against GitHub) — is INELIGIBLE:
+# it was never a gate on this instance, so it is skipped and logged, for both
+# Screens and Notifiers. This is what lets one hooks.yaml serve GitHub- and
+# GitLab-scoped hooks from two separate instances. A hook that IS in scope but
+# cannot run (a declared Tools binary missing, same as an absent harness CLI)
+# is BROKEN, and here the two kinds differ: a broken Notifier declines — a
+# warning at boot, the hook excluded, everything else runs normally — while a
+# broken Screen refuses the boot, naming itself and the unmet precondition,
+# because silently disabling a Screen would not degrade a gate, it would
+# remove one. Tools is always ADDITIVE to the grant (the active forge's CLI
+# plus whatever it names) — never a replacement, so an incomplete list can
+# never take away authority a hook already had. Absent Requires changes
+# nothing: the hook applies everywhere and needs only its harness CLI.
+#
 # Running a Screen shells out with your existing authentication: it fetches
 # each screened PR's diff via `gh pr diff` and runs the harness CLI headlessly
 # (the copilot harness needs `copilot login` done once on this machine;
