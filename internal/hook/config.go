@@ -34,6 +34,28 @@ type Spec struct {
 	PromptFile string   `yaml:"PromptFile,omitempty"`
 	Timeout    Duration `yaml:"Timeout,omitempty"`
 	Enabled    bool     `yaml:"Enabled"`
+	// Requires declares the preconditions this hook needs in order to run —
+	// which Forge it targets and which extra Tools it needs on PATH — and is
+	// hard-checked at boot (ADR 0031). Optional; an absent Requires changes no
+	// existing behaviour: the hook applies to every instance and grants
+	// nothing beyond the active forge's own CLI.
+	Requires Requires `yaml:"Requires,omitempty"`
+}
+
+// Requires is a hook's declared preconditions (ADR 0031): tm3k cannot inspect
+// what a hook actually does — with WorkDir the real behaviour lives in a
+// skill file — so the operator asserts it and tm3k enforces the assertion.
+// Both fields are optional and hand-edited like the rest of hooks.yaml; there
+// is deliberately no predicate expression language, just these two concrete
+// facts.
+type Requires struct {
+	// Forge names the forge this hook works against ("github", "gitlab").
+	// Absent means forge-agnostic: the hook applies wherever it is enabled.
+	Forge Forge `yaml:"Forge,omitempty"`
+	// Tools lists additional binaries that must be on PATH, beyond the active
+	// forge's own CLI. Additive to the tool grant, never a replacement — an
+	// incomplete list can never strip authority a hook already had.
+	Tools []string `yaml:"Tools,omitempty"`
 }
 
 // DefaultTimeout bounds a single harness run when a hook sets no Timeout —
