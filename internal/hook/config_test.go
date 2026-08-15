@@ -26,7 +26,7 @@ func writeHooks(t *testing.T, doc string) string {
 func TestLoadAbsentFileMeansNoHooks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "hooks.yaml")
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Empty(t, cfg.Screens)
 	require.Empty(t, cfg.Notifiers)
@@ -56,7 +56,7 @@ Notifiers:
     Enabled: false
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 
 	require.Len(t, cfg.Screens, 1)
@@ -89,7 +89,7 @@ Screens:
     Enabled: true
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 
 	require.NoError(t, err)
 	require.Equal(t, "opencode", cfg.Screens[0].Harness)
@@ -116,7 +116,7 @@ Notifiers:
     Enabled: true
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 
 	require.Len(t, cfg.Screens, 1)
@@ -126,7 +126,7 @@ Notifiers:
 	require.Equal(t, "keepme01", cfg.Notifiers[0].ID, "a present Id is kept verbatim")
 
 	// The heal was persisted: a reload finds the same Ids in the file.
-	reloaded, err := hook.Load(path)
+	reloaded, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Equal(t, generated, reloaded.Screens[0].ID, "healed Id survives reload")
 	require.Equal(t, "keepme01", reloaded.Notifiers[0].ID)
@@ -147,7 +147,7 @@ Screens:
 	before, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	_, err = hook.Load(path)
+	_, err = hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 
 	after, err := os.ReadFile(path)
@@ -175,7 +175,7 @@ Screens:
     Enabled: true
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Equal(t, 10*time.Minute, cfg.Screens[0].TimeoutOrDefault(), "absent Timeout defaults to 10m")
 	require.Equal(t, 2*time.Minute+30*time.Second, cfg.Screens[1].TimeoutOrDefault())
@@ -200,7 +200,7 @@ Notifiers:
     Enabled: true
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Equal(t, "copilot", cfg.Screens[0].Harness)
 	require.Equal(t, "copilot", cfg.Notifiers[0].Harness)
@@ -231,7 +231,7 @@ Notifiers:
     Enabled: true
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Len(t, cfg.Notifiers, 2)
 	require.Equal(t, []string{"*.go", "services/api/**"}, cfg.Notifiers[0].Paths)
@@ -263,7 +263,7 @@ Notifiers:
     Enabled: true
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Len(t, cfg.Notifiers, 2)
 	require.Equal(t, dir, cfg.Notifiers[0].WorkDir)
@@ -343,7 +343,7 @@ Notifiers:
     WorkDir: "`+tt.workDir+`"
     Enabled: true
 `)
-			_, err := hook.Load(path)
+			_, err := hook.Load(path, hook.GitHub)
 			require.ErrorIs(t, err, tt.wantErr)
 			for _, msg := range tt.wantMsg {
 				require.ErrorContains(t, err, msg)
@@ -371,7 +371,7 @@ Screens:
     Harness: claude
     PromptFile: `+missing+`
     Enabled: true
-`))
+`), hook.GitHub)
 		require.ErrorIs(t, err, hook.ErrBadPromptFile)
 		require.ErrorContains(t, err, "security screen")
 		require.ErrorContains(t, err, "typo.md")
@@ -385,7 +385,7 @@ Notifiers:
     PromptFile: `+missing+`
     Point: queue_entered
     Enabled: true
-`))
+`), hook.GitHub)
 		require.ErrorIs(t, err, hook.ErrBadPromptFile)
 		require.ErrorContains(t, err, "go review assist")
 		require.ErrorContains(t, err, "typo.md")
@@ -404,15 +404,16 @@ Notifiers:
     PromptFile: `+present+`
     Point: queue_entered
     Enabled: true
-`))
+`), hook.GitHub)
 		require.NoError(t, err)
 		require.Len(t, cfg.Screens, 1)
 		require.Len(t, cfg.Notifiers, 1)
 	})
 }
 
-// TestDisabledHooksDeferExistenceChecks draws the line the two new preflights
-// share with checkHarnessBinaries: existence on disk is checked for the hooks
+// TestDisabledHooksDeferExistenceChecks draws the line the two existence
+// preflights (PromptFile, WorkDir) share with the eligibility mechanism
+// (ADR 0031, hook.Spec.Classify): existence on disk is checked for the hooks
 // that can actually RUN, because a disabled hook can neither spend a fire nor
 // read a prompt. That keeps the shipped examples/hooks.yaml bootable — it
 // carries disabled entries naming a prompt file you have not copied yet and a
@@ -440,7 +441,7 @@ Notifiers:
     Point: queue_entered
     WorkDir: `+missingDir+`
     Enabled: false
-`))
+`), hook.GitHub)
 	require.NoError(t, err, "a disabled hook names resources it does not need yet")
 	require.Len(t, cfg.Screens, 1)
 	require.Len(t, cfg.Notifiers, 1)
@@ -453,7 +454,7 @@ Notifiers:
     Point: queue_entered
     WorkDir: skills
     Enabled: false
-`))
+`), hook.GitHub)
 	require.ErrorIs(t, err, hook.ErrBadWorkDir, "a relative WorkDir is malformed whether or not the hook runs")
 }
 
@@ -486,7 +487,7 @@ Screens:
       - "*.go"
     Enabled: true
 `)
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Len(t, cfg.Screens, 1)
 	require.True(t, cfg.Screens[0].Enabled, "the Screen loads; it simply has no scope to acquire")
@@ -523,7 +524,7 @@ Screens:
     WorkDir: skills
     Enabled: true
 `)
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Len(t, cfg.Screens, 1)
 	require.True(t, cfg.Screens[0].Enabled, "the Screen loads; it simply has no anchor to acquire")
@@ -726,7 +727,7 @@ Screens:
 			before, err := os.ReadFile(path)
 			require.NoError(t, err)
 
-			_, err = hook.Load(path)
+			_, err = hook.Load(path, hook.GitHub)
 			require.Error(t, err)
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
@@ -769,7 +770,7 @@ Notifiers:
     Enabled: false
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 
 	require.Equal(t, hook.Forge("gitlab"), cfg.Screens[0].Requires.Forge)
@@ -791,7 +792,7 @@ Screens:
     Enabled: true
 `)
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 
 	require.Equal(t, hook.Requires{}, cfg.Screens[0].Requires)
@@ -813,11 +814,139 @@ Screens:
     Enabled: true
 `)
 
-	_, err := hook.Load(path)
+	_, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 
-	reloaded, err := hook.Load(path)
+	reloaded, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Equal(t, hook.Forge("gitlab"), reloaded.Screens[0].Requires.Forge)
 	require.Equal(t, []string{"jq"}, reloaded.Screens[0].Requires.Tools)
+}
+
+// TestLoadRejectsUnknownForge proves a typo'd or unknown Requires.Forge value
+// ("Github", "guthub") refuses the boot naming the hook, exactly like
+// Harness/Point/Paths — a mis-scoping via typo must not silently resolve to a
+// permanent, unexplained skip (ADR 0031 consequence 3). A legitimate OTHER
+// forge value ("gitlab" while this instance runs github) stays valid — it is
+// merely ineligible here, never a config error.
+func TestLoadRejectsUnknownForge(t *testing.T) {
+	tests := []struct {
+		name  string
+		forge string
+	}{
+		{name: "wrong case", forge: "Github"},
+		{name: "misspelled", forge: "guthub"},
+		{name: "unsupported forge", forge: "bitbucket"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeHooks(t, `
+Screens:
+  - Name: security screen
+    Harness: claude
+    Prompt: vet it
+    Requires:
+      Forge: `+tt.forge+`
+    Enabled: true
+`)
+			_, err := hook.Load(path, hook.GitHub)
+			require.ErrorIs(t, err, hook.ErrUnknownForge)
+			require.ErrorContains(t, err, "security screen")
+			require.ErrorContains(t, err, tt.forge)
+		})
+	}
+}
+
+// TestLoadAcceptsLegitimateOtherForgeValue proves a KNOWN other-forge value is
+// not a validation error: "gitlab" on a github-active Load boots clean, valid
+// and merely ineligible here (ADR 0031's whole mixed-portfolio point).
+func TestLoadAcceptsLegitimateOtherForgeValue(t *testing.T) {
+	path := writeHooks(t, `
+Screens:
+  - Name: gitlab screen
+    Harness: claude
+    Prompt: vet it
+    Requires:
+      Forge: gitlab
+    Enabled: true
+`)
+	cfg, err := hook.Load(path, hook.GitHub)
+	require.NoError(t, err)
+	require.Equal(t, hook.Forge("gitlab"), cfg.Screens[0].Requires.Forge)
+}
+
+// TestLoadRejectsBlankToolEntry proves an empty or whitespace-only Tools entry
+// refuses the boot naming the hook — the same typo-must-surface-at-boot
+// doctrine as ErrBadPattern.
+func TestLoadRejectsBlankToolEntry(t *testing.T) {
+	path := writeHooks(t, `
+Notifiers:
+  - Name: review assist
+    Harness: claude
+    Prompt: review it
+    Point: queue_entered
+    Requires:
+      Tools:
+        - jq
+        - "  "
+    Enabled: true
+`)
+	_, err := hook.Load(path, hook.GitHub)
+	require.ErrorIs(t, err, hook.ErrBadTool)
+	require.ErrorContains(t, err, "review assist")
+}
+
+// TestLoadIneligibleHookSkipsExistenceChecks proves the failure mode ADR 0031
+// exists to remove: a hook scoped to the OTHER forge, naming a PromptFile or
+// WorkDir that exists only on that other machine, must not kill boot on THIS
+// instance — under uniform hard-fail, neither instance could ever boot a
+// shared hooks.yaml. Narrow fix: only existence stats are skipped; the hook
+// is still parsed and still ineligible, never silently mutated.
+func TestLoadIneligibleHookSkipsExistenceChecks(t *testing.T) {
+	missingFile := filepath.Join(t.TempDir(), "gitlab-only-prompt.md")
+	missingDir := filepath.Join(t.TempDir(), "gitlab-only-skills")
+
+	path := writeHooks(t, `
+Screens:
+  - Name: gitlab screen
+    Harness: claude
+    PromptFile: `+missingFile+`
+    Requires:
+      Forge: gitlab
+    Enabled: true
+Notifiers:
+  - Name: gitlab notifier
+    Harness: claude
+    Prompt: review it
+    Point: queue_entered
+    WorkDir: `+missingDir+`
+    Requires:
+      Forge: gitlab
+    Enabled: true
+`)
+
+	cfg, err := hook.Load(path, hook.GitHub)
+	require.NoError(t, err, "an ineligible hook's unreachable local paths must never refuse this instance's boot")
+	require.Len(t, cfg.Screens, 1)
+	require.Len(t, cfg.Notifiers, 1)
+}
+
+// TestLoadEligibleHookStillStatsExistence pins the narrow scope of the fix
+// above: a hook actually IN SCOPE for this instance keeps today's hard-fail
+// behaviour bit-for-bit — only ineligible hooks get the pass.
+func TestLoadEligibleHookStillStatsExistence(t *testing.T) {
+	missingFile := filepath.Join(t.TempDir(), "missing-prompt.md")
+
+	path := writeHooks(t, `
+Screens:
+  - Name: security screen
+    Harness: claude
+    PromptFile: `+missingFile+`
+    Requires:
+      Forge: github
+    Enabled: true
+`)
+
+	_, err := hook.Load(path, hook.GitHub)
+	require.ErrorIs(t, err, hook.ErrBadPromptFile, "an eligible hook's missing prompt file must still refuse the boot")
 }

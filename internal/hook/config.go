@@ -146,8 +146,12 @@ type Config struct {
 
 // Load reads and validates hooks.yaml at the given path. An absent file is the
 // no-hooks case: an empty Config, and — unlike rules.yaml/settings.yaml —
-// nothing is seeded (hooks are opt-in, hand-edited config; ADR 0023).
-func Load(path string) (Config, error) {
+// nothing is seeded (hooks are opt-in, hand-edited config; ADR 0023). active
+// is the instance's active forge (ADR 0030/0031): it decides which enabled
+// hooks are ineligible here, so their machine-local existence checks
+// (PromptFile, WorkDir) are skipped rather than refusing boot over a resource
+// that only exists on the OTHER instance's machine.
+func Load(path string, active Forge) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -163,7 +167,7 @@ func Load(path string) (Config, error) {
 
 	// Preflight before healing: a refused config is never rewritten, so the
 	// file the user must fix is exactly the file they wrote.
-	if err := cfg.validate(); err != nil {
+	if err := cfg.validate(active); err != nil {
 		return Config{}, fmt.Errorf("hooks.yaml: %w", err)
 	}
 
