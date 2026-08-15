@@ -176,25 +176,29 @@ func run(ctx context.Context, cfg config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Preflight: fail fast with a clear message before serving or approving.
-	// gh auth runs first, ahead of the hook preflight below, so a dead gh
-	// surfaces with its own specific message rather than a generic missing-
-	// tool one from hook classification.
-	if err := checkGhAuth(ctx, execGhAuthStatus); err != nil {
-		return fmt.Errorf("preflight: gh auth: %w", err)
-	}
-
 	// Boot-load and preflight-validate the hook config (ADR 0021/0023): bad
 	// config refuses startup naming the offending hook; an absent file means
 	// no hooks; hooks missing an Id get one self-healed into the file.
 	// Configured Screens gate the engine's approvals via the screener below;
-	// configured Notifiers announce the post-point facts via the runner.
-	hooks, err := hook.Load(hooksPath)
+	// configured Notifiers announce the post-point facts via the runner. This
+	// runs BEFORE checkGhAuth: a config typo is the user's own mistake and
+	// must surface first, never masked by an unrelated dead-gh message
+	// (config-errors-first boot order).
+	hooks, err := hook.Load(hooksPath, activeForge)
 	if err != nil {
 		return fmt.Errorf("load hooks: %w", err)
 	}
 	if len(hooks.Screens)+len(hooks.Notifiers) > 0 {
 		slog.Info("hooks loaded", "screens", len(hooks.Screens), "notifiers", len(hooks.Notifiers))
+	}
+
+	// Preflight: fail fast with a clear message before serving or approving.
+	// gh auth runs next, ahead of hook classification below, so a dead gh
+	// surfaces with its own specific message rather than a generic missing-
+	// tool one from hook classification — but after hook.Load, so a config
+	// typo is never masked by it either.
+	if err := checkGhAuth(ctx, execGhAuthStatus); err != nil {
+		return fmt.Errorf("preflight: gh auth: %w", err)
 	}
 
 	// Classify every enabled hook's eligibility against this instance's
@@ -203,10 +207,13 @@ func run(ctx context.Context, cfg config) error {
 	// Notifiers are logged and excluded; a broken Screen refuses the boot
 	// naming itself and the unmet precondition. activeForge is hard-coded
 	// until forge selection ships (ADR 0030).
-	hooks, err = classifyHooks(hooks, activeForge, exec.LookPath)
+	eligible, err := classifyHooks(hooks, activeForge, exec.LookPath)
 	if err != nil {
 		return fmt.Errorf("preflight: hook eligibility: %w", err)
 	}
+	slog.Info("hooks classified", "screens", len(eligible.Screens), "notifiers", len(eligible.Notifiers),
+		"loaded_screens", len(hooks.Screens), "loaded_notifiers", len(hooks.Notifiers))
+	hooks = eligible
 
 	// One sink serves both species (ADR 0028). Constructed unconditionally
 	// because construction touches no disk: with no hooks configured, nothing
@@ -340,11 +347,14 @@ func buildNotifierRunner(hooks hook.Config, repo, firesPath string, transcripts 
 
 // notifierInstances translates validated Notifier config into the units the
 // runner fires: one AI Notifier species per entry over the adapter its Harness
-// names, its Paths compiled into a Scope, and its WorkDir. The compile happens
-// HERE, once at boot — a Scope normalises its patterns at construction, never
-// per match (ADR 0026). Scope rides the instance and WorkDir rides the species
-// rather than either riding the Spec, because both exist on the Notifier kind
-// alone: no Screen has an anchor to acquire (ADR 0027).
+// names, its Paths compiled into a Scope, its WorkDir, and its tool grant. The
+// compile happens HERE, once at boot — a Scope normalises its patterns at
+// construction, never per match (ADR 0026), and Requires.Grant(activeForge) is
+// likewise a pure function of already-validated config, not re-derived per
+// fire. Scope, WorkDir, and the grant ride the instance/species rather than
+// the Spec, because none of the three exist on the Screen kind: no Screen has
+// an anchor to acquire (ADR 0027) or a tool authority to hold (ADR 0031) —
+// only the Act leg ever carries tools, and AIScreen has no such parameter.
 func notifierInstances(hooks hook.Config, repo string, transcripts harness.Transcriber) ([]hook.NotifierInstance, error) {
 	instances := make([]hook.NotifierInstance, 0, len(hooks.Notifiers))
 	for _, nc := range hooks.Notifiers {
@@ -352,11 +362,12 @@ func notifierInstances(hooks hook.Config, repo string, transcripts harness.Trans
 		if err != nil {
 			return nil, err
 		}
+		tools := nc.Spec.Requires.Grant(activeForge)
 		instances = append(instances, hook.NotifierInstance{
 			Spec:     nc.Spec,
 			Point:    nc.Point,
 			Scope:    hook.NewScope(nc.Paths),
-			Notifier: harness.NewAINotifier(nc.Spec, repo, nc.WorkDir, agent, transcripts),
+			Notifier: harness.NewAINotifier(nc.Spec, repo, nc.WorkDir, tools, agent, transcripts),
 		})
 	}
 	return instances, nil
@@ -371,13 +382,10 @@ func notifierInstances(hooks hook.Config, repo string, transcripts harness.Trans
 // existence-check precedent: a disabled hook never runs, so its unmet
 // precondition costs nothing yet).
 //
-// Ineligible hooks — declaring they do not apply to active — are logged and
-// excluded from the returned config, for BOTH kinds: they were never a gate
-// on this instance. A Broken Notifier declines: logged as a warning and
-// excluded, boot unaffected. A Broken Screen refuses the boot naming itself
-// and the unmet precondition: soft-disabling a Screen would silently remove
-// a gate, not degrade it (ADR 0031 decisions 2/3). lookPath is injected so
-// the check is testable without the real CLIs.
+// The two kinds share every rule except one: what a Broken hook does about it
+// (ADR 0031 decision 3). That single axis is classifyHook's onBroken
+// parameter (refuseBoot for Screens, declineWithWarning for Notifiers) rather
+// than two copy-pasted loop bodies (CLAUDE.md's extract-shared-module rule).
 func classifyHooks(hooks hook.Config, active hook.Forge, lookPath func(string) (string, error)) (hook.Config, error) {
 	out := hook.Config{}
 	for _, sc := range hooks.Screens {
@@ -385,12 +393,11 @@ func classifyHooks(hooks hook.Config, active hook.Forge, lookPath func(string) (
 			out.Screens = append(out.Screens, sc)
 			continue
 		}
-		switch elig, reason := sc.Classify(active, lookPath); elig {
-		case hook.Ineligible:
-			slog.Info("hook ineligible, skipping", "kind", "screen", "name", sc.Name, "reason", reason)
-		case hook.Broken:
-			return hook.Config{}, fmt.Errorf("screen %q: unmet precondition: %s", sc.Name, reason)
-		default:
+		keep, err := classifyHook(sc.Spec, "screen", active, lookPath, refuseBoot)
+		if err != nil {
+			return hook.Config{}, err
+		}
+		if keep {
 			out.Screens = append(out.Screens, sc)
 		}
 	}
@@ -399,16 +406,63 @@ func classifyHooks(hooks hook.Config, active hook.Forge, lookPath func(string) (
 			out.Notifiers = append(out.Notifiers, nc)
 			continue
 		}
-		switch elig, reason := nc.Classify(active, lookPath); elig {
-		case hook.Ineligible:
-			slog.Info("hook ineligible, skipping", "kind", "notifier", "name", nc.Name, "reason", reason)
-		case hook.Broken:
-			slog.Warn("hook broken, declining", "kind", "notifier", "name", nc.Name, "reason", reason)
-		default:
+		keep, err := classifyHook(nc.Spec, "notifier", active, lookPath, declineWithWarning)
+		if err != nil {
+			return hook.Config{}, err
+		}
+		if keep {
 			out.Notifiers = append(out.Notifiers, nc)
 		}
 	}
 	return out, nil
+}
+
+// classifyHook runs one hook's Classify and turns the verdict into a
+// keep/exclude decision via applyEligibility. lookPath is injected so the
+// check is testable without the real CLIs.
+func classifyHook(spec hook.Spec, kind string, active hook.Forge, lookPath func(string) (string, error), onBroken func(hook.Spec, string) error) (bool, error) {
+	elig, reason := spec.Classify(active, lookPath)
+	return applyEligibility(elig, reason, spec, kind, onBroken)
+}
+
+// applyEligibility turns one Classify verdict into a keep/exclude decision,
+// kind-scoped by onBroken — the one axis that legitimately differs between
+// Screens and Notifiers (ADR 0031 decision 3). The switch is FAIL-CLOSED:
+// only the explicit hook.Eligible case keeps the hook. Ineligible logs and
+// excludes, never a refusal (ADR 0031 decision 2, both kinds). Broken AND any
+// value this build does not recognise both route through onBroken — an
+// unhandled Eligibility is never silently treated as Eligible, and it gets
+// the SAME safety posture as Broken: refuse for a Screen, warn-and-exclude
+// for a Notifier.
+func applyEligibility(elig hook.Eligibility, reason string, spec hook.Spec, kind string, onBroken func(hook.Spec, string) error) (keep bool, err error) {
+	switch elig {
+	case hook.Eligible:
+		return true, nil
+	case hook.Ineligible:
+		slog.Info("hook ineligible, skipping", "kind", kind, "name", spec.Name, "reason", reason)
+		return false, nil
+	case hook.Broken:
+		return false, onBroken(spec, reason)
+	default:
+		return false, onBroken(spec, fmt.Sprintf("unhandled eligibility %d: %s", elig, reason))
+	}
+}
+
+// refuseBoot is a Screen's Broken policy (ADR 0031 decision 3): an unrunnable
+// Screen is a gate that does not exist, so it refuses the boot naming itself
+// and the unmet precondition — soft-disabling it would silently remove a
+// gate, not degrade it.
+func refuseBoot(spec hook.Spec, reason string) error {
+	return fmt.Errorf("screen %q: unmet precondition: %s", spec.Name, reason)
+}
+
+// declineWithWarning is a Notifier's Broken policy: its failure "can never
+// block or divert an engine action" (ADR 0021), so disabling one is harmless
+// by construction — it logs a warning and lets the caller exclude it; boot
+// proceeds unaffected.
+func declineWithWarning(spec hook.Spec, reason string) error {
+	slog.Warn("hook broken, declining", "kind", "notifier", "name", spec.Name, "reason", reason)
+	return nil
 }
 
 // checkGhAuth verifies the gh CLI is installed and authenticated. It is the

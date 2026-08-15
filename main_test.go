@@ -162,12 +162,15 @@ func TestClassifyHooksChecksOpenCode(t *testing.T) {
 		Spec: hook.Spec{Name: "review assist", Harness: "opencode", Enabled: true}, Point: hook.QueueEntered,
 	}}}
 
+	var looked []string
 	out, err := classifyHooks(cfg, hook.GitHub, func(name string) (string, error) {
+		looked = append(looked, name)
 		return "/usr/local/bin/" + name, nil
 	})
 
 	require.NoError(t, err)
 	require.Len(t, out.Notifiers, 1)
+	require.Contains(t, looked, "opencode", "the opencode harness binary is actually looked up, not merely allowlisted")
 }
 
 func TestHarnessForOpenCode(t *testing.T) {
@@ -227,6 +230,28 @@ func TestClassifyHooksBrokenNotifierDeclinesWithoutRefusingBoot(t *testing.T) {
 	require.Empty(t, out.Notifiers, "the broken notifier declines: excluded from the built config")
 }
 
+// TestClassifyHooksBrokenNotifierMissingHarnessDeclinesWithoutRefusingBoot
+// pins the exact behaviour this PR inverts from the old checkHarnessBinaries:
+// that function hard-refused the boot for ANY enabled hook whose harness CLI
+// was missing, Notifiers included. Under ADR 0031 decision 3, a Notifier's
+// missing HARNESS binary is Broken exactly like a missing Requires.Tools
+// binary — it declines with a warning and is excluded, and the boot proceeds.
+func TestClassifyHooksBrokenNotifierMissingHarnessDeclinesWithoutRefusingBoot(t *testing.T) {
+	cfg := hook.Config{Notifiers: []hook.NotifierConfig{
+		{Spec: hook.Spec{Name: "copilot notifier", Harness: "copilot", Enabled: true}, Point: hook.QueueEntered},
+	}}
+
+	out, err := classifyHooks(cfg, hook.GitHub, func(name string) (string, error) {
+		if name == "copilot" {
+			return "", exec.ErrNotFound
+		}
+		return "/usr/local/bin/" + name, nil
+	})
+
+	require.NoError(t, err, "a Notifier's missing harness binary must never refuse the boot (unlike the old checkHarnessBinaries)")
+	require.Empty(t, out.Notifiers, "the broken notifier declines: excluded from the built config")
+}
+
 // A broken Screen (in scope, missing a declared Tools binary) refuses the
 // boot, naming the screen and the unmet precondition (ADR 0031 decision 3):
 // soft-disabling a Screen would silently remove a gate, not degrade it.
@@ -261,6 +286,33 @@ func TestClassifyHooksOtherForgeCLIInToolsIsIneligible(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Empty(t, out.Screens)
+}
+
+// TestApplyEligibilityIsFailClosed proves the classification switch never
+// treats an unrecognised Eligibility value as Eligible: only the explicit
+// hook.Eligible case keeps a hook. An out-of-range value — standing in for a
+// future Eligibility this build does not know about — is routed through the
+// SAME kind-scoped onBroken policy as a real Broken verdict: a Screen refuses
+// (never silently gates nothing), a Notifier declines with a warning (never
+// silently blocks boot).
+func TestApplyEligibilityIsFailClosed(t *testing.T) {
+	unknown := hook.Eligibility(99)
+	spec := hook.Spec{Name: "mystery hook"}
+
+	keep, err := applyEligibility(unknown, "reason", spec, "screen", refuseBoot)
+	require.False(t, keep, "an unrecognised classification must never keep the hook")
+	require.Error(t, err, "a screen's fail-closed default must refuse the boot")
+	require.Contains(t, err.Error(), "mystery hook")
+
+	var warned bool
+	notifierPolicy := func(hook.Spec, string) error {
+		warned = true
+		return nil
+	}
+	keep, err = applyEligibility(unknown, "reason", spec, "notifier", notifierPolicy)
+	require.False(t, keep, "an unrecognised classification must never keep the hook")
+	require.NoError(t, err, "a notifier's fail-closed default must never refuse the boot")
+	require.True(t, warned, "the notifier policy (warn-and-exclude) must still run")
 }
 
 // buildScreener wires the AI Screen species from validated hook config: zero
@@ -403,7 +455,7 @@ func TestExampleHooksConfigLoads(t *testing.T) {
 	path := filepath.Join(dir, "hooks.yaml")
 	require.NoError(t, os.WriteFile(path, data, 0o644))
 
-	cfg, err := hook.Load(path)
+	cfg, err := hook.Load(path, hook.GitHub)
 	require.NoError(t, err)
 	require.Len(t, cfg.Screens, 1)
 	require.Equal(t, "claude", cfg.Screens[0].Harness)
