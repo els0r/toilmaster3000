@@ -1,0 +1,29 @@
+{
+  "data": {
+    "search": {
+      "nodes": [
+        {
+          "number": 21,
+          "reviewThreads": {
+            "nodes": [{ "isResolved": true }, { "isResolved": false }],
+            "pageInfo": { "hasNextPage": false }
+          }
+        },
+        {
+          "number": 22,
+          "reviewThreads": {
+            "nodes": [],
+            "pageInfo": { "hasNextPage": true }
+          }
+        },
+        {
+          "number": 23,
+          "reviewThreads": {
+            "nodes": [{ "isResolved": true }, { "isResolved": true }],
+            "pageInfo": { "hasNextPage": false }
+          }
+        }
+      ]
+    }
+  }
+}

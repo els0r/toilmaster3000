@@ -6,7 +6,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
+	"github.com/els0r/toilmaster3000/internal/forge/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,9 +42,9 @@ JSON
 	require.NoError(t, err)
 	require.Len(t, prs, 2)
 	require.True(t, prs[0].IsDraft, "drafts ride the authored pull — draft is a stage, not a gate")
-	require.Equal(t, "UNKNOWN", prs[0].Mergeable)
-	require.Equal(t, "CONFLICTING", prs[1].Mergeable)
-	require.Equal(t, "APPROVED", prs[1].ReviewDecision)
+	require.Equal(t, forge.MergeableUnknown, prs[0].Mergeable)
+	require.Equal(t, forge.MergeableConflicting, prs[1].Mergeable)
+	require.Equal(t, forge.ReviewApproved, prs[1].ReviewDecision)
 
 	args, err := os.ReadFile(argsFile)
 	require.NoError(t, err)

@@ -1,0 +1,64 @@
+[
+  {
+    "number": 21,
+    "title": "feat(engine): arm outbound rows",
+    "url": "https://github.com/example/repo/pull/21",
+    "author": { "login": "me" },
+    "additions": 88,
+    "deletions": 4,
+    "changedFiles": 3,
+    "isDraft": true,
+    "reviewDecision": "",
+    "mergeable": "UNKNOWN",
+    "headRefOid": "aaaa1111bbbb2222cccc3333dddd4444eeee5555",
+    "statusCheckRollup": []
+  },
+  {
+    "number": 22,
+    "title": "fix(server): stop leaking the seam type",
+    "url": "https://github.com/example/repo/pull/22",
+    "author": { "login": "me" },
+    "additions": 6,
+    "deletions": 6,
+    "changedFiles": 1,
+    "isDraft": false,
+    "reviewDecision": "APPROVED",
+    "mergeable": "CONFLICTING",
+    "headRefOid": "bbbb1111cccc2222dddd3333eeee4444ffff5555",
+    "statusCheckRollup": [
+      { "__typename": "CheckRun", "name": "backend", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/example/repo/runs/5" }
+    ]
+  },
+  {
+    "number": 23,
+    "title": "refactor(hook): tidy the fired ledger",
+    "url": "https://github.com/example/repo/pull/23",
+    "author": { "login": "me" },
+    "additions": 30,
+    "deletions": 30,
+    "changedFiles": 2,
+    "isDraft": false,
+    "reviewDecision": "CHANGES_REQUESTED",
+    "mergeable": "MERGEABLE",
+    "headRefOid": "cccc1111dddd2222eeee3333ffff444400005555",
+    "statusCheckRollup": [
+      { "__typename": "CheckRun", "name": "backend", "status": "COMPLETED", "conclusion": "NEUTRAL", "detailsUrl": "https://github.com/example/repo/runs/6" }
+    ]
+  },
+  {
+    "number": 24,
+    "title": "chore: something GitHub reports in words we do not know",
+    "url": "https://github.com/example/repo/pull/24",
+    "author": { "login": "me" },
+    "additions": 1,
+    "deletions": 0,
+    "changedFiles": 1,
+    "isDraft": false,
+    "reviewDecision": "SOMETHING_GITHUB_ADDED",
+    "mergeable": "SOMETHING_GITHUB_ADDED",
+    "headRefOid": "dddd1111eeee2222ffff333300004444aaaa5555",
+    "statusCheckRollup": [
+      { "__typename": "StatusContext", "context": "ci/legacy", "state": "EXPECTED", "targetUrl": "https://ci.example.com/3" }
+    ]
+  }
+]
