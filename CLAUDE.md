@@ -50,7 +50,7 @@ binary's run requirements: **`docs/development.md`**.
 ## Architecture
 
 **Layered, with a strict wire boundary.** Flow: `main.go` wires everything →
-`internal/engine` runs the loop → `internal/github` is the only thing that
+`internal/engine` runs the loop → `internal/forge/github` is the only thing that
 touches `gh` → `internal/server` exposes typed HTTP → `frontend` consumes it.
 
 Per-package responsibilities and the wire boundary in detail: read
