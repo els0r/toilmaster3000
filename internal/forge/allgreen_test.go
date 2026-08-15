@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/forge"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAllGreen folds NORMALISED check entries into the All-Green invariant:
@@ -78,9 +79,7 @@ func TestAllGreen(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := forge.AllGreen(tt.checks); got != tt.want {
-				t.Errorf("AllGreen(%+v) = %v, want %v", tt.checks, got, tt.want)
-			}
+			require.Equal(t, tt.want, forge.AllGreen(tt.checks))
 		})
 	}
 }

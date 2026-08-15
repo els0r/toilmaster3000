@@ -35,6 +35,27 @@ var _ forge.Client = (*CLI)(nil)
 // candidate set (repo "owner/name" and the candidate `--search` query).
 func NewCLI(repo, search string) *CLI { return &CLI{repo: repo, search: search} }
 
+// runGH executes one gh invocation and returns its stdout. It is the ONLY
+// place in tm3k that spawns a process for GitHub: every call below goes
+// through it, so the buffer wiring, the stderr handling, and the shape of a
+// failure are decided once rather than nine times.
+//
+// label names the call in the error — "gh pr list", "gh pr view 42" — so a
+// failure says which of the cycle's calls broke without the caller
+// reconstructing the argv. gh writes its diagnostics to stderr with a trailing
+// newline, so it is trimmed: an untrimmed one wraps the error across two lines
+// in the log.
+func runGH(ctx context.Context, label string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("%s: %w: %s", label, err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}
+
 // listJSONFields is the --json field set of the inbound candidate list call —
 // everything the cycle needs from ONE call (no per-PR N+1).
 const listJSONFields = "number,title,author,url,additions,deletions,changedFiles,isDraft,statusCheckRollup,reviewDecision,headRefOid"
@@ -59,13 +80,9 @@ func InboundSearch(configured string) string {
 // identity via one boot-time `gh repo view` (--json keeps it quiet and
 // non-interactive; the fields are discarded — only the exit code judges).
 func (c *CLI) CheckRepoVisible(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "gh", "repo", "view", c.repo, "--json", "name")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("gh repo view %s: %w: %s", c.repo, err, strings.TrimSpace(stderr.String()))
-	}
-	return nil
+	_, err := runGH(ctx, "gh repo view "+c.repo,
+		"repo", "view", c.repo, "--json", "name")
+	return err
 }
 
 // ListCandidates pulls the inbound candidate set once via a single gh call,
@@ -91,20 +108,18 @@ func (c *CLI) ListAuthored(ctx context.Context) ([]forge.PR, error) {
 // (inbound candidates, outbound authored) flow through here so neither the
 // decode nor the normalisation ever forks.
 func (c *CLI) list(ctx context.Context, search, jsonFields string) ([]forge.PR, error) {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
+	out, err := runGH(ctx, "gh pr list",
+		"pr", "list",
 		"--repo", c.repo,
 		"--search", search,
 		"--json", jsonFields,
 	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh pr list: %w: %s", err, stderr.String())
+	if err != nil {
+		return nil, err
 	}
 
 	var items []ghListItem
-	if err := json.Unmarshal(stdout.Bytes(), &items); err != nil {
+	if err := json.Unmarshal(out, &items); err != nil {
 		return nil, fmt.Errorf("decode gh pr list output: %w", err)
 	}
 	return normalizePRs(items), nil
@@ -113,14 +128,11 @@ func (c *CLI) list(ctx context.Context, search, jsonFields string) ([]forge.PR, 
 // CurrentUser resolves the authenticated GitHub login via `gh api user`, so the
 // @me author token can be expanded once at startup.
 func (c *CLI) CurrentUser(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", "api", "user", "--jq", ".login")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("gh api user: %w: %s", err, stderr.String())
+	out, err := runGH(ctx, "gh api user", "api", "user", "--jq", ".login")
+	if err != nil {
+		return "", err
 	}
-	login := strings.TrimSpace(stdout.String())
+	login := strings.TrimSpace(string(out))
 	if login == "" {
 		return "", fmt.Errorf("gh api user: empty login")
 	}
@@ -144,22 +156,20 @@ const prStateRefreshLimit = 200
 // (ADR 0007).
 func (c *CLI) PRStatesSince(ctx context.Context, since time.Time) (map[int]forge.Lifecycle, error) {
 	search := fmt.Sprintf("reviewed-by:@me updated:>=%s", since.Format(time.RFC3339))
-	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
+	out, err := runGH(ctx, "gh pr list (pr state)",
+		"pr", "list",
 		"--repo", c.repo,
 		"--state", "all",
 		"--search", search,
 		"--json", "number,state,mergedAt",
 		"--limit", strconv.Itoa(prStateRefreshLimit),
 	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh pr list (pr state): %w: %s", err, stderr.String())
+	if err != nil {
+		return nil, err
 	}
 
 	var items []ghPRStateItem
-	if err := json.Unmarshal(stdout.Bytes(), &items); err != nil {
+	if err := json.Unmarshal(out, &items); err != nil {
 		return nil, fmt.Errorf("decode gh pr list (pr state) output: %w", err)
 	}
 	if len(items) == prStateRefreshLimit {
@@ -204,19 +214,17 @@ var unresolvedThreadsQuery = fmt.Sprintf(
 // silent truncation).
 func (c *CLI) UnresolvedThreads(ctx context.Context) (map[int]forge.ReviewThreads, error) {
 	search := fmt.Sprintf("repo:%s is:pr %s", c.repo, AuthoredSearch)
-	cmd := exec.CommandContext(ctx, "gh", "api", "graphql",
+	stdout, err := runGH(ctx, "gh api graphql (review threads)",
+		"api", "graphql",
 		"-f", "query="+unresolvedThreadsQuery,
 		"-f", "q="+search,
 	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh api graphql (review threads): %w: %s", err, stderr.String())
+	if err != nil {
+		return nil, err
 	}
 
 	var out ghThreadsResponse
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+	if err := json.Unmarshal(stdout, &out); err != nil {
 		return nil, fmt.Errorf("decode gh api graphql (review threads) output: %w", err)
 	}
 
@@ -239,16 +247,13 @@ const diffPageSize = 100
 // GitHub omits the patch for (binary/over-large) arrives with an empty Patch.
 func (c *CLI) Diff(ctx context.Context, number int) ([]forge.FileDiff, error) {
 	endpoint := fmt.Sprintf("repos/%s/pulls/%d/files?per_page=%d", c.repo, number, diffPageSize)
-	cmd := exec.CommandContext(ctx, "gh", "api", endpoint)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("gh api %s: %w: %s", endpoint, err, stderr.String())
+	out, err := runGH(ctx, "gh api "+endpoint, "api", endpoint)
+	if err != nil {
+		return nil, err
 	}
 
 	var files []ghFileDiff
-	if err := json.Unmarshal(stdout.Bytes(), &files); err != nil {
+	if err := json.Unmarshal(out, &files); err != nil {
 		return nil, fmt.Errorf("decode gh api files output: %w", err)
 	}
 	return normalizeFileDiffs(files), nil
@@ -258,19 +263,17 @@ func (c *CLI) Diff(ctx context.Context, number int) ([]forge.FileDiff, error) {
 // `gh pr view` (the sanctioned per-merge call, ADR 0016). Normalised, not
 // judged — CommitMessage judges the details into the commit message.
 func (c *CLI) MergeInfo(ctx context.Context, number int) (forge.MergeDetails, error) {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "view", strconv.Itoa(number),
+	out, err := runGH(ctx, fmt.Sprintf("gh pr view %d", number),
+		"pr", "view", strconv.Itoa(number),
 		"--repo", c.repo,
 		"--json", "title,body,reviews",
 	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return forge.MergeDetails{}, fmt.Errorf("gh pr view %d: %w: %s", number, err, stderr.String())
+	if err != nil {
+		return forge.MergeDetails{}, err
 	}
 
 	var item ghViewItem
-	if err := json.Unmarshal(stdout.Bytes(), &item); err != nil {
+	if err := json.Unmarshal(out, &item); err != nil {
 		return forge.MergeDetails{}, fmt.Errorf("decode gh pr view output: %w", err)
 	}
 	return normalizeMergeDetails(item), nil
@@ -280,30 +283,22 @@ func (c *CLI) MergeInfo(ctx context.Context, number int) (forge.MergeDetails, er
 // the branch — the gh-land command shape (ADR 0016). The commit message rides
 // as exec args, so no shell quoting can corrupt it.
 func (c *CLI) Merge(ctx context.Context, number int, subject, body string) error {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "merge", strconv.Itoa(number),
+	_, err := runGH(ctx, fmt.Sprintf("gh pr merge %d", number),
+		"pr", "merge", strconv.Itoa(number),
 		"--repo", c.repo,
 		"-s", "-d",
 		"-t", subject,
 		"-b", body,
 	)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("gh pr merge %d: %w: %s", number, err, stderr.String())
-	}
-	return nil
+	return err
 }
 
 // Approve records an approving review on one PR.
 func (c *CLI) Approve(ctx context.Context, number int) error {
-	cmd := exec.CommandContext(ctx, "gh", "pr", "review",
+	_, err := runGH(ctx, fmt.Sprintf("gh pr review --approve %d", number),
+		"pr", "review",
 		"--repo", c.repo,
 		"--approve", strconv.Itoa(number),
 	)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("gh pr review --approve %d: %w: %s", number, err, stderr.String())
-	}
-	return nil
+	return err
 }

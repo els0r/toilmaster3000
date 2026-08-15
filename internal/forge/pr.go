@@ -15,8 +15,15 @@ type ReviewDecision string
 
 const (
 	// ReviewNone is "no decision yet" — nobody has approved and nobody has asked
-	// for changes. It is the zero value, so a PR the adapter never populated (the
-	// inbound pull, an unrecognised token) reads as undecided rather than approved.
+	// for changes. It is the zero value, so an unrecognised token reads as
+	// undecided rather than approved.
+	//
+	// It is NOT "nobody asked the forge". Every adapter MUST populate
+	// ReviewDecision on the INBOUND pull: ADR 0013's soft dedup reads it to
+	// leave a PR someone else already approved alone, and an adapter that
+	// skipped the field would report every such PR as undecided and re-approve
+	// it — corrupting saved-switches analytics across instances with no error
+	// anywhere. Outbound needs it too, for the stage fold.
 	ReviewNone ReviewDecision = ""
 	// ReviewApproved is a PR the forge reports as approved.
 	ReviewApproved ReviewDecision = "approved"
