@@ -55,7 +55,7 @@ type Fake struct {
 	CurrentUserErr error
 	// RepoVisibleErr, when set, makes CheckRepoVisible fail (to prove
 	// preflight fails fast when the configured repo is invisible to the
-	// active gh identity).
+	// active forge identity).
 	RepoVisibleErr error
 
 	failNumbers map[int]bool
@@ -77,13 +77,13 @@ type Fake struct {
 
 	// diffs are canned per-PR changed-file sets served by Diff (the on-demand
 	// Diff-pill fetch), keyed by PR number. DiffErr, when set, makes Diff fail
-	// wholesale (to prove the endpoint surfaces a gh failure).
+	// wholesale (to prove the endpoint surfaces an adapter failure).
 	diffs     map[int][]FileDiff
 	DiffErr   error
 	diffCalls []int
 
 	// mergeInfos are canned live merge-time details served by MergeInfo (the
-	// per-merge gh pr view), keyed by PR number. MergeInfoErr, when set, makes
+	// per-merge merge-info fetch), keyed by PR number. MergeInfoErr, when set, makes
 	// MergeInfo fail wholesale (to prove a merge without live details is
 	// skipped).
 	mergeInfos   map[int]MergeDetails
@@ -196,7 +196,7 @@ func (f *Fake) ThreadsCallCount() int {
 }
 
 // UnresolvedThreads records the call and returns the WHOLE canned thread map
-// (or ThreadsErr), standing in for the batched `gh api graphql` search.
+// (or ThreadsErr), standing in for the adapter's batched threads call.
 func (f *Fake) UnresolvedThreads(_ context.Context) (map[int]ReviewThreads, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -210,7 +210,7 @@ func (f *Fake) UnresolvedThreads(_ context.Context) (map[int]ReviewThreads, erro
 }
 
 // CurrentUser returns the configured Login (or CurrentUserErr), standing in for
-// `gh api user` so preflight is provable without a real gh.
+// the adapter's identity call so preflight is provable without a real CLI.
 func (f *Fake) CurrentUser(_ context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -221,8 +221,8 @@ func (f *Fake) CurrentUser(_ context.Context) (string, error) {
 }
 
 // CheckRepoVisible returns the configured RepoVisibleErr (nil by default),
-// standing in for `gh repo view` so the repo-visibility preflight is provable
-// without a real gh.
+// standing in for the adapter's repo probe so the repo-visibility preflight is provable
+// without a real CLI.
 func (f *Fake) CheckRepoVisible(_ context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -259,7 +259,7 @@ func (f *Fake) StateCallCount() int {
 }
 
 // PRStatesSince records the call and returns the WHOLE canned state set (or
-// StateErr), standing in for the batched `gh pr list`. It returns a superset of
+// StateErr), standing in for the adapter's batched PR-State call. It returns a superset of
 // today's feed — the engine intersects against today's numbers — so it ignores
 // since (the canned states are pre-scoped by the test).
 func (f *Fake) PRStatesSince(_ context.Context, since time.Time) (map[int]Lifecycle, error) {
@@ -285,7 +285,7 @@ func (f *Fake) SetDiff(number int, files []FileDiff) {
 }
 
 // DiffCalls returns the PR numbers Diff was called with, in order, so a test can
-// assert an unqueued number never reaches the gh diff call.
+// assert an unqueued number never reaches the adapter's diff call.
 func (f *Fake) DiffCalls() []int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -295,7 +295,7 @@ func (f *Fake) DiffCalls() []int {
 }
 
 // Diff returns the canned changed-file set for the number (or DiffErr), standing
-// in for the on-demand `gh api .../files` call.
+// in for the adapter's on-demand diff fetch.
 func (f *Fake) Diff(_ context.Context, number int) ([]FileDiff, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -320,7 +320,7 @@ func (f *Fake) SetMergeInfo(number int, details MergeDetails) {
 }
 
 // MergeInfo returns the canned details for the number (or MergeInfoErr),
-// standing in for the per-merge `gh pr view` call. A number with no canned
+// standing in for the per-merge merge-info fetch. A number with no canned
 // entry returns the zero details — an engine test that does not assert the
 // message need not cann one.
 func (f *Fake) MergeInfo(_ context.Context, number int) (MergeDetails, error) {
