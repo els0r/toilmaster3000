@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/harness"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/stretchr/testify/require"
@@ -18,7 +18,7 @@ import (
 // resolveSelfLogin resolves the @me token via the gh seam; the Fake stands in
 // for `gh api user` so this is provable without a real gh or network.
 func TestResolveSelfLoginSuccess(t *testing.T) {
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.Login = "octocat"
 
 	login, err := resolveSelfLogin(context.Background(), fake)
@@ -28,7 +28,7 @@ func TestResolveSelfLoginSuccess(t *testing.T) {
 
 // A failure resolving @me is a hard preflight error (never proceed without it).
 func TestResolveSelfLoginError(t *testing.T) {
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.CurrentUserErr = errors.New("not authenticated")
 
 	_, err := resolveSelfLogin(context.Background(), fake)
@@ -38,7 +38,7 @@ func TestResolveSelfLoginError(t *testing.T) {
 
 // An empty login is rejected rather than silently accepted.
 func TestResolveSelfLoginEmpty(t *testing.T) {
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.Login = ""
 
 	_, err := resolveSelfLogin(context.Background(), fake)
@@ -51,7 +51,7 @@ func TestResolveSelfLoginEmpty(t *testing.T) {
 // cannot see — without this gate a wrong active account boots fine and reports
 // `ok` with zero counts forever (the silent-blindness failure mode).
 func TestCheckRepoVisibleFailsWhenRepoInvisible(t *testing.T) {
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.RepoVisibleErr = errors.New("GraphQL: Could not resolve to a Repository")
 
 	err := checkRepoVisible(context.Background(), fake, "acme/private", "els0r")
@@ -62,7 +62,7 @@ func TestCheckRepoVisibleFailsWhenRepoInvisible(t *testing.T) {
 
 // A visible repo passes the gate silently — the happy path adds no friction.
 func TestCheckRepoVisiblePasses(t *testing.T) {
-	fake := github.NewFake()
+	fake := forge.NewFake()
 
 	err := checkRepoVisible(context.Background(), fake, "acme/public", "els0r")
 	require.NoError(t, err)

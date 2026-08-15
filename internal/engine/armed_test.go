@@ -8,7 +8,7 @@ import (
 
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +26,7 @@ func testArms(t *testing.T) *armed.Store {
 // given authored PRs, and an armed store over the given armed.json path (so a
 // test can reload the file to prove persistence). It returns the engine and
 // the fake.
-func armedEngine(t *testing.T, armedPath string, authored ...github.PR) (*engine.Engine, *github.Fake) {
+func armedEngine(t *testing.T, armedPath string, authored ...forge.PR) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
@@ -34,7 +34,7 @@ func armedEngine(t *testing.T, armedPath string, authored ...github.PR) (*engine
 	arms, err := armed.NewStore(armedPath)
 	require.NoError(t, err)
 
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.Authored = authored
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, arms, nil)
 	require.NoError(t, err)
@@ -47,7 +47,7 @@ func armedEngine(t *testing.T, armedPath string, authored ...github.PR) (*engine
 // disarm is persisted (a restart must not resurrect the stale arm).
 func TestArmedPRDisarmedOnChangesRequested(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
-	pr := github.PR{Number: 5, Title: "feat(e): pending review", Author: "me", URL: "u5", Checks: green(), ReviewDecision: "REVIEW_REQUIRED"}
+	pr := forge.PR{Number: 5, Title: "feat(e): pending review", Author: "me", URL: "u5", Checks: green(), ReviewDecision: forge.ReviewNone}
 	eng, fake := armedEngine(t, armedPath, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -55,8 +55,8 @@ func TestArmedPRDisarmedOnChangesRequested(t *testing.T) {
 	require.True(t, eng.ArmedSet()[5], "the PR is armed while awaiting approval")
 
 	// A reviewer objects: the next cycle observes CHANGES_REQUESTED.
-	pr.ReviewDecision = "CHANGES_REQUESTED"
-	fake.Authored = []github.PR{pr}
+	pr.ReviewDecision = forge.ReviewChangesRequested
+	fake.Authored = []forge.PR{pr}
 	eng.RunCycleOnce(context.Background())
 
 	require.False(t, eng.ArmedSet()[5], "an armed PR observed with CHANGES_REQUESTED is disarmed that cycle")
@@ -71,8 +71,8 @@ func TestArmedPRDisarmedOnChangesRequested(t *testing.T) {
 // stays armed through the stage change, no re-arm needed.
 func TestArmStickyAcrossPushes(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
-	pr := github.PR{Number: 8, Title: "fix(ci): red for now", Author: "me", URL: "u8",
-		Checks: []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}}
+	pr := forge.PR{Number: 8, Title: "fix(ci): red for now", Author: "me", URL: "u8",
+		Checks: []forge.Check{{State: forge.CheckFail}}}
 	eng, fake := armedEngine(t, armedPath, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -80,8 +80,8 @@ func TestArmStickyAcrossPushes(t *testing.T) {
 
 	// The fix-up lands: pipeline green, approval in — several cycles later.
 	pr.Checks = green()
-	pr.ReviewDecision = "APPROVED"
-	fake.Authored = []github.PR{pr}
+	pr.ReviewDecision = forge.ReviewApproved
+	fake.Authored = []forge.PR{pr}
 	eng.RunCycleOnce(context.Background())
 	eng.RunCycleOnce(context.Background())
 
@@ -93,7 +93,7 @@ func TestArmStickyAcrossPushes(t *testing.T) {
 // persisted so a restart does not resurrect a stale arm.
 func TestArmedEntryCleanedUpWhenPRLeavesPull(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
-	pr := github.PR{Number: 9, Title: "feat(a): soon merged", Author: "me", URL: "u9", Checks: green(), ReviewDecision: "APPROVED"}
+	pr := forge.PR{Number: 9, Title: "feat(a): soon merged", Author: "me", URL: "u9", Checks: green(), ReviewDecision: forge.ReviewApproved}
 	eng, fake := armedEngine(t, armedPath, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -115,7 +115,7 @@ func TestArmedEntryCleanedUpWhenPRLeavesPull(t *testing.T) {
 // (or clean up) anything.
 func TestFailedOutboundFetchKeepsArms(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
-	pr := github.PR{Number: 10, Title: "feat(b): armed", Author: "me", URL: "u10", Checks: green()}
+	pr := forge.PR{Number: 10, Title: "feat(b): armed", Author: "me", URL: "u10", Checks: green()}
 	eng, fake := armedEngine(t, armedPath, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -133,7 +133,7 @@ func TestFailedOutboundFetchKeepsArms(t *testing.T) {
 // before consent can be given.
 func TestArmRejectsChangesRequested(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
-	pr := github.PR{Number: 11, Title: "feat(c): objected", Author: "me", URL: "u11", Checks: green(), ReviewDecision: "CHANGES_REQUESTED"}
+	pr := forge.PR{Number: 11, Title: "feat(c): objected", Author: "me", URL: "u11", Checks: green(), ReviewDecision: forge.ReviewChangesRequested}
 	eng, _ := armedEngine(t, armedPath, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -148,7 +148,7 @@ func TestArmRejectsChangesRequested(t *testing.T) {
 // armable (the snapshot is empty).
 func TestArmRejectsUnknownPR(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
-	pr := github.PR{Number: 12, Title: "feat(d): mine", Author: "me", URL: "u12", Checks: green()}
+	pr := forge.PR{Number: 12, Title: "feat(d): mine", Author: "me", URL: "u12", Checks: green()}
 	eng, _ := armedEngine(t, armedPath, pr)
 
 	require.ErrorIs(t, eng.Arm(12), engine.ErrNotInOutbound, "nothing is armable before the first cycle")
@@ -162,7 +162,7 @@ func TestArmRejectsUnknownPR(t *testing.T) {
 // safe) — and is idempotent on a Withheld PR.
 func TestDisarmWithdrawsConsent(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
-	pr := github.PR{Number: 13, Title: "feat(e): armed then not", Author: "me", URL: "u13", Checks: green()}
+	pr := forge.PR{Number: 13, Title: "feat(e): armed then not", Author: "me", URL: "u13", Checks: green()}
 	eng, _ := armedEngine(t, armedPath, pr)
 
 	eng.RunCycleOnce(context.Background())

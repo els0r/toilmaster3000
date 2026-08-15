@@ -16,7 +16,7 @@ import (
 
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/conventionalcommit"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
 )
@@ -117,7 +117,7 @@ type FunnelItem struct {
 	URL           string
 	FailingChecks int
 	// Additions, Deletions, and ChangedFiles are the PR's diff magnitude, threaded
-	// from the github.PR's same fields (the single list fetch — no extra call). The
+	// from the forge.PR's same fields (the single list fetch — no extra call). The
 	// Staging area renders them; they are populated on every bucket, harmless where
 	// unused.
 	Additions    int
@@ -179,7 +179,7 @@ const ManualApprovalPrefix = "human approval: "
 // Engine owns the find->approve loop and the in-memory store. The zero value
 // is not usable; construct with New.
 type Engine struct {
-	client    github.GitHubClient
+	client    forge.Client
 	statePath string
 	// mergesPath is the merge ledger file (merges.jsonl) — the outbound analog
 	// of statePath's approvals.jsonl, appended only on a successful merge (see
@@ -228,7 +228,7 @@ type Engine struct {
 	// volatile and NEVER persisted (the approvals.jsonl record is the frozen
 	// approval moment): refreshed out-of-band at the tail of every cycle, empty
 	// after a restart until the first refresh. A missing entry reads as unknown.
-	prStates     map[int]github.PRState
+	prStates     map[int]forge.PRState
 	status       Status
 	selfLogin    string        // resolved @me token (see identity.go)
 	pollInterval time.Duration // wait between cycles; default DefaultPollInterval
@@ -244,7 +244,7 @@ type Engine struct {
 // obeys (see merge.go); the screener gates the approve branch through the
 // level-triggered verdict consult (ADR 0022) — nil means no screens are
 // configured and the branch is skipped entirely.
-func New(client github.GitHubClient, statePath, mergesPath string, rules *rule.Store, arms *armed.Store, screener *hook.Screener) (*Engine, error) {
+func New(client forge.Client, statePath, mergesPath string, rules *rule.Store, arms *armed.Store, screener *hook.Screener) (*Engine, error) {
 	e := &Engine{
 		client:       client,
 		statePath:    statePath,
@@ -255,7 +255,7 @@ func New(client github.GitHubClient, statePath, mergesPath string, rules *rule.S
 		logger:       slog.Default(),
 		dedup:        map[int]bool{},
 		outbound:     Outbound{},
-		prStates:     map[int]github.PRState{},
+		prStates:     map[int]forge.PRState{},
 		status:       Status{Outcome: "never_run"},
 		pollInterval: DefaultPollInterval,
 	}
@@ -311,10 +311,10 @@ func (e *Engine) Approvals() []Approval {
 // PRStates returns a snapshot of the known PR States keyed by number (locked
 // read). A number absent from the map has not been refreshed yet; the wire layer
 // reads that as the neutral "unknown" — PR State is never guessed.
-func (e *Engine) PRStates() map[int]github.PRState {
+func (e *Engine) PRStates() map[int]forge.PRState {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	out := make(map[int]github.PRState, len(e.prStates))
+	out := make(map[int]forge.PRState, len(e.prStates))
 	maps.Copy(out, e.prStates)
 	return out
 }
@@ -371,7 +371,7 @@ func (e *Engine) ApproveManually(ctx context.Context, number int) error {
 	if !ok {
 		return fmt.Errorf("%w: #%d", ErrNotInQueue, number)
 	}
-	pr := github.PR{Number: item.Number, Title: item.Title, Author: item.Author, URL: item.URL}
+	pr := forge.PR{Number: item.Number, Title: item.Title, Author: item.Author, URL: item.URL}
 	matchedRule := ManualApprovalPrefix + strings.Join(item.Reasons, ", ")
 	e.logger.Info("human review decision: manual override approve",
 		"pr", number,
@@ -455,7 +455,7 @@ var ErrPRNotTracked = errors.New("pr not tracked in queue, staging, or outbound"
 // (ADR 0007), as it never rides the cycle — widening it from the queue alone to
 // also cover Staging (ADR 0015) does not reintroduce that per-cycle N+1, since
 // it stays bounded by human click-rate, not cycle cadence.
-func (e *Engine) Diff(ctx context.Context, number int) (files []github.FileDiff, totalFiles int, err error) {
+func (e *Engine) Diff(ctx context.Context, number int) (files []forge.FileDiff, totalFiles int, err error) {
 	changedFiles, ok := e.trackedChangedFiles(number)
 	if !ok {
 		return nil, 0, fmt.Errorf("%w: #%d", ErrPRNotTracked, number)
@@ -594,7 +594,7 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 			funnel.DroppedDraft = append(funnel.DroppedDraft, funnelItem(pr, 0))
 			continue
 		}
-		if !github.AllGreen(pr.Checks) {
+		if !forge.AllGreen(pr.Checks) {
 			// Eligibility gate: a PR whose pipeline is not all-green (a failing or
 			// pending check, or no checks at all) is ineligible and dropped before it
 			// is ever parsed, matched, queued, or approved. A pending pipeline simply
@@ -606,9 +606,10 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 				"gate", "not_all_green",
 			)
 			dropped++
-			// dropped_red carries the count of non-passing checks, folded cheaply from
-			// the rollup already in hand (same taxonomy as AllGreen).
-			funnel.DroppedRed = append(funnel.DroppedRed, funnelItem(pr, github.FailingChecks(pr.Checks)))
+			// dropped_red carries the count of non-passing checks the ADAPTER
+			// supplied on the PR: cardinality is a forge fact, so the count cannot
+			// be folded from the entries up here (ADR 0030 §6).
+			funnel.DroppedRed = append(funnel.DroppedRed, funnelItem(pr, pr.FailingChecks))
 			continue
 		}
 		c, parsedOK := conventionalcommit.Parse(pr.Title)
@@ -764,7 +765,7 @@ func (e *Engine) RunCycleOnce(ctx context.Context) {
 // screeningItem projects a would-auto-approve candidate into its Screening
 // FunnelItem, naming the screens still awaiting a verdict for its head (the
 // station's "why hasn't #N gone through?" signal).
-func screeningItem(pr github.PR, pending []hook.ScreenInstance) FunnelItem {
+func screeningItem(pr forge.PR, pending []hook.ScreenInstance) FunnelItem {
 	it := funnelItem(pr, 0)
 	it.PendingScreens = make([]string, 0, len(pending))
 	for _, p := range pending {
@@ -776,7 +777,7 @@ func screeningItem(pr github.PR, pending []hook.ScreenInstance) FunnelItem {
 // queueItemForHolds projects a screen-held candidate into its queue entry:
 // screen:<name> reasons plus the {screen, reason} prose, one pair per holding
 // screen (every holding screen is carried — the reasons-list doctrine).
-func queueItemForHolds(pr github.PR, holds []hook.HoldDetail) QueueItem {
+func queueItemForHolds(pr forge.PR, holds []hook.HoldDetail) QueueItem {
 	reasons := make([]string, 0, len(holds))
 	screenHolds := make([]ScreenHold, 0, len(holds))
 	for _, h := range holds {
@@ -809,7 +810,7 @@ func screenNames(holds []hook.HoldDetail) []string {
 // funnelItem projects a candidate PR into a terminal-bucket FunnelItem,
 // carrying the count of non-passing checks (meaningful only on dropped_red; 0
 // elsewhere).
-func funnelItem(pr github.PR, failingChecks int) FunnelItem {
+func funnelItem(pr forge.PR, failingChecks int) FunnelItem {
 	return FunnelItem{
 		Number:        pr.Number,
 		Title:         pr.Title,
@@ -822,18 +823,15 @@ func funnelItem(pr github.PR, failingChecks int) FunnelItem {
 	}
 }
 
-// reviewDecisionApproved is gh's reviewDecision value for a PR an approving
-// review has already cleared.
-const reviewDecisionApproved = "APPROVED"
-
-// approvedElsewhere reports whether GitHub already considers the PR APPROVED.
-// It is consulted only AFTER the dedup-set check, so a true result here means
-// the approval is NOT tm3k's own (the PR is absent from approvals.jsonl): it was
-// approved elsewhere (a teammate, a human, or another tm3k instance). Per ADR
-// 0013 such a PR is left alone — a soft dedup — so tm3k never re-approves it and
-// records nothing, keeping saved-switches analytics honest across instances.
-func approvedElsewhere(pr github.PR) bool {
-	return pr.ReviewDecision == reviewDecisionApproved
+// approvedElsewhere reports whether the forge already considers the PR
+// approved. It is consulted only AFTER the dedup-set check, so a true result
+// here means the approval is NOT tm3k's own (the PR is absent from
+// approvals.jsonl): it was approved elsewhere (a teammate, a human, or another
+// tm3k instance). Per ADR 0013 such a PR is left alone — a soft dedup — so
+// tm3k never re-approves it and records nothing, keeping saved-switches
+// analytics honest across instances.
+func approvedElsewhere(pr forge.PR) bool {
+	return pr.ReviewDecision == forge.ReviewApproved
 }
 
 // alreadyApproved reports whether the PR is already in the dedup set (locked
@@ -863,7 +861,7 @@ func (e *Engine) alreadyApproved(number int) bool {
 // else auto-approves when approveMatched and the title is not breaking, else
 // skips. A rule whose regex fails to compile is logged and skipped — seeded/
 // validated rules always compile, so this is a config fault.
-func evaluateRules(logger *slog.Logger, rules []rule.Rule, c conventionalcommit.Commit, parsedOK bool, pr github.PR, selfLogin string) (reasons []string, approveRuleName string, approveMatched bool) {
+func evaluateRules(logger *slog.Logger, rules []rule.Rule, c conventionalcommit.Commit, parsedOK bool, pr forge.PR, selfLogin string) (reasons []string, approveRuleName string, approveMatched bool) {
 	diffSize := pr.Additions + pr.Deletions // the matcher takes the SUM of the two fields
 
 	matches := func(r rule.Rule) bool {
@@ -905,7 +903,7 @@ func evaluateRules(logger *slog.Logger, rules []rule.Rule, c conventionalcommit.
 // ONLY on success, so a failed approval is retried next cycle. It returns
 // (true, nil) when a new approval was made, (false, nil) when the PR was
 // already in the dedup set (idempotent, quiet).
-func (e *Engine) approve(ctx context.Context, pr github.PR, matchedRule string) (bool, error) {
+func (e *Engine) approve(ctx context.Context, pr forge.PR, matchedRule string) (bool, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -998,7 +996,7 @@ func (e *Engine) refreshPRStates(ctx context.Context) {
 		if !ok {
 			continue // absent from the batch: keep last-known, never reset to unknown
 		}
-		e.prStates[a.Number] = github.CollapsePRState(r.State, r.MergedAt)
+		e.prStates[a.Number] = forge.CollapsePRState(r.State, r.MergedAt)
 	}
 }
 

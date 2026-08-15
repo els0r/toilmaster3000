@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +17,7 @@ func TestSelfLoginRoundTrip(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
 	require.NoError(t, err)
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 
 	require.Empty(t, eng.SelfLogin(), "no self login before preflight resolves it")

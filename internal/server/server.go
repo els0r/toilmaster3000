@@ -19,7 +19,12 @@ import (
 
 	"github.com/els0r/toilmaster3000/internal/conventionalcommit"
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
+	// The GitHub adapter is imported for one display-only constant: the fixed
+	// derived authored search the Outgoing station renders as a code chip.
+	// Turning the derived pulls into forge-typed seam obligations is ADR 0030
+	// §5's slice; until then this is the honest import.
+	"github.com/els0r/toilmaster3000/internal/forge/github"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/els0r/toilmaster3000/internal/settings"
 )
@@ -182,9 +187,9 @@ func cycleStatusToBody(s engine.Status) CycleStatus {
 // caller looks up in the engine's in-memory map and passes in. An empty state
 // (the engine has not refreshed this PR yet) becomes the neutral "unknown" — PR
 // State is never guessed.
-func approvalToBody(a engine.Approval, state github.PRState) Approval {
+func approvalToBody(a engine.Approval, state forge.PRState) Approval {
 	if state == "" {
-		state = github.PRStateUnknown
+		state = forge.PRStateUnknown
 	}
 	return Approval{
 		Number:      a.Number,
@@ -240,9 +245,9 @@ type PRDiffBody struct {
 	TotalFiles int        `json:"total_files"`
 }
 
-// fileDiffToBody converts a github.FileDiff to its wire DTO (ADR 0002 — the
-// github seam type does not cross the boundary directly).
-func fileDiffToBody(f github.FileDiff) FileDiff {
+// fileDiffToBody converts a forge.FileDiff to its wire DTO (ADR 0002 — the
+// forge seam type does not cross the boundary directly).
+func fileDiffToBody(f forge.FileDiff) FileDiff {
 	return FileDiff{
 		Filename:  f.Filename,
 		Status:    f.Status,
@@ -503,7 +508,7 @@ func RegisterAPI(api huma.API, eng *engine.Engine, rules *rule.Store, set *setti
 		// snapshot (the /outbound source of truth, zero after a failed fetch),
 		// merged from today's ledger via the same filter /merges serves — so the
 		// heartbeat needs no extra fetch and can never disagree with either tab.
-		body.ReadyCount = len(eng.Outbound()[github.OutboundStageReady])
+		body.ReadyCount = len(eng.Outbound()[forge.OutboundStageReady])
 		body.MergedCount = len(todaysMerges(eng.Merges()))
 		return &statusOutput{Body: body}, nil
 	})

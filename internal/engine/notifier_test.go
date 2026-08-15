@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
@@ -87,10 +87,10 @@ func reviewRules(t *testing.T, dir string) *rule.Store {
 
 // notifierEngine builds an engine over the candidates with the shared rule
 // set and the given NotifierRunner wired in.
-func notifierEngine(t *testing.T, runner *hook.NotifierRunner, candidates ...github.PR) (*engine.Engine, *github.Fake) {
+func notifierEngine(t *testing.T, runner *hook.NotifierRunner, candidates ...forge.PR) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	dir := t.TempDir()
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, filepath.Join(dir, "approvals.jsonl"), tempMerges(t), reviewRules(t, dir), testArms(t), nil)
 	require.NoError(t, err)
 	eng.SetNotifierRunner(runner)
@@ -121,7 +121,7 @@ func neverMoreCalls(t *testing.T, n *stubNotifier, want int, msg string) {
 // Both are needed: the paths to match, the count to detect gh's 100-file cap.
 func TestQueueEnteredCarriesTheChangedFilePathsToTheHook(t *testing.T) {
 	n := &stubNotifier{}
-	pr := github.PR{
+	pr := forge.PR{
 		Number: 13, Title: "docs: gate me", Author: "ann", URL: "u13", Checks: green(), HeadSHA: "head-1",
 		ChangedFiles: 2, Files: []string{"docs/adr/0026-notifier-scope.md", "internal/hook/scope.go"},
 	}
@@ -148,11 +148,11 @@ func TestScopedNotifierSelectsItselfPerQueuedPR(t *testing.T) {
 	ledger := firesLedger(t, filepath.Join(t.TempDir(), "hookfires.jsonl"))
 	inst := notifierInstance("id-go", "go review assist", hook.QueueEntered, n)
 	inst.Scope = hook.NewScope([]string{"*.go"})
-	docsOnly := github.PR{
+	docsOnly := forge.PR{
 		Number: 14, Title: "docs: gate me", Author: "ann", URL: "u14", Checks: green(), HeadSHA: "h14",
 		ChangedFiles: 1, Files: []string{"README.md"},
 	}
-	withGo := github.PR{
+	withGo := forge.PR{
 		Number: 15, Title: "docs: gate me too", Author: "bob", URL: "u15", Checks: green(), HeadSHA: "h15",
 		ChangedFiles: 2, Files: []string{"README.md", "internal/hook/scope.go"},
 	}
@@ -172,7 +172,7 @@ func TestQueueEnteredFiresOnceEverAcrossCyclesAndRestart(t *testing.T) {
 	ledgerPath := filepath.Join(t.TempDir(), "hookfires.jsonl")
 	n := &stubNotifier{}
 	inst := notifierInstance("id-ra", "review assist", hook.QueueEntered, n)
-	pr := github.PR{Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "head-1"}
 	eng, _ := notifierEngine(t, hook.NewNotifierRunner(firesLedger(t, ledgerPath), inst), pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -227,11 +227,11 @@ func TestScreenHeldFiresScreenHeldNeverQueueEntered(t *testing.T) {
 		notifierInstance("id-ra", "review assist", hook.QueueEntered, assist),
 		notifierInstance("id-ha", "held alert", hook.ScreenHeld, held))
 
-	candidates := []github.PR{
+	candidates := []forge.PR{
 		{Number: 31, Title: "chore: held", Author: "mal", URL: "u31", Checks: green(), HeadSHA: "h31"},
 		{Number: 32, Title: "chore: struck out", Author: "bob", URL: "u32", Checks: green(), HeadSHA: "h32"},
 	}
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, filepath.Join(dir, "approvals.jsonl"), tempMerges(t), reviewRules(t, dir), testArms(t), hook.NewScreener(store, screens...))
 	require.NoError(t, err)
 	eng.SetNotifierRunner(runner)
@@ -263,7 +263,7 @@ func TestPostApproveFiresOnAutoApprovalOnlyAfterSuccess(t *testing.T) {
 	ledger := firesLedger(t, filepath.Join(dir, "hookfires.jsonl"))
 	n := &stubNotifier{}
 	runner := hook.NewNotifierRunner(ledger, notifierInstance("id-pa", "approval ping", hook.PostApprove, n))
-	pr := github.PR{Number: 21, Title: "chore: bump dep", Author: "ann", URL: "u21", Checks: green(), HeadSHA: "h21"}
+	pr := forge.PR{Number: 21, Title: "chore: bump dep", Author: "ann", URL: "u21", Checks: green(), HeadSHA: "h21"}
 	eng, fake := notifierEngine(t, runner, pr)
 
 	fake.FailApprove(21)
@@ -294,7 +294,7 @@ func TestPostApproveFiresOnManualOverrideWithManualFlag(t *testing.T) {
 	n := &stubNotifier{}
 	runner := hook.NewNotifierRunner(firesLedger(t, filepath.Join(dir, "hookfires.jsonl")),
 		notifierInstance("id-pa", "approval ping", hook.PostApprove, n))
-	pr := github.PR{Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "h12"}
+	pr := forge.PR{Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "h12"}
 	eng, fake := notifierEngine(t, runner, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -331,7 +331,7 @@ func TestPostApproveOnManualOverrideFiresOnUnknownScope(t *testing.T) {
 	inst := notifierInstance("id-pa", "go approval ping", hook.PostApprove, n)
 	inst.Scope = hook.NewScope([]string{"*.go"})
 	runner := hook.NewNotifierRunner(firesLedger(t, filepath.Join(dir, "hookfires.jsonl")), inst)
-	pr := github.PR{
+	pr := forge.PR{
 		Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "h12",
 		ChangedFiles: 3, Files: []string{"README.md", "docs/a.md", "docs/b.md"},
 	}
@@ -376,7 +376,7 @@ func TestEngineOutcomeIsIdenticalWhateverNotifiersDo(t *testing.T) {
 
 	for _, variant := range []string{"absent", "healthy", "failing", "slow"} {
 		t.Run(variant, func(t *testing.T) {
-			candidates := []github.PR{
+			candidates := []forge.PR{
 				{Number: 1, Title: "chore: approve me", Author: "a", URL: "u1", Checks: green(), HeadSHA: "h1"},
 				{Number: 2, Title: "docs: queue me", Author: "b", URL: "u2", Checks: green(), HeadSHA: "h2"},
 				{Number: 3, Title: "feat: stage me", Author: "c", URL: "u3", Checks: green(), HeadSHA: "h3"},
@@ -406,7 +406,7 @@ func TestQueueReentryAfterReleaseDoesNotRefire(t *testing.T) {
 	n := &stubNotifier{}
 	runner := hook.NewNotifierRunner(tempFiresEngine(t),
 		notifierInstance("id-ra", "review assist", hook.QueueEntered, n))
-	docs := github.PR{Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "h1"}
+	docs := forge.PR{Number: 12, Title: "docs: gate me", Author: "ann", URL: "u12", Checks: green(), HeadSHA: "h1"}
 	eng, fake := notifierEngine(t, runner, docs)
 
 	eng.RunCycleOnce(context.Background())
@@ -416,12 +416,12 @@ func TestQueueReentryAfterReleaseDoesNotRefire(t *testing.T) {
 	// Released: a retitle stops the Review-Rule match, the PR leaves the queue.
 	retitled := docs
 	retitled.Title = "feat: no longer gated"
-	fake.Candidates = []github.PR{retitled}
+	fake.Candidates = []forge.PR{retitled}
 	eng.RunCycleOnce(context.Background())
 	require.Empty(t, eng.Queue(), "the released PR left the queue")
 
 	// Re-entered: the docs title is back, the rules route it again.
-	fake.Candidates = []github.PR{docs}
+	fake.Candidates = []forge.PR{docs}
 	eng.RunCycleOnce(context.Background())
 	require.Len(t, eng.Queue(), 1, "the PR re-entered the queue")
 	neverMoreCalls(t, n, 1, "re-entry is not a fresh fire: once per PR means ever")

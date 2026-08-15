@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/stretchr/testify/require"
 )
 
 // TestOutboundToBodyCoversEveryStage is the guard on the one place stages are
 // still named one by one: the frozen wire mapping (ADR 0002, kept explicit by
-// ADR 0025). Driven by github.OutboundStages(), it puts one uniquely-numbered
+// ADR 0025). Driven by forge.OutboundStages(), it puts one uniquely-numbered
 // item in every stage of the engine partition and asserts each stage reaches
 // BOTH its named list field and its named distribution count.
 //
@@ -19,10 +19,10 @@ import (
 // DTO field is missing, so `make check` reports clean drift on the exact
 // mistake this test exists to find.
 func TestOutboundToBodyCoversEveryStage(t *testing.T) {
-	stages := github.OutboundStages()
+	stages := forge.OutboundStages()
 
 	ob := engine.Outbound{}
-	wantNumber := map[github.OutboundStage]int{}
+	wantNumber := map[forge.OutboundStage]int{}
 	for i, stage := range stages {
 		number := 100 + i
 		wantNumber[stage] = number
@@ -34,23 +34,23 @@ func TestOutboundToBodyCoversEveryStage(t *testing.T) {
 	body := outboundToBody(ob, map[int]bool{})
 
 	// The named wire fields, bound to the stage each is contracted to carry.
-	lists := map[github.OutboundStage][]OutboundItem{
-		github.OutboundStageDraft:            body.Draft,
-		github.OutboundStageRed:              body.Red,
-		github.OutboundStageRunning:          body.Running,
-		github.OutboundStageChangesRequested: body.ChangesRequested,
-		github.OutboundStageAwaitingApproval: body.AwaitingApproval,
-		github.OutboundStageInDiscussion:     body.InDiscussion,
-		github.OutboundStageReady:            body.Ready,
+	lists := map[forge.OutboundStage][]OutboundItem{
+		forge.OutboundStageDraft:            body.Draft,
+		forge.OutboundStageRed:              body.Red,
+		forge.OutboundStageRunning:          body.Running,
+		forge.OutboundStageChangesRequested: body.ChangesRequested,
+		forge.OutboundStageAwaitingApproval: body.AwaitingApproval,
+		forge.OutboundStageInDiscussion:     body.InDiscussion,
+		forge.OutboundStageReady:            body.Ready,
 	}
-	counts := map[github.OutboundStage]int{
-		github.OutboundStageDraft:            body.Distribution.Draft,
-		github.OutboundStageRed:              body.Distribution.Red,
-		github.OutboundStageRunning:          body.Distribution.Running,
-		github.OutboundStageChangesRequested: body.Distribution.ChangesRequested,
-		github.OutboundStageAwaitingApproval: body.Distribution.AwaitingApproval,
-		github.OutboundStageInDiscussion:     body.Distribution.InDiscussion,
-		github.OutboundStageReady:            body.Distribution.Ready,
+	counts := map[forge.OutboundStage]int{
+		forge.OutboundStageDraft:            body.Distribution.Draft,
+		forge.OutboundStageRed:              body.Distribution.Red,
+		forge.OutboundStageRunning:          body.Distribution.Running,
+		forge.OutboundStageChangesRequested: body.Distribution.ChangesRequested,
+		forge.OutboundStageAwaitingApproval: body.Distribution.AwaitingApproval,
+		forge.OutboundStageInDiscussion:     body.Distribution.InDiscussion,
+		forge.OutboundStageReady:            body.Distribution.Ready,
 	}
 
 	for _, stage := range stages {

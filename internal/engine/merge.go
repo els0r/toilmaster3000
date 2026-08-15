@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 )
 
 // mergeArmedReady is the merge step at the tail of the cycle (ADR 0016): for
@@ -27,7 +27,7 @@ func (e *Engine) mergeArmedReady(ctx context.Context, ready []OutboundItem) {
 		if !armedSet[it.Number] {
 			continue // Withheld: no consent, no merge — ever.
 		}
-		if it.Mergeable != github.MergeableMergeable {
+		if it.Mergeable != forge.MergeableMergeable {
 			e.logger.Info("cycle: armed ready PR not mergeable, merge blocked",
 				"pr", it.Number,
 				"mergeable", it.Mergeable,
@@ -55,7 +55,7 @@ func (e *Engine) mergeOne(ctx context.Context, it OutboundItem) {
 		)
 		return
 	}
-	subject, body := github.CommitMessage(info)
+	subject, body := forge.CommitMessage(info)
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -73,7 +73,7 @@ func (e *Engine) mergeOne(ctx context.Context, it OutboundItem) {
 		Title:      info.Title,
 		URL:        it.URL,
 		MergedAt:   time.Now(),
-		ApprovedBy: github.ApprovedBy(info.Reviews),
+		ApprovedBy: forge.ApprovedBy(info.Reviews),
 	}
 	if err := e.appendMergeRecord(rec); err != nil {
 		// The PR IS merged on GitHub but the ledger line was lost — unlike a
@@ -104,7 +104,7 @@ func (e *Engine) mergeOne(ctx context.Context, it OutboundItem) {
 // shifted in place: mergeArmedReady is still ranging the slice header it was
 // handed, and both share the backing array.
 func (e *Engine) pruneMergedFromOutbound(number int) {
-	published := e.outbound[github.OutboundStageReady]
+	published := e.outbound[forge.OutboundStageReady]
 	pruned := make([]OutboundItem, 0, len(published))
 	for _, it := range published {
 		if it.Number != number {
@@ -114,7 +114,7 @@ func (e *Engine) pruneMergedFromOutbound(number int) {
 	if len(pruned) == len(published) {
 		return // not in the published snapshot; nothing to reconcile
 	}
-	e.outbound[github.OutboundStageReady] = pruned
+	e.outbound[forge.OutboundStageReady] = pruned
 }
 
 // appendMergeRecord appends one merge as a JSON line to merges.jsonl, creating

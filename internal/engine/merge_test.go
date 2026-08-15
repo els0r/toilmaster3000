@@ -8,7 +8,7 @@ import (
 
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +24,7 @@ func tempMerges(t *testing.T) string {
 // given authored PRs, and a merge ledger over the given merges.jsonl path (so
 // a test can rebuild an engine over the same file to prove persistence). It
 // returns the engine and the fake.
-func mergeEngine(t *testing.T, mergesPath string, authored ...github.PR) (*engine.Engine, *github.Fake) {
+func mergeEngine(t *testing.T, mergesPath string, authored ...forge.PR) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
@@ -32,7 +32,7 @@ func mergeEngine(t *testing.T, mergesPath string, authored ...github.PR) (*engin
 	arms, err := armed.NewStore(filepath.Join(t.TempDir(), "armed.json"))
 	require.NoError(t, err)
 
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.Authored = authored
 	eng, err := engine.New(fake, statePath, mergesPath, store, arms, nil)
 	require.NoError(t, err)
@@ -41,11 +41,11 @@ func mergeEngine(t *testing.T, mergesPath string, authored ...github.PR) (*engin
 
 // readyPR is an authored PR in the Ready stage (green + APPROVED) with the
 // given mergeability — the merge step's subject under test.
-func readyPR(number int, mergeable string) github.PR {
-	return github.PR{
+func readyPR(number int, mergeable forge.Mergeability) forge.PR {
+	return forge.PR{
 		Number: number, Title: "feat(x)!: stale arm-time title", Author: "me",
 		URL: "https://github.com/o/r/pull/21", Checks: green(),
-		ReviewDecision: "APPROVED", Mergeable: mergeable,
+		ReviewDecision: forge.ReviewApproved, Mergeable: mergeable,
 	}
 }
 
@@ -57,13 +57,13 @@ func readyPR(number int, mergeable string) github.PR {
 // rules concern and is untouched).
 func TestArmedReadyPRMerges(t *testing.T) {
 	mergesPath := tempMerges(t)
-	eng, fake := mergeEngine(t, mergesPath, readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, mergesPath, readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat(x)!: live title",
 		Body:  "Live body.",
-		Reviews: []github.Review{
-			{Author: "alice_osag", State: "APPROVED"},
-			{Author: "bob", State: "COMMENTED"},
+		Reviews: []forge.Review{
+			{Author: "alice_osag", State: forge.ReviewStateApproved},
+			{Author: "bob", State: forge.ReviewStateCommented},
 		},
 	})
 
@@ -73,7 +73,7 @@ func TestArmedReadyPRMerges(t *testing.T) {
 
 	eng.RunCycleOnce(context.Background())
 
-	require.Equal(t, []github.MergeCall{
+	require.Equal(t, []forge.MergeCall{
 		{Number: 21, Subject: "feat(x)!: live title", Body: "Live body.\nApproved by: alice"},
 	}, fake.MergeCalls(), "one squash merge with the gh-land commit message from the live details")
 
@@ -91,10 +91,10 @@ func TestArmedReadyPRMerges(t *testing.T) {
 // leaves the is:open pull immediately, so the ledger is the only signal left).
 func TestMergeLedgerSurvivesRestart(t *testing.T) {
 	mergesPath := tempMerges(t)
-	eng, fake := mergeEngine(t, mergesPath, readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, mergesPath, readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 	eng.RunCycleOnce(context.Background())
 	require.NoError(t, eng.Arm(21))
@@ -113,8 +113,8 @@ func TestMergeLedgerSurvivesRestart(t *testing.T) {
 // (GitHub still computing; retried naturally next cycle) both block the merge
 // without moving the PR.
 func TestNotMergeableBlocksMergeButKeepsStage(t *testing.T) {
-	for _, mergeable := range []string{"CONFLICTING", "UNKNOWN"} {
-		t.Run(mergeable, func(t *testing.T) {
+	for _, mergeable := range []forge.Mergeability{forge.MergeableConflicting, forge.MergeableUnknown} {
+		t.Run(string(mergeable), func(t *testing.T) {
 			eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, mergeable))
 
 			eng.RunCycleOnce(context.Background())
@@ -124,8 +124,8 @@ func TestNotMergeableBlocksMergeButKeepsStage(t *testing.T) {
 			require.Empty(t, fake.MergeCalls(), "a %s PR never merges", mergeable)
 			require.Empty(t, eng.Merges(), "nothing lands in the ledger")
 			ob := eng.Outbound()
-			require.Len(t, ob[github.OutboundStageReady], 1, "the PR stays in Ready — mergeable is a precondition, not a stage boundary")
-			require.Equal(t, 21, ob[github.OutboundStageReady][0].Number)
+			require.Len(t, ob[forge.OutboundStageReady], 1, "the PR stays in Ready — mergeable is a precondition, not a stage boundary")
+			require.Equal(t, 21, ob[forge.OutboundStageReady][0].Number)
 		})
 	}
 }
@@ -133,8 +133,8 @@ func TestNotMergeableBlocksMergeButKeepsStage(t *testing.T) {
 // M4: an armed PR outside Ready never merges — the merge preconditions are the
 // stage's (green + APPROVED), so an armed awaiting-approval PR waits.
 func TestArmedNotReadyNeverMerges(t *testing.T) {
-	pr := readyPR(21, "MERGEABLE")
-	pr.ReviewDecision = "REVIEW_REQUIRED" // green but unapproved: Awaiting Approval
+	pr := readyPR(21, forge.MergeableMergeable)
+	pr.ReviewDecision = forge.ReviewNone // green but unapproved: Awaiting Approval
 	eng, fake := mergeEngine(t, tempMerges(t), pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -148,7 +148,7 @@ func TestArmedNotReadyNeverMerges(t *testing.T) {
 // M5: a failed outbound fetch skips ALL merging that cycle — the robot never
 // merges on stale data (ADR 0016).
 func TestFailedOutboundFetchMergesNothing(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
 
 	eng.RunCycleOnce(context.Background())
 	require.NoError(t, eng.Arm(21))
@@ -163,10 +163,10 @@ func TestFailedOutboundFetchMergesNothing(t *testing.T) {
 // M6: a transiently failing merge call gets ONE immediate retry (gh-land
 // parity) and lands on the second attempt — still exactly one ledger record.
 func TestFailedMergeRetriesOnceImmediately(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 	fake.FailMerge(21, 1) // first attempt fails, the immediate retry succeeds
 
@@ -182,10 +182,10 @@ func TestFailedMergeRetriesOnceImmediately(t *testing.T) {
 // the ledger stays untouched (append only on success) and the STILL-armed PR is
 // retried on the next cycle, where it lands.
 func TestFailedMergeRetriesNextCycle(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 	fake.FailMerge(21, 2) // attempt + immediate retry both fail this cycle
 
@@ -205,7 +205,7 @@ func TestFailedMergeRetriesNextCycle(t *testing.T) {
 // M8: a failed merge-info fetch (the per-merge gh pr view) skips that PR's
 // merge — the commit message is built from live details or not at all.
 func TestFailedMergeInfoSkipsMerge(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
 	fake.MergeInfoErr = errors.New("gh pr view exploded")
 
 	eng.RunCycleOnce(context.Background())
@@ -222,10 +222,10 @@ func TestFailedMergeInfoSkipsMerge(t *testing.T) {
 // known falsehood — the Ready+Merged duplicate the UI can never be shown.
 // Outgoing is derived from the partition, so the prune keeps the sum for free.
 func TestMergePrunesReadyImmediately(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 
 	eng.RunCycleOnce(context.Background())
@@ -234,7 +234,7 @@ func TestMergePrunesReadyImmediately(t *testing.T) {
 
 	require.Len(t, eng.Merges(), 1, "the PR merged and entered the ledger")
 	ob := eng.Outbound()
-	require.Empty(t, ob[github.OutboundStageReady], "the merged PR left Ready in the same step it entered the ledger")
+	require.Empty(t, ob[forge.OutboundStageReady], "the merged PR left Ready in the same step it entered the ledger")
 	require.Zero(t, ob.Outgoing(), "the derived Outgoing follows the prune — the partition still sums")
 }
 
@@ -243,10 +243,10 @@ func TestMergePrunesReadyImmediately(t *testing.T) {
 // stays empty. The prune is tied to merge success alone: a PR that did not
 // merge genuinely IS still Ready, and saying so is the truth, not staleness.
 func TestFailedMergeLeavesSnapshotUntouched(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 	fake.FailMerge(21, 2) // attempt + immediate retry both fail this cycle
 
@@ -256,8 +256,8 @@ func TestFailedMergeLeavesSnapshotUntouched(t *testing.T) {
 
 	require.Empty(t, eng.Merges(), "a failed merge appends nothing")
 	ob := eng.Outbound()
-	require.Len(t, ob[github.OutboundStageReady], 1, "the unmerged PR stays in Ready — that is the truth")
-	require.Equal(t, 21, ob[github.OutboundStageReady][0].Number)
+	require.Len(t, ob[forge.OutboundStageReady], 1, "the unmerged PR stays in Ready — that is the truth")
+	require.Equal(t, 21, ob[forge.OutboundStageReady][0].Number)
 	require.Equal(t, 1, ob.Outgoing(), "Outgoing is untouched")
 }
 
@@ -265,10 +265,10 @@ func TestFailedMergeLeavesSnapshotUntouched(t *testing.T) {
 // reconciliation cleans its armed entry — the merge step itself does not need
 // to touch the armed set (verified here rather than duplicated).
 func TestMergedPRArmedEntryCleanedUp(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 
 	eng.RunCycleOnce(context.Background())

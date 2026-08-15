@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +16,7 @@ import (
 // chore-typed candidate, over a fresh approvals.jsonl. It returns the engine,
 // the fake client, and the ledger path so a test can assert both the approve
 // call count and what was (not) written to approvals.jsonl.
-func softDedupEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *github.Fake, string) {
+func softDedupEngine(t *testing.T, candidates ...forge.PR) (*engine.Engine, *forge.Fake, string) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
@@ -24,14 +24,14 @@ func softDedupEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *gi
 	_, err = store.Create(rule.Rule{Name: "any chore", Enabled: true, TypeInclude: "^chore$"})
 	require.NoError(t, err)
 
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	return eng, fake, statePath
 }
 
-func greenCheck() []github.Check {
-	return []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"}}
+func greenCheck() []forge.Check {
+	return []forge.Check{{State: forge.CheckPass}}
 }
 
 // SD1 (tracer): a candidate GitHub already reports as APPROVED — but whose
@@ -39,9 +39,9 @@ func greenCheck() []github.Check {
 // it alone: it never calls Approve and writes nothing to the ledger (proven at
 // the RunCycleOnce cycle seam via the approve-call count and the ledger file).
 func TestApprovedElsewhereIsNotReapprovedAndWritesNothing(t *testing.T) {
-	pr := github.PR{
+	pr := forge.PR{
 		Number: 7, Title: "chore: tidy", Author: "teammate", URL: "u7",
-		Checks: greenCheck(), ReviewDecision: "APPROVED",
+		Checks: greenCheck(), ReviewDecision: forge.ReviewApproved,
 	}
 	eng, fake, statePath := softDedupEngine(t, pr)
 
@@ -58,7 +58,7 @@ func TestApprovedElsewhereIsNotReapprovedAndWritesNothing(t *testing.T) {
 // the feed never grows. The already-deduped guard owns this case; reporting
 // APPROVED does not turn it into a new approval nor a second ledger line.
 func TestApprovedAndOursStaysQuietNoOp(t *testing.T) {
-	pr := github.PR{
+	pr := forge.PR{
 		Number: 9, Title: "chore: ours", Author: "me", URL: "u9",
 		Checks: greenCheck(),
 	}
@@ -70,9 +70,9 @@ func TestApprovedAndOursStaysQuietNoOp(t *testing.T) {
 	require.Len(t, eng.Approvals(), 1)
 
 	// GitHub now reports our own approval back as APPROVED on the next fetch.
-	fake.Candidates = []github.PR{{
+	fake.Candidates = []forge.PR{{
 		Number: 9, Title: "chore: ours", Author: "me", URL: "u9",
-		Checks: greenCheck(), ReviewDecision: "APPROVED",
+		Checks: greenCheck(), ReviewDecision: forge.ReviewApproved,
 	}}
 	eng.RunCycleOnce(context.Background())
 
@@ -85,10 +85,10 @@ func TestApprovedAndOursStaysQuietNoOp(t *testing.T) {
 // is NOT approved-elsewhere — tm3k approves it normally and records the ledger
 // line, exactly as before this narrowing.
 func TestNonApprovedReviewDecisionStillApprovesNormally(t *testing.T) {
-	prs := []github.PR{
-		{Number: 11, Title: "chore: pending review", Author: "x", URL: "u11", Checks: greenCheck(), ReviewDecision: "REVIEW_REQUIRED"},
-		{Number: 12, Title: "chore: changes asked", Author: "y", URL: "u12", Checks: greenCheck(), ReviewDecision: "CHANGES_REQUESTED"},
-		{Number: 13, Title: "chore: no decision", Author: "z", URL: "u13", Checks: greenCheck(), ReviewDecision: ""},
+	prs := []forge.PR{
+		{Number: 11, Title: "chore: pending review", Author: "x", URL: "u11", Checks: greenCheck(), ReviewDecision: forge.ReviewNone},
+		{Number: 12, Title: "chore: changes asked", Author: "y", URL: "u12", Checks: greenCheck(), ReviewDecision: forge.ReviewChangesRequested},
+		{Number: 13, Title: "chore: no decision", Author: "z", URL: "u13", Checks: greenCheck(), ReviewDecision: forge.ReviewNone},
 	}
 	eng, fake, _ := softDedupEngine(t, prs...)
 

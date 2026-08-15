@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/server"
 	"github.com/stretchr/testify/require"
 )
@@ -36,13 +36,13 @@ func seedMergesFile(t *testing.T, path string, recs ...engine.Merge) {
 // mergesServer builds a server whose engine loads the given pre-seeded
 // merges.jsonl and serves the given authored pull, returning the engine and
 // the server URL.
-func mergesServer(t *testing.T, mergesPath string, authored ...github.PR) (*engine.Engine, string) {
+func mergesServer(t *testing.T, mergesPath string, authored ...forge.PR) (*engine.Engine, string) {
 	t.Helper()
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.Authored = authored
-	fake.SetMergeInfo(21, github.MergeDetails{
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat(cli): live title", Body: "b",
-		Reviews: []github.Review{{Author: "alice_osag", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice_osag", State: forge.ReviewStateApproved}},
 	})
 	store := storeWith(t, matchAllChores())
 	eng, err := engine.New(fake, filepath.Join(t.TempDir(), "approvals.jsonl"), mergesPath, store, testArms(t), nil)
@@ -59,8 +59,8 @@ func mergesServer(t *testing.T, mergesPath string, authored ...github.PR) (*engi
 // 0006) and the normalized approver logins.
 func TestMergesEndpointServesLedger(t *testing.T) {
 	eng, url := mergesServer(t, tempMerges(t),
-		github.PR{Number: 21, Title: "feat(cli): x", Author: "me", URL: "u21",
-			Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
+		forge.PR{Number: 21, Title: "feat(cli): x", Author: "me", URL: "u21",
+			Checks: greenChecks(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableMergeable},
 	)
 
 	eng.RunCycleOnce(context.Background())
@@ -140,12 +140,12 @@ func TestStatusReportsReadyAndMergedCounts(t *testing.T) {
 	eng, url := mergesServer(t, mergesPath,
 		// Two Ready PRs (one conflicted — still Ready, the stage ignores
 		// mergeable) and one merely awaiting approval.
-		github.PR{Number: 21, Title: "feat(cli): ready", Author: "me", URL: "u21",
-			Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
-		github.PR{Number: 22, Title: "feat(db): conflicted", Author: "me", URL: "u22",
-			Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "CONFLICTING"},
-		github.PR{Number: 23, Title: "feat(web): pending", Author: "me", URL: "u23",
-			Checks: greenChecks(), ReviewDecision: "REVIEW_REQUIRED"},
+		forge.PR{Number: 21, Title: "feat(cli): ready", Author: "me", URL: "u21",
+			Checks: greenChecks(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableMergeable},
+		forge.PR{Number: 22, Title: "feat(db): conflicted", Author: "me", URL: "u22",
+			Checks: greenChecks(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableConflicting},
+		forge.PR{Number: 23, Title: "feat(web): pending", Author: "me", URL: "u23",
+			Checks: greenChecks(), ReviewDecision: forge.ReviewNone},
 	)
 
 	var before server.CycleStatus

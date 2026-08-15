@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/conventionalcommit"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ func TestEvaluateRulesStaging(t *testing.T) {
 	logger := slog.Default()
 	c, parsedOK := conventionalcommit.Parse("chore(infra): rotate token")
 	require.True(t, parsedOK)
-	pr := github.PR{Number: 1, Title: "chore(infra): rotate token", Author: "carol"}
+	pr := forge.PR{Number: 1, Title: "chore(infra): rotate token", Author: "carol"}
 
 	t.Run("no rule matches an eligible parseable PR -> staging", func(t *testing.T) {
 		rules := []rule.Rule{

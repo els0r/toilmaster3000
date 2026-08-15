@@ -29,14 +29,17 @@ const (
 // PR right now". It is a MERGE precondition, never a stage boundary:
 // ClassifyOutboundStage never reads it, and a conflicted Ready PR stays in
 // Ready carrying its mergeability.
+//
+// Only MergeableMergeable clears a merge, so the zero value — a PR no adapter
+// populated — blocks exactly as MergeableUnknown does.
 type Mergeability string
 
 const (
 	// MergeableUnknown is "not answered": the forge is still computing, reported
 	// something unrecognised, or — for the inbound pull, which does not request
-	// mergeability at all — was never asked. It is the zero value, and it blocks
-	// a merge without moving a stage; the next cycle retries naturally.
-	MergeableUnknown Mergeability = ""
+	// mergeability at all — was never asked. It blocks a merge without moving a
+	// stage; the next cycle retries naturally.
+	MergeableUnknown Mergeability = "unknown"
 	// MergeableMergeable is a PR the forge will accept a merge on — the merge
 	// step's final precondition (ADR 0016).
 	MergeableMergeable Mergeability = "mergeable"

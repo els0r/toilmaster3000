@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ import (
 // PR (number 41) into the Needs-Human-Review queue, so its Diff pill is
 // fetchable. The PR reports changed_files=12 but the fake serves a one-file
 // page, mirroring the real "page cap below total" case.
-func queuedBreakingEngine(t *testing.T) (*engine.Engine, *github.Fake) {
+func queuedBreakingEngine(t *testing.T) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
@@ -23,11 +23,11 @@ func queuedBreakingEngine(t *testing.T) (*engine.Engine, *github.Fake) {
 	_, err = store.Create(rule.Rule{Name: "any typed", Enabled: true, TypeInclude: ".*"})
 	require.NoError(t, err)
 
-	pr := github.PR{Number: 41, Title: "chore!: drop legacy flag", Author: "bob", URL: "u41",
+	pr := forge.PR{Number: 41, Title: "chore!: drop legacy flag", Author: "bob", URL: "u41",
 		Additions: 40, Deletions: 12, ChangedFiles: 12,
-		Checks: []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"}}}
-	fake := github.NewFake(pr)
-	fake.SetDiff(41, []github.FileDiff{
+		Checks: []forge.Check{{State: forge.CheckPass}}}
+	fake := forge.NewFake(pr)
+	fake.SetDiff(41, []forge.FileDiff{
 		{Filename: "main.go", Status: "modified", Additions: 2, Deletions: 1, Patch: "@@ -1 +1 @@"},
 	})
 
@@ -46,7 +46,7 @@ func TestDiffOfQueuedPRReturnsFilesAndTotal(t *testing.T) {
 	files, total, err := eng.Diff(context.Background(), 41)
 	require.NoError(t, err)
 	require.Equal(t, 12, total, "total_files is the queued PR's changed_files, not the fetched count")
-	require.Equal(t, []github.FileDiff{
+	require.Equal(t, []forge.FileDiff{
 		{Filename: "main.go", Status: "modified", Additions: 2, Deletions: 1, Patch: "@@ -1 +1 @@"},
 	}, files)
 }
@@ -64,18 +64,18 @@ func TestDiffOfUntrackedPRIsNotTracked(t *testing.T) {
 // stagedEngine builds an engine whose single cycle leaves one eligible PR
 // (number 70) in Staging — no rule matches it, so it falls through to Staging
 // rather than the queue. Its Diff pill must resolve exactly like a queued PR's.
-func stagedEngine(t *testing.T) (*engine.Engine, *github.Fake) {
+func stagedEngine(t *testing.T) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
 	require.NoError(t, err)
 	// No rules: an eligible PR matching nothing falls through to Staging.
 
-	pr := github.PR{Number: 70, Title: "feat: a new panel", Author: "camille", URL: "u70",
+	pr := forge.PR{Number: 70, Title: "feat: a new panel", Author: "camille", URL: "u70",
 		Additions: 120, Deletions: 8, ChangedFiles: 5,
-		Checks: []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"}}}
-	fake := github.NewFake(pr)
-	fake.SetDiff(70, []github.FileDiff{
+		Checks: []forge.Check{{State: forge.CheckPass}}}
+	fake := forge.NewFake(pr)
+	fake.SetDiff(70, []forge.FileDiff{
 		{Filename: "panel.go", Status: "added", Additions: 118, Deletions: 0, Patch: "@@ -0,0 +1 @@"},
 	})
 
@@ -94,7 +94,7 @@ func TestDiffOfStagedPRReturnsFilesAndTotal(t *testing.T) {
 	files, total, err := eng.Diff(context.Background(), 70)
 	require.NoError(t, err)
 	require.Equal(t, 5, total, "total_files is the staged PR's changed_files")
-	require.Equal(t, []github.FileDiff{
+	require.Equal(t, []forge.FileDiff{
 		{Filename: "panel.go", Status: "added", Additions: 118, Deletions: 0, Patch: "@@ -0,0 +1 @@"},
 	}, files)
 }
@@ -104,11 +104,11 @@ func TestDiffOfStagedPRReturnsFilesAndTotal(t *testing.T) {
 // the Diff pill rides outbound rows exactly as it does queue/Staging rows.
 func TestDiffOfOutboundPRReturnsFilesAndTotal(t *testing.T) {
 	eng, fake := outboundEngine(t,
-		github.PR{Number: 88, Title: "feat(ui): pending review", Author: "me", URL: "u88",
+		forge.PR{Number: 88, Title: "feat(ui): pending review", Author: "me", URL: "u88",
 			Additions: 30, Deletions: 4, ChangedFiles: 7,
-			Checks: green(), ReviewDecision: "REVIEW_REQUIRED"},
+			Checks: green(), ReviewDecision: forge.ReviewNone},
 	)
-	fake.SetDiff(88, []github.FileDiff{
+	fake.SetDiff(88, []forge.FileDiff{
 		{Filename: "ui.go", Status: "modified", Additions: 30, Deletions: 4, Patch: "@@ -1 +1 @@"},
 	})
 	eng.RunCycleOnce(context.Background())
@@ -116,7 +116,7 @@ func TestDiffOfOutboundPRReturnsFilesAndTotal(t *testing.T) {
 	files, total, err := eng.Diff(context.Background(), 88)
 	require.NoError(t, err)
 	require.Equal(t, 7, total, "total_files is the outbound item's changed_files")
-	require.Equal(t, []github.FileDiff{
+	require.Equal(t, []forge.FileDiff{
 		{Filename: "ui.go", Status: "modified", Additions: 30, Deletions: 4, Patch: "@@ -1 +1 @@"},
 	}, files)
 }
@@ -126,8 +126,8 @@ func TestDiffOfOutboundPRReturnsFilesAndTotal(t *testing.T) {
 // loosen the untracked guard.
 func TestDiffOfUnknownPRWithOutboundPresentIsNotTracked(t *testing.T) {
 	eng, fake := outboundEngine(t,
-		github.PR{Number: 88, Title: "feat(ui): pending review", Author: "me", URL: "u88",
-			Checks: green(), ReviewDecision: "REVIEW_REQUIRED"},
+		forge.PR{Number: 88, Title: "feat(ui): pending review", Author: "me", URL: "u88",
+			Checks: green(), ReviewDecision: forge.ReviewNone},
 	)
 	eng.RunCycleOnce(context.Background())
 

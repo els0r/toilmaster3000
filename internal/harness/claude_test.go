@@ -10,7 +10,7 @@ import (
 
 // scriptedClaude returns a Claude adapter whose process seams are scripted:
 // the gh diff fetch and the claude invocation are plain functions, so the
-// real gh/claude CLIs never run in tests (the internal/github fake precedent).
+// real gh/claude CLIs never run in tests (the internal/forge fake precedent).
 func scriptedClaude(fetchDiff func(ctx context.Context, repo string, number int) (string, error),
 	invoke func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Claude {
 	return &Claude{fetchDiff: fetchDiff, invoke: invoke}

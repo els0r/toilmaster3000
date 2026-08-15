@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 )
 
 // ErrNotInOutbound is returned by Arm when the given PR number is not in the
@@ -69,15 +69,15 @@ func (e *Engine) ArmedSet() map[int]bool {
 //
 // It lives in engine, not github: arming is tm3k's consent model, not a GitHub
 // concept.
-func armable(stage github.OutboundStage) bool {
-	return stage != github.OutboundStageChangesRequested
+func armable(stage forge.OutboundStage) bool {
+	return stage != forge.OutboundStageChangesRequested
 }
 
 // outboundStage returns the stage the PR number sits in within the current
 // outbound snapshot (locked read), and whether it is in the snapshot at all —
 // the two facts Arm validates against. It is a pure lookup: the consent rule
 // itself lives in armable, not here.
-func (e *Engine) outboundStage(number int) (github.OutboundStage, bool) {
+func (e *Engine) outboundStage(number int) (forge.OutboundStage, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	_, stage, ok := e.outbound.find(number)
