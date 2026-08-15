@@ -1,0 +1,7 @@
+[
+  { "number": 42, "state": "MERGED", "mergedAt": "2026-06-19T10:00:00Z" },
+  { "number": 7, "state": "OPEN", "mergedAt": null },
+  { "number": 9, "state": "CLOSED", "mergedAt": null },
+  { "number": 11, "state": "CLOSED", "mergedAt": "2026-06-18T08:30:00Z" },
+  { "number": 13, "state": "SOMETHING_GITHUB_ADDED", "mergedAt": null }
+]

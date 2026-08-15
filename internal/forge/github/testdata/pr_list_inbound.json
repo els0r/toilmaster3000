@@ -1,0 +1,57 @@
+[
+  {
+    "number": 7,
+    "title": "chore(deps): bump doublestar to v4.10.0",
+    "url": "https://github.com/example/repo/pull/7",
+    "author": { "login": "alice" },
+    "additions": 12,
+    "deletions": 3,
+    "changedFiles": 2,
+    "isDraft": false,
+    "reviewDecision": "REVIEW_REQUIRED",
+    "headRefOid": "9f1c0b7ad3e5a1c2b4d6e8f0a2c4e6b8d0f2a4c6",
+    "statusCheckRollup": [
+      { "__typename": "CheckRun", "name": "backend", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/example/repo/runs/1" },
+      { "__typename": "CheckRun", "name": "frontend", "status": "COMPLETED", "conclusion": "SKIPPED", "detailsUrl": "https://github.com/example/repo/runs/2" },
+      { "__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS", "targetUrl": "https://ci.example.com/1" }
+    ],
+    "files": [
+      { "path": "go.mod", "additions": 1, "deletions": 1, "changeType": "MODIFIED" },
+      { "path": "go.sum", "additions": 11, "deletions": 2, "changeType": "MODIFIED" }
+    ]
+  },
+  {
+    "number": 8,
+    "title": "feat(api)!: drop the v1 endpoints",
+    "url": "https://github.com/example/repo/pull/8",
+    "author": { "login": "bob" },
+    "additions": 240,
+    "deletions": 610,
+    "changedFiles": 14,
+    "isDraft": true,
+    "reviewDecision": "",
+    "headRefOid": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    "statusCheckRollup": [
+      { "__typename": "CheckRun", "name": "backend", "status": "IN_PROGRESS", "conclusion": "", "detailsUrl": "https://github.com/example/repo/runs/3" },
+      { "__typename": "CheckRun", "name": "lint-go", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://github.com/example/repo/runs/4" },
+      { "__typename": "StatusContext", "context": "ci/legacy", "state": "PENDING", "targetUrl": "https://ci.example.com/2" }
+    ],
+    "files": [
+      { "path": "internal/server/server.go", "additions": 40, "deletions": 210, "changeType": "MODIFIED" }
+    ]
+  },
+  {
+    "number": 9,
+    "title": "docs: fix a typo",
+    "url": "https://github.com/example/repo/pull/9",
+    "author": { "login": "carol" },
+    "additions": 1,
+    "deletions": 1,
+    "changedFiles": 1,
+    "isDraft": false,
+    "reviewDecision": "APPROVED",
+    "headRefOid": "deadbeefcafe0000deadbeefcafe0000deadbeef",
+    "statusCheckRollup": [],
+    "files": [{ "path": "README.md", "additions": 1, "deletions": 1, "changeType": "MODIFIED" }]
+  }
+]

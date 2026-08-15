@@ -1,0 +1,32 @@
+[
+  {
+    "sha": "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
+    "filename": "main.go",
+    "status": "modified",
+    "additions": 2,
+    "deletions": 1,
+    "changes": 3,
+    "blob_url": "https://github.com/example/repo/blob/abc/main.go",
+    "patch": "@@ -10,6 +10,8 @@\n+a\n-b"
+  },
+  {
+    "sha": "1a2b3c4d5e6f70819293a4b5c6d7e8f900112233",
+    "filename": "assets/logo.png",
+    "status": "added",
+    "additions": 0,
+    "deletions": 0,
+    "changes": 0,
+    "blob_url": "https://github.com/example/repo/blob/abc/assets/logo.png"
+  },
+  {
+    "sha": "2b3c4d5e6f708192a3b4c5d6e7f80910a1b2c3d4",
+    "filename": "old/path.go",
+    "status": "renamed",
+    "previous_filename": "older/path.go",
+    "additions": 0,
+    "deletions": 0,
+    "changes": 0,
+    "blob_url": "https://github.com/example/repo/blob/abc/old/path.go",
+    "patch": ""
+  }
+]

@@ -12,7 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
+	"github.com/els0r/toilmaster3000/internal/forge/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,7 +61,7 @@ JSON
 	prs, err := github.NewCLI(testRepo, testSearch).ListCandidates(context.Background())
 	require.NoError(t, err)
 	require.Len(t, prs, 2)
-	require.Equal(t, github.PR{Number: 7, Title: "chore: x", Author: "alice", URL: "https://gh/pull/7", Additions: 12, Deletions: 3, ChangedFiles: 4}, prs[0])
+	require.Equal(t, forge.PR{Number: 7, Title: "chore: x", Author: "alice", URL: "https://gh/pull/7", Additions: 12, Deletions: 3, ChangedFiles: 4}, prs[0])
 	require.Equal(t, "bob", prs[1].Author)
 
 	// additions/deletions/changedFiles ride the SAME single gh pr list --json call.
@@ -72,9 +73,11 @@ JSON
 }
 
 // G1b: ListCandidates pulls statusCheckRollup in the SAME single gh pr list
-// call and decodes each rollup entry into PR.Checks — a heterogeneous mix of
-// CheckRun (status/conclusion) and StatusContext (state). The CLI seam only
-// decodes; AllGreen judges. This lightly covers the shell-out decode.
+// call and turns each rollup entry into a NORMALISED PR.Checks entry — a
+// heterogeneous mix of CheckRun (status/conclusion) and StatusContext (state)
+// arriving as one neutral vocabulary. The CLI seam only decodes and
+// normalises; AllGreen judges. This lightly covers the shell-out; which raw
+// entry maps to which state is table-tested in TestNormalizeCheckState.
 func TestCLIListCandidatesDecodesStatusCheckRollup(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not available")
@@ -93,10 +96,10 @@ JSON
 	prs, err := github.NewCLI(testRepo, testSearch).ListCandidates(context.Background())
 	require.NoError(t, err)
 	require.Len(t, prs, 1)
-	require.Equal(t, []github.Check{
-		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"},
-		{Typename: "StatusContext", State: "SUCCESS"},
-	}, prs[0].Checks, "rollup entries decode into PR.Checks")
+	require.Equal(t, []forge.Check{
+		{State: forge.CheckPass},
+		{State: forge.CheckPass},
+	}, prs[0].Checks, "rollup entries decode and normalise into PR.Checks")
 
 	// The rollup rides the SAME single gh pr list --json call (no per-PR N+1).
 	got, err := os.ReadFile(argsFile)
@@ -206,10 +209,10 @@ JSON
 	since := time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC)
 	states, err := github.NewCLI(testRepo, testSearch).PRStatesSince(context.Background(), since)
 	require.NoError(t, err)
-	require.Equal(t, map[int]github.RawPRState{
-		42: {State: "MERGED", MergedAt: "2026-06-19T10:00:00Z"},
-		7:  {State: "OPEN", MergedAt: ""},   // JSON null -> "" -> open
-		9:  {State: "CLOSED", MergedAt: ""}, // null mergedAt -> closed-without-merging
+	require.Equal(t, map[int]forge.Lifecycle{
+		42: {State: forge.LifecycleMerged, MergedAt: "2026-06-19T10:00:00Z"},
+		7:  {State: forge.LifecycleOpen, MergedAt: ""},   // JSON null -> "" -> open
+		9:  {State: forge.LifecycleClosed, MergedAt: ""}, // null mergedAt -> closed-without-merging
 	}, states)
 
 	got, err := os.ReadFile(argsFile)
@@ -242,9 +245,9 @@ JSON
 
 	threads, err := github.NewCLI(testRepo, testSearch).UnresolvedThreads(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, map[int]github.RawReviewThreads{
-		21: {Nodes: []github.ReviewThread{{IsResolved: true}, {IsResolved: false}}},
-		22: {Nodes: []github.ReviewThread{}, HasMorePages: true},
+	require.Equal(t, map[int]forge.ReviewThreads{
+		21: {Nodes: []forge.ReviewThread{{IsResolved: true}, {IsResolved: false}}},
+		22: {Nodes: []forge.ReviewThread{}, HasMorePages: true},
 	}, threads)
 
 	got, err := os.ReadFile(argsFile)
@@ -317,7 +320,7 @@ JSON
 
 	files, err := github.NewCLI(testRepo, testSearch).Diff(context.Background(), 123)
 	require.NoError(t, err)
-	require.Equal(t, []github.FileDiff{
+	require.Equal(t, []forge.FileDiff{
 		{Filename: "main.go", Status: "modified", Additions: 2, Deletions: 1, Patch: "@@ -10,6 +10,8 @@\n+a\n-b"},
 	}, files)
 

@@ -1,0 +1,12 @@
+{
+  "title": "feat(api): add merges endpoint",
+  "body": "Adds the endpoint.\n\nCloses #12.",
+  "reviews": [
+    { "author": { "login": "alice_osag" }, "state": "APPROVED" },
+    { "author": { "login": "carol" }, "state": "CHANGES_REQUESTED" },
+    { "author": { "login": "dave" }, "state": "COMMENTED" },
+    { "author": { "login": "app/robo-reviewer" }, "state": "APPROVED" },
+    { "author": { "login": "erin" }, "state": "DISMISSED" },
+    { "author": { "login": "frank" }, "state": "PENDING" }
+  ]
+}
