@@ -140,14 +140,14 @@ func TestClaudeScreenKeepsTheTextOfAnErroredEnvelope(t *testing.T) {
 
 // scriptedClaudeAgent returns a Claude adapter whose side-effect seam is
 // scripted — the real claude CLI never runs in tests.
-func scriptedClaudeAgent(act func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Claude {
+func scriptedClaudeAgent(act func(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error)) *Claude {
 	return &Claude{act: act}
 }
 
 func TestClaudeActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 	req := composeReq()
 	var gotModel, gotPrompt string
-	c := scriptedClaudeAgent(func(_ context.Context, model, prompt, _ string) ([]byte, error) {
+	c := scriptedClaudeAgent(func(_ context.Context, model, prompt, _ string, _ []string) ([]byte, error) {
 		gotModel, gotPrompt = model, prompt
 		return envelope(t, "Posted a review comment on #42."), nil
 	})
@@ -161,6 +161,59 @@ func TestClaudeActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 		"the invoked prompt is exactly the notify composition — the ceiling rides every run")
 }
 
+// TestClaudeActForwardsGrantedToolsToTheProcessSeam proves the Request's
+// Tools (the hook's Requires.Grant, ADR 0031) reaches the process seam
+// verbatim — declared Tools were previously boot-checked but never delivered
+// to the actual invocation; this is the delivery.
+func TestClaudeActForwardsGrantedToolsToTheProcessSeam(t *testing.T) {
+	req := composeReq()
+	req.Tools = []string{"gh", "jq"}
+
+	var gotTools []string
+	c := scriptedClaudeAgent(func(_ context.Context, _, _, _ string, tools []string) ([]byte, error) {
+		gotTools = tools
+		return envelope(t, "Posted a review comment on #42."), nil
+	})
+
+	_, err := c.Act(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"gh", "jq"}, gotTools)
+}
+
+// TestClaudeAllowedToolsArgs is the command-construction seam for the act
+// leg's tool authority: absent Tools produces today's flags bit-for-bit
+// (a single "Bash(gh:*)" pattern), and declared Tools adds one "Bash(<tool>:*)"
+// pattern per granted tool under the SAME --allowedTools flag (ADR 0031
+// decision 4: additive, never a replacement).
+func TestClaudeAllowedToolsArgs(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  []string
+	}{
+		{
+			name:  "absent Tools grants exactly gh — today's single flag, bit-for-bit",
+			tools: []string{"gh"},
+			want:  []string{"--allowedTools", "Bash(gh:*)"},
+		},
+		{
+			name:  "declared Tools is additive under the same flag",
+			tools: []string{"gh", "jq"},
+			want:  []string{"--allowedTools", "Bash(gh:*)", "Bash(jq:*)"},
+		},
+		{
+			name:  "no tools at all grants no authority",
+			tools: nil,
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, claudeAllowedToolsArgs(tt.tools))
+		})
+	}
+}
+
 // The Request's WorkDir is what anchors the harness process, and it reaches
 // the process seam verbatim — that is the whole mechanism of ADR 0027. The
 // screen leg gets no anchor: AIScreen never populates the field, so a screen
@@ -170,7 +223,7 @@ func TestClaudeCarriesWorkDirToTheProcessSeam(t *testing.T) {
 	req.WorkDir = "/srv/skills-worktree"
 
 	var actWorkDir string
-	agent := &Claude{act: func(_ context.Context, model, prompt, workDir string) ([]byte, error) {
+	agent := &Claude{act: func(_ context.Context, model, prompt, workDir string, _ []string) ([]byte, error) {
 		actWorkDir = workDir
 		return envelope(t, "Posted a review comment on #42."), nil
 	}}
@@ -217,21 +270,21 @@ func TestClaudeCmdAnchorsTheRunAndNeverWidensTheGrant(t *testing.T) {
 
 func TestClaudeActFailuresSurfaceAsErrors(t *testing.T) {
 	// A crashed CLI surfaces its error.
-	c := scriptedClaudeAgent(func(context.Context, string, string, string) ([]byte, error) {
+	c := scriptedClaudeAgent(func(context.Context, string, string, string, []string) ([]byte, error) {
 		return nil, errors.New("claude -p: signal: killed")
 	})
 	_, err := c.Act(context.Background(), composeReq())
 	require.ErrorContains(t, err, "claude -p")
 
 	// An errored run envelope is an error, not a transcript.
-	c = scriptedClaudeAgent(func(context.Context, string, string, string) ([]byte, error) {
+	c = scriptedClaudeAgent(func(context.Context, string, string, string, []string) ([]byte, error) {
 		return []byte(`{"type": "result", "subtype": "error_during_execution", "is_error": true, "result": ""}`), nil
 	})
 	_, err = c.Act(context.Background(), composeReq())
 	require.ErrorContains(t, err, "errored")
 
 	// Non-envelope stdout (crash text) fails the decode.
-	c = scriptedClaudeAgent(func(context.Context, string, string, string) ([]byte, error) {
+	c = scriptedClaudeAgent(func(context.Context, string, string, string, []string) ([]byte, error) {
 		return []byte("panic: something broke"), nil
 	})
 	_, err = c.Act(context.Background(), composeReq())

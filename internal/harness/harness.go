@@ -27,6 +27,15 @@ type Request struct {
 	Author  string
 	URL     string
 	HeadSHA string
+
+	// Tools is the Act leg's tool authority — the hook's Requires.Grant
+	// against the active forge (ADR 0031 decision 4): the forge's own CLI
+	// plus whatever Requires.Tools declares, additive. Set by AINotifier and
+	// by nothing else: AIScreen never populates it, so a Screen run stays
+	// toolless exactly as it always has (the WorkDir precedent — the
+	// exclusion is enforced twice, once by the absent code path and once by
+	// every adapter's Screen leg never reading this field).
+	Tools []string
 }
 
 // Adapter is the harness seam (ADR 0023): one headless AI invocation per

@@ -202,7 +202,7 @@ func TestScreenerTimeoutBecomesAnErrorAttempt(t *testing.T) {
 func TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter(t *testing.T) {
 	var mu sync.Mutex
 	var prompts []string
-	agent := scriptedClaudeAgent(func(_ context.Context, _ string, prompt string, _ string) ([]byte, error) {
+	agent := scriptedClaudeAgent(func(_ context.Context, _ string, prompt string, _ string, _ []string) ([]byte, error) {
 		mu.Lock()
 		prompts = append(prompts, prompt)
 		mu.Unlock()
@@ -214,7 +214,7 @@ func TestNotifierRunnerFiresEndToEndThroughTheClaudeAdapter(t *testing.T) {
 	runner := hook.NewNotifierRunner(ledger, hook.NotifierInstance{
 		Spec:     spec,
 		Point:    hook.QueueEntered,
-		Notifier: NewAINotifier(spec, "acme/widgets", "", agent, &recordingTranscriber{}),
+		Notifier: NewAINotifier(spec, "acme/widgets", "", nil, agent, &recordingTranscriber{}),
 	})
 
 	pr := hook.PRContext{Point: hook.QueueEntered, Number: 7, Title: "feat: new endpoint",

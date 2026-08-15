@@ -41,7 +41,7 @@ func queueCtx() hook.PRContext {
 func TestAINotifierRealizesTheNotifierKindFromItsSpec(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Model: "sonnet", Prompt: "review Go code"}
 	var got Request
-	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(_ context.Context, req Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", []string{"gh", "jq"}, agentFunc(func(_ context.Context, req Request) (string, error) {
 		got = req
 		return "posted a review comment", nil
 	}), &recordingTranscriber{})
@@ -58,6 +58,7 @@ func TestAINotifierRealizesTheNotifierKindFromItsSpec(t *testing.T) {
 		Author:       "alice",
 		URL:          "https://github.com/acme/widgets/pull/7",
 		HeadSHA:      "feedface",
+		Tools:        []string{"gh", "jq"}, // the constructor's Requires.Grant, ADR 0031
 	}, got)
 }
 
@@ -70,7 +71,7 @@ func TestAINotifierTranscribesItsRun(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review assist", Harness: "claude", Prompt: "review it"}
 	sink := &recordingTranscriber{}
 	logs := captureLogs(t)
-	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(context.Context, Request) (string, error) {
 		return "Review posted (one `COMMENTED` review, no approval, no merge).", nil
 	}), sink)
 
@@ -99,14 +100,14 @@ func TestAINotifierTranscribesNothingWithoutText(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review assist", Harness: "claude", Prompt: "review it"}
 
 	failed := &recordingTranscriber{}
-	broken := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+	broken := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(context.Context, Request) (string, error) {
 		return "", errors.New("claude -p: signal: killed")
 	}), failed)
 	require.Error(t, broken.Notify(context.Background(), queueCtx()))
 	require.Empty(t, failed.rows, "a run that produced no text has no account to give")
 
 	silent := &recordingTranscriber{}
-	quiet := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+	quiet := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(context.Context, Request) (string, error) {
 		return "", nil
 	}), silent)
 	require.NoError(t, quiet.Notify(context.Background(), queueCtx()))
@@ -117,7 +118,7 @@ func TestAINotifierTranscribesNothingWithoutText(t *testing.T) {
 	// bare empty string here would make the rule mean one thing through copilot
 	// and another through claude, whose envelope hands its result up verbatim.
 	blank := &recordingTranscriber{}
-	whitespace := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+	whitespace := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(context.Context, Request) (string, error) {
 		return "  \n\t\n", nil
 	}), blank)
 	require.NoError(t, whitespace.Notify(context.Background(), queueCtx()))
@@ -133,7 +134,7 @@ func TestAINotifierTranscribesNothingWithoutText(t *testing.T) {
 func TestAINotifierTranscribesARunThatFailedAfterSpeaking(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review assist", Harness: "copilot", Prompt: "review it"}
 	sink := &recordingTranscriber{}
-	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(context.Context, Request) (string, error) {
 		return "Posted a review comment on #7.", errors.New("copilot -p: exit status 1")
 	}), sink)
 
@@ -154,21 +155,19 @@ func TestAINotifierCarriesItsConfiguredWorkDir(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "copilot", Prompt: "/golang-pr-review"}
 
 	var anchored Request
-	notifier := NewAINotifier(spec, "acme/widgets", "/srv/skills-worktree",
-		agentFunc(func(_ context.Context, req Request) (string, error) {
-			anchored = req
-			return "posted a review comment", nil
-		}), &recordingTranscriber{})
+	notifier := NewAINotifier(spec, "acme/widgets", "/srv/skills-worktree", nil, agentFunc(func(_ context.Context, req Request) (string, error) {
+		anchored = req
+		return "posted a review comment", nil
+	}), &recordingTranscriber{})
 	require.NoError(t, notifier.Notify(context.Background(), queueCtx()))
 	require.Equal(t, "/srv/skills-worktree", anchored.WorkDir)
 	require.Equal(t, "acme/widgets", anchored.Repo, "the anchor rides alongside repo, replacing nothing")
 
 	var unanchored Request
-	plain := NewAINotifier(spec, "acme/widgets", "",
-		agentFunc(func(_ context.Context, req Request) (string, error) {
-			unanchored = req
-			return "posted a review comment", nil
-		}), &recordingTranscriber{})
+	plain := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(_ context.Context, req Request) (string, error) {
+		unanchored = req
+		return "posted a review comment", nil
+	}), &recordingTranscriber{})
 	require.NoError(t, plain.Notify(context.Background(), queueCtx()))
 	require.Empty(t, unanchored.WorkDir)
 }
@@ -177,7 +176,7 @@ func TestAINotifierCarriesItsConfiguredWorkDir(t *testing.T) {
 // miss and never retries (ADR 0021); the species fabricates nothing.
 func TestAINotifierAgentFailureSurfacesAsError(t *testing.T) {
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", Prompt: "review it"}
-	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(context.Context, Request) (string, error) {
 		return "", errors.New("claude -p: signal: killed")
 	}), &recordingTranscriber{})
 
@@ -193,7 +192,7 @@ func TestAINotifierReadsPromptFileAtRunTimeAndFailsClosed(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("go instructions"), 0o644))
 	spec := hook.Spec{ID: "n1", Name: "go review", Harness: "claude", PromptFile: path}
 	var instructions string
-	notifier := NewAINotifier(spec, "acme/widgets", "", agentFunc(func(_ context.Context, req Request) (string, error) {
+	notifier := NewAINotifier(spec, "acme/widgets", "", nil, agentFunc(func(_ context.Context, req Request) (string, error) {
 		instructions = req.Instructions
 		return "", nil
 	}), &recordingTranscriber{})
@@ -203,7 +202,7 @@ func TestAINotifierReadsPromptFileAtRunTimeAndFailsClosed(t *testing.T) {
 
 	invoked := false
 	missing := hook.Spec{ID: "n2", Name: "go review 2", Harness: "claude", PromptFile: filepath.Join(t.TempDir(), "missing.md")}
-	broken := NewAINotifier(missing, "acme/widgets", "", agentFunc(func(context.Context, Request) (string, error) {
+	broken := NewAINotifier(missing, "acme/widgets", "", nil, agentFunc(func(context.Context, Request) (string, error) {
 		invoked = true
 		return "", nil
 	}), &recordingTranscriber{})

@@ -31,7 +31,7 @@ type Claude struct {
 	// seam rather than only inside an exec call no test may make.
 	fetchDiff func(ctx context.Context, repo string, number int) (string, error)
 	invoke    func(ctx context.Context, model, prompt, workDir string) ([]byte, error)
-	act       func(ctx context.Context, model, prompt, workDir string) ([]byte, error)
+	act       func(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error)
 }
 
 // NewClaude returns the production claude adapter, shelling out to the real
@@ -67,7 +67,7 @@ func (c *Claude) Screen(ctx context.Context, req Request) (string, error) {
 // decoded result text is returned as the transcript for the species to record;
 // nothing is extracted from it.
 func (c *Claude) Act(ctx context.Context, req Request) (string, error) {
-	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir)
+	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir, req.Tools)
 	if err != nil {
 		return salvage(resultText(out)), err
 	}
@@ -103,13 +103,35 @@ func claudeInvoke(ctx context.Context, model, prompt, workDir string) ([]byte, e
 }
 
 // claudeActInvoke is claudeInvoke's side-effecting sibling (the Agent seam's
-// production leg): the same headless run, plus the gh tool authority —
-// --allowedTools "Bash(gh:*)" — so the agent can fetch the diff and post its
-// review comment itself. The authority is the WHOLE gh CLI by design: tm3k
-// cannot compel an agent holding gh auth anyway, so narrowing the allowlist
-// would only feign a boundary the prompt ceiling actually carries (ADR 0023).
-func claudeActInvoke(ctx context.Context, model, prompt, workDir string) ([]byte, error) {
-	return runClaude(ctx, model, prompt, workDir, "--allowedTools", "Bash(gh:*)")
+// production leg): the same headless run, plus the tool authority tools
+// grants — one --allowedTools flag naming a Bash(<tool>:*) pattern per
+// granted tool, so the agent can fetch the diff and post its review comment
+// itself (ADR 0023), and use whatever else the hook's Requires.Tools declared
+// (ADR 0031 decision 4). The authority is each tool's WHOLE CLI by design:
+// tm3k cannot compel an agent holding auth anyway, so narrowing the allowlist
+// within one tool would only feign a boundary the prompt ceiling actually
+// carries (ADR 0023) — selecting WHICH tools are available is the part that
+// is actually enforced (ADR 0031 decision 5).
+func claudeActInvoke(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error) {
+	return runClaude(ctx, model, prompt, workDir, claudeAllowedToolsArgs(tools)...)
+}
+
+// claudeAllowedToolsArgs turns a hook's granted tools into the --allowedTools
+// flag pair(s) claude's CLI expects: one flag occurrence naming one
+// Bash(<tool>:*) pattern per tool. Absent tools (the pre-ADR-0031 case)
+// produces nothing — the caller supplies ["gh"] via Requires.Grant when a
+// hook declares nothing, so this is what makes "today's flags bit-for-bit"
+// true without this function hard-coding "gh" itself.
+func claudeAllowedToolsArgs(tools []string) []string {
+	if len(tools) == 0 {
+		return nil
+	}
+	args := make([]string, 0, len(tools)+1)
+	args = append(args, "--allowedTools")
+	for _, tool := range tools {
+		args = append(args, fmt.Sprintf("Bash(%s:*)", tool))
+	}
+	return args
 }
 
 // claudeCmd builds one headless claude CLI invocation without running it: the
