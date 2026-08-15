@@ -34,15 +34,17 @@ Cross-cutting principles the entries below reference by name.
   in the pull, any day), the heartbeat's *this-cycle* count, and the feed's
   *today* count. Labels disambiguate; do not "unify" them.
 - **One batched call per concern** — everything the cycle needs rides a fixed
-  set of batched `gh` calls; per-PR calls are sanctioned only for rare,
+  set of batched forge calls; per-PR calls are sanctioned only for rare,
   user-consented actions (the Diff card, ADR 0008; the moment-of-merge view,
   ADR 0016). ADR 0007 records the N+1 this doctrine exists to prevent. Hooks
   extend the sanction: **configuring a hook is the consent** for the per-PR
   calls the hook itself makes — tm3k's own cycle stays batched; the hook's
   fetches are the hook's business (ADR 0023).
-- **Decode vs judge** — the `gh` seam only decodes GitHub's raw shapes; pure,
-  table-tested folds do the judging (`AllGreen`, `CollapsePRState`, the stage
-  folds). Never let the seam grow an opinion.
+- **Decode vs judge** — the forge adapter only decodes its forge's raw shapes
+  and **normalises** them into the neutral vocabulary; pure, table-tested folds
+  do the judging (`AllGreen`, `CollapsePRState`, the stage folds), and there is
+  exactly one of each across all forges. Never let an adapter grow an opinion:
+  normalising a name is decode, deciding what it means is judge (ADR 0030).
 - **Consent model** — inbound autonomy is *rule-driven* (a match approves);
   outbound autonomy is *consent-driven* (only an explicit per-PR **Arm**
   authorizes a merge; no rules, no matching). Only `CHANGES_REQUESTED`
@@ -63,6 +65,36 @@ Cross-cutting principles the entries below reference by name.
 
 ## Glossary
 
+### Forge
+The code-hosting platform one tm3k instance drives: **GitHub** (via `gh`) or
+**GitLab** (via `glab`). Selected once at boot; **one instance serves exactly
+one forge** — every persisted key is a bare PR number, so a second forge means
+a second process with its own `.state` (ADR 0030).
+
+**"PR" is the canonical word for the thing on both forges** — GitLab's *merge
+request* is a PR here, and its `iid` (project-scoped, user-visible) is the
+**Number** every ledger, snapshot and link keys on, never the instance-global
+`id`. *Avoid "MR" as a domain term; it survives only in rendered copy, which
+names the active forge ("Open on GitLab").*
+
+The **forge adapter** is the seam. It **normalises** each forge's raw
+vocabulary into the one neutral vocabulary the pure folds judge — decode vs
+judge is unchanged, and `AllGreen`/`CollapsePRState`/the stage folds stay
+single. Adapters deliberately do **not** share a transport (ADR 0030).
+
+### Forge precondition
+A fact about the *toolchain or the instance* tm3k requires before it will run
+at all — **tm3k targets a current CLI against a current forge, and a stale one
+fails hard at boot** rather than running half-alive (ADR 0030). Two axes, and
+the message must name which is stale: the **CLI** on PATH, and the **instance**
+serving it — GitLab's reviewer "requested changes" signal is a *server-side*
+field, so a brand-new `glab` against an old self-hosted GitLab still cannot
+fetch it. Without that signal an armed PR could merge over an open objection,
+and "only `CHANGES_REQUESTED` withdraws consent" is an invariant. The project's
+squash option is the same footing (ADR 0016 always squashes). **An instance
+that boots is an instance that can merge** — there is deliberately no
+degraded mode, no capability wire field, and no banner.
+
 ### Inbound / Outbound (directions)
 **Inbound**: PRs others author, flowing toward your approval — verb `approve`,
 autonomy rule-driven. **Outbound**: PRs you author, flowing toward merge — verb
@@ -71,9 +103,15 @@ tm3k appends `-author:@me` to the configured inbound search at startup, so the
 two pulls are disjoint by construction. "Staging" is an inbound-only word.
 
 ### Candidate set — Incoming vs Eligible
-The inbound pull: one `gh pr list` per cycle against the global
-`--repo`/`TM3K_REPO` + `--search`/`TM3K_SEARCH` (flag overrides env; both
-required; not per-rule). Two scopes, two names — do not conflate:
+The inbound pull: one batched call per cycle against the global
+`--repo`/`TM3K_REPO` + a **forge-typed selector** (flag overrides env; both
+required; not per-rule). One concept, two shapes: GitHub's is the opaque
+`--search`/`TM3K_SEARCH` query string, GitLab's is typed arguments — the core
+never parses either, and the three derived pulls (exclude-self, authored-by-
+self, reviewed-by-self-since) are **seam obligations the adapter satisfies
+natively**, never string concatenation (ADR 0030). Consequence, accepted: a
+GitHub candidate set is not portable — `team-review-requested:owner/team` has
+no GitLab equivalent. Two scopes, two names — do not conflate:
 - **Incoming** — the **raw** pull, every PR the search returned this cycle,
   before any gate. The Cycle Funnel's parent set.
 - **Eligible candidate** — an Incoming PR that passed both Gates. Only eligible
@@ -84,12 +122,19 @@ Two hard-wired Gates — core principles, not user-configurable Rules — evalua
 after the dedup skip and **before** parse, Rules, and the breaking-change
 Invariant (ADR 0005):
 - **Ready-for-Review Gate** — draft PRs are dropped.
-- **All-Green Gate** — eligible only if the pure fold `github.AllGreen` holds:
-  **at least one** check rollup entry and every entry passes
-  (`SKIPPED`/`NEUTRAL` count as pass). **Empty pipeline ⇒ not eligible** — an
+- **All-Green Gate** — eligible only if the pure fold `AllGreen` holds over the
+  PR's **normalised check entries** (each pass / fail / pending): **at least
+  one** entry and every entry passes. **Empty pipeline ⇒ not eligible** — an
   auto-approver must never fire on no signal. A pending pipeline blocks
   harmlessly: the set is recomputed each cycle, so the PR becomes eligible when
   checks finish.
+
+  Entry **cardinality is a forge fact, not a domain one**: GitHub contributes
+  one entry per rollup check (`SKIPPED`/`NEUTRAL` normalise to pass), GitLab
+  exactly one — its `head_pipeline` status *is* the verdict, so tm3k can never
+  disagree with GitLab about what green means. Because cardinality varies, the
+  **failing-check count is adapter-supplied**, not folded from the entries
+  (ADR 0030).
 
 ### Rule
 A named, enable/disable-able matching condition, persisted across restarts and
@@ -102,7 +147,8 @@ managed in the UI. Every Rule has a **class** determining what a match *does*
 
 The predicate vocabulary is identical across both classes — only the outcome
 differs. A Rule predicates over: **Author** (include/exclude lists, `@me`
-resolved via `gh api user`), **parsed title parts** (separate Include/Exclude
+resolved once at boot via the Forge seam — and holding *that* forge's logins,
+so a rule set is not portable between forges), **parsed title parts** (separate Include/Exclude
 regex per `type`/`scope`/`description` — decomposed from v1, never raw-title
 regex), and **Diff size** (`DiffMin`/`DiffMax` over `additions + deletions`,
 `0 ⇒ unconstrained`, `DiffMin ≤ DiffMax` enforced; the empty-rule guard counts
@@ -168,7 +214,15 @@ entries in `.config/hooks.yaml`, realized by harness adapters
 hermetic, tool-locked to its leg) that fetch the diff themselves and return what
 the harness said. Extracting a **Verdict** from that text structurally — never
 fabricated in either direction — is the Screen species' work, not the adapter's
-(ADR 0028). OpenCode inherits the trusted operator provider/configuration setup
+(ADR 0028). **Hooks run on either Forge**: the forge adapter declares the CLI
+vocabulary (binary, diff and comment command shapes, and the forbidden
+approve/merge verbs in *both* porcelain and `api` form) and **one** prompt
+composer renders the ceiling from it — never per-forge prompt copies, which is
+ADR 0014's rule applied to prose. The ceiling stays prompt-enforced on both
+forges for the unchanged ADR 0023 reason: `gh api` / `glab api` reach the
+approve endpoint under any verb allowlist, so narrowing one would feign a
+boundary. *Whether* a given hook may run here is a different question with a
+hard answer — see Hook eligibility. OpenCode inherits the trusted operator provider/configuration setup
 but overlays a tool-free Screen profile or a whole-`gh` Notifier profile; its
 shell-text permission matcher cannot safely restrict individual `gh` verbs, so
 the approval/merge ceiling remains prompt-enforced (ADR 0029). **A Screen is
@@ -198,6 +252,30 @@ Which skill runs is named in the hook's `Prompt` — the harness-coupling escape
 hatch (ADR 0026) — and composition requires the posted review to name the
 profile it applied, since tm3k cannot verify that a skill resolved.
 
+### Hook eligibility (Requires)
+A hook may declare **preconditions** it needs to run — `Requires.Forge` and
+`Requires.Tools` (binaries on PATH) — hard-checked at boot (ADR 0031). It
+exists because tm3k **cannot inspect what a hook does**: with `WorkDir` the
+real behaviour lives in a skill file, so a skill that shells `gh` is invisible
+to tm3k. The operator asserts it; tm3k enforces the assertion but cannot verify
+it is *complete* — an opt-in correctness control, never a boundary.
+
+**Ineligible is not broken, and only one kind may decline.** A hook declaring
+it does not apply here (another forge, or the other forge's CLI in `Tools`) is
+**ineligible** — skipped and logged, both kinds; that is what lets one
+`hooks.yaml` serve both forges from two instances. A hook that *is* in scope
+and cannot run is **broken**, and here the kinds part exactly along ADR 0021's
+failure contracts: a broken **Notifier declines** (its failure can never block
+or divert an engine action), a broken **Screen refuses the boot** — soft-
+disabling a Screen does not degrade a gate, it removes it, and every PR it held
+would be auto-approved.
+
+`Tools` is **additive** to the tool grant (the active Forge's CLI plus what it
+names), never a replacement — an incomplete list can never strip authority a
+hook already had. Which CLI a hook may invoke is thereby *enforced*; the
+never-approve/never-merge ceiling *within* a CLI stays prose, because
+`gh api` / `glab api` escape any verb allowlist (ADR 0023, 0031).
+
 ### Transcript / Transcript Sink
 An AI run's **account of itself**: the harness's result text, recorded verbatim
 by the species that ran it (ADR 0028). The **Transcript Sink** is where it goes
@@ -215,9 +293,12 @@ the text *after* recording it: a run that yields no verdict document is exactly
 the run whose text you need.
 
 ### Approved elsewhere
-An Incoming PR GitHub already reports `APPROVED` by someone other than tm3k
-(detected via `reviewDecision` on the cycle fetch; number absent from
-`approvals.jsonl`). Soft dedup (ADR 0013): tm3k **does not re-approve and
+An Incoming PR the Forge already reports as **approved** by someone other than
+tm3k (the normalised review decision on the cycle fetch; number absent from
+`approvals.jsonl`). Approved means **the review requirements are met**, not
+merely that someone clicked — GitHub's `reviewDecision: APPROVED` and GitLab's
+`approved` both carry that meaning, and neither is the same as "has at least
+one approver" (ADR 0030). Soft dedup (ADR 0013): tm3k **does not re-approve and
 records nothing** — the toil is already gone, and recording it would
 double-count saved switches across the team's multiple instances. Shown as a
 highlighted "approved elsewhere" row in the funnel's approved stage: a PR
@@ -243,7 +324,7 @@ carries:
   aid, not a GitHub mirror; the sanctioned on-demand per-PR fetch — ADR 0008,
   widened to Staging and outbound by ADR 0015/0017). Not shown on the feed —
   diff size is noise when merely verifying the robot behaved.
-- An **Approve** button: an explicit human override (`gh pr review --approve`)
+- An **Approve** button: an explicit human override (the Forge seam's approve)
   recorded to the feed as `matched_rule: "human approval: <reasons joined>"`
   and removed from the queue snapshot immediately (ADR 0018).
 
@@ -307,7 +388,7 @@ the reasons, so the feed self-documents why a human stepped in. *(Named "feed",
 not "inbox" — nothing here awaits action.)*
 
 ### PR State
-The **live GitHub lifecycle** of an already-approved PR, surfaced on each feed
+The **live Forge lifecycle** of an already-approved PR, surfaced on each feed
 entry: `open` (green) / `merged` (purple — the happy outcome) / `closed` (red —
 closed *without* merging: a deliberately-surfaced robot **false-positive**
 signal, not a greyed-out edge case). Volatile and never persisted — distinct
@@ -356,11 +437,15 @@ clear the arm (arm-while-red is the core use case); entries are cleaned up when
 the PR leaves the pull merged/closed.
 
 **Merge**: each cycle, an Armed PR that is green + `APPROVED` + zero unresolved
-review threads + `mergeable == MERGEABLE` is merged in tm3k's own loop —
-replicating `gh land` (squash, delete branch, commit = PR title + live-fetched
-body + `Approved by:` trailer), not GitHub native auto-merge (ADR 0016). A
-conflicted Ready row stays in Ready with a **conflict marker** and never
-auto-merges — fixing the conflict is on you, which is what Ready means. The
+review threads + mergeable is merged in tm3k's own loop — replicating
+`gh land` (squash, delete branch, commit = PR title + live-fetched body +
+`Approved by:` trailer), not the forge's native auto-merge (ADR 0016). A Ready
+row the forge will not merge stays in Ready wearing a **merge-blocked marker
+that carries the forge's own reason** — `conflict` on either forge, and on
+GitLab also `needs rebase` (a fast-forward project's precondition, with no
+GitHub analogue). It never auto-merges: clearing it is on you, which is what
+Ready means, and the reason is shown because a silent forever-retry is the one
+outcome that teaches nobody anything (ADR 0030). The
 **Discussion gate** is realized structurally: the merge step only walks Ready,
 so the stage partition *is* the gate. Threads are the only resolvable comment
 species, so only they gate (a bot comment or "LGTM" body would otherwise wedge
@@ -475,13 +560,16 @@ agreed model wins.
 
 ## Engine
 
-Shells out to the `gh` CLI (reuses your auth; no PAT) behind the decode-only
-`GitHubClient` seam; a fake backs the engine tests. Per cycle, three batched
-calls — inbound list (all rule/gate/funnel fields including `reviewDecision`,
-`isDraft`, `statusCheckRollup`, diff counts — no N+1), outbound list
-(+`mergeable`), and the GraphQL unresolved-threads search (GraphQL is forced:
-`isResolved` exists nowhere else — ADR 0019) — then two tail steps: the batched
-PR-State refresh (ADR 0007) and the merge step (ADR 0016).
+Shells out to the active Forge's CLI (`gh` or `glab` — reuses your auth; no
+PAT) behind the decode-and-normalise seam; a fake backs the engine tests. Per
+cycle, three batched calls — the inbound pull (all rule/gate/funnel fields —
+no N+1), the outbound pull (+ mergeability), and the unresolved-threads pull —
+then two tail steps: the batched PR-State refresh (ADR 0007) and the merge step
+(ADR 0016). **Which calls those are is the adapter's business**: GitHub rides
+`gh pr list --json` plus one `gh api graphql` for threads (GraphQL is forced
+there: `isResolved` exists nowhere else — ADR 0019); GitLab rides
+`glab api graphql` throughout, because its REST list carries neither diff
+counts nor changed-file paths and both are load-bearing (ADR 0030).
 
 - **Loop**: one goroutine, `RunCycleOnce(); sleep; repeat` — sleep *after*, so
   a slow cycle can never overlap itself; never a Ticker. Default interval 5m,
@@ -504,7 +592,11 @@ PR-State refresh (ADR 0007) and the merge step (ADR 0016).
   empty-rule check) stay in service code. Prefix `/api/toilmaster3000/v1`.
 - **The endpoint inventory is `openapi.json`** — generated from the Go DTOs,
   committed, and drift-guarded by `make check` (ADR 0003). This file does not
-  duplicate it.
+  duplicate it. One endpoint is **boot-immutable, not live**: `/instance`
+  carries the active Forge and the repo, fetched once at mount rather than on
+  the 10s poll — permanent facts have no business on the heartbeat. It carries
+  no capability verdict: an instance that boots is an instance that can merge
+  (ADR 0030).
 - **Wire boundary**: snake_case everywhere, owned exclusively by server-side
   DTOs mapped through named converters; engine/domain/disk types never cross
   the wire, and identical-looking DTO/engine pairs are deliberate decoupling —
@@ -519,8 +611,10 @@ PR-State refresh (ADR 0007) and the merge step (ADR 0016).
   - `.config/settings.yaml` — the analytics constants; self-healing reseed on a
     stale schema (ADR 0010/0012).
   - `.config/hooks.yaml` — Screens + Notifiers, declarative AI-species
-    fields; hand-edited, boot-loaded, preflight-validated; stable generated
-    `Id`s self-healed at boot, no CRUD (ADR 0023).
+    fields plus the optional `Requires` block; hand-edited, boot-loaded,
+    preflight-validated; stable generated `Id`s self-healed at boot, no CRUD
+    (ADR 0023). One file can serve both Forges: hooks scoped elsewhere are
+    ineligible, not errors (ADR 0031).
   - `.state/approvals.jsonl` — append-only; both the dedup set (loaded at
     startup) and the feed's source.
   - `.state/merges.jsonl` — append-only merge ledger (ADR 0016).
@@ -540,9 +634,12 @@ PR-State refresh (ADR 0007) and the merge step (ADR 0016).
     AI species, **never read back**: no boot load, no wire surface, and
     therefore no line-length limit — a future reader must not inherit the
     fired-ledger's 1 MB scanner buffer (ADR 0028).
-- **Preflight (fail fast at boot)**: `gh` installed and authenticated; `@me`
-  resolved once; `:8666` free; and **the configured repo visible to the active
-  `gh` identity** — load-bearing because the search API returns an **empty
+- **Preflight (fail fast at boot)**: the active Forge's CLI (`gh` / `glab`)
+  installed, authenticated, and **current** (see Forge precondition — a stale
+  CLI or instance refuses the boot, naming which); `@me` resolved once; `:8666`
+  free; every in-scope hook runnable (ineligible hooks are skipped, a broken
+  Screen refuses — ADR 0031); and **the configured repo visible to the active
+  identity** — load-bearing because the search API returns an **empty
   result, not an error**, for a repo the identity cannot see: without the
   check, a wrong active account yields perpetual `outcome: ok` with zero counts
   everywhere — silent blindness the `dropped` count cannot catch because it
@@ -554,14 +651,22 @@ PR-State refresh (ADR 0007) and the merge step (ADR 0016).
 ## Testing
 
 Test weight is on the correctness-critical pure core — parser, matcher, folds,
-validator, date math — table-driven with `testify/require`; `gh` shell-out and
-HTTP handlers get lighter coverage, and the frontend tests pure logic (Draft
-round-trip, validation, summary) before DOM. Conventions and single-test
-invocations: `docs/development.md`.
+validator, date math, **and each adapter's normalisation** — table-driven with
+`testify/require`; the frontend tests pure logic (Draft round-trip, validation,
+summary) before DOM. **The line is pure vs I/O, not core vs seam** (ADR 0030):
+normalisation lives in the seam but decides what "green" means, and the shared
+folds cannot catch a mis-mapped status because they only ever see the
+normalised value — so it is tested at core weight against recorded raw
+responses in `testdata/`, while exec and wire I/O stay light. Conventions and
+single-test invocations: `docs/development.md`.
 
 ## Deferred / not yet modelled
 
 - **Reclassifying a rule in place** — MVP is delete + recreate (ADR 0004).
+- **More than one Forge per instance** — every persisted key is a bare PR
+  number, so two forges would need a composite key and a migration of five
+  ledgers to buy one process instead of two (ADR 0030). Revisit only if
+  running two instances actually chafes.
 - **`BREAKING CHANGE:` body-footer detection** — needs fetching PR bodies.
 - **Dismiss action** on queue items — needs persistent hidden-state.
 - **Outbound analytics** — whether/how a merge counts as a saved switch is
