@@ -3,12 +3,12 @@ package engine
 import (
 	"context"
 
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 )
 
 // OutboundItem is one authored PR itemized in an outbound stage list. It is
 // the engine's internal read-model — derived live each cycle, never persisted —
-// carrying just enough to render a row plus the raw Mergeable signal (the wire
+// carrying just enough to render a row plus the Mergeable signal (the wire
 // layer derives the Ready conflict marker from it; the stage fold never reads
 // it). The wire DTO is server.OutboundItem, mapped via outboundItemToBody (ADR
 // 0002). Like FunnelItem it carries no json tags: the snapshot is a pure
@@ -21,12 +21,12 @@ type OutboundItem struct {
 	Additions    int
 	Deletions    int
 	ChangedFiles int
-	// Mergeable is gh's raw mergeability (MERGEABLE | CONFLICTING | UNKNOWN)
-	// from the authored list call. A merge precondition, not a stage boundary:
-	// a conflicted Ready item stays in Ready carrying it.
-	Mergeable string
+	// Mergeable is the PR's normalised mergeability from the authored list call.
+	// A merge precondition, not a stage boundary: a conflicted Ready item stays
+	// in Ready carrying it.
+	Mergeable forge.Mergeability
 	// UnresolvedThreads is the PR's judged unresolved-review-thread count from
-	// the cycle's threads call (github.UnresolvedCount over the raw
+	// the cycle's threads call (forge.UnresolvedCount over the normalised
 	// connection, ADR 0019) — the Discussion-gate predicate the stage fold
 	// consumed, carried so the wire can render it on the row. It rides EVERY
 	// item, whatever the stage: only the approved tail folds on it (precedence
@@ -51,7 +51,7 @@ type OutboundItem struct {
 // construction in the literal sense. The merge step walks ONLY Ready: In
 // Discussion never merging is the partition itself, not an extra merge-step
 // clause (the Discussion gate, ADR 0019).
-type Outbound map[github.OutboundStage][]OutboundItem
+type Outbound map[forge.OutboundStage][]OutboundItem
 
 // Outgoing is the size of the raw authored pull, DERIVED by folding the
 // partition rather than stored beside it (ADR 0025). Nothing decrements it, so
@@ -69,7 +69,7 @@ func (ob Outbound) Outgoing() int {
 // through (the Arm gate's stage, the Diff card's changed_files): it ranges the
 // MAP, so it is complete over stages by construction — a stage nobody has
 // thought of yet is searched like every other.
-func (ob Outbound) find(number int) (OutboundItem, github.OutboundStage, bool) {
+func (ob Outbound) find(number int) (OutboundItem, forge.OutboundStage, bool) {
 	for stage, items := range ob {
 		for _, it := range items {
 			if it.Number == number {
@@ -116,7 +116,7 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 	// empty-feed precedent of the PR-State refresh); otherwise its result is
 	// load-bearing for the partition, so a failure fails CLOSED: better a
 	// blank funnel than an In-Discussion PR guessed into Ready and merged.
-	threads := map[int]github.RawReviewThreads{}
+	threads := map[int]forge.ReviewThreads{}
 	if len(authored) > 0 {
 		threads, err = e.client.UnresolvedThreads(ctx)
 		if err != nil {
@@ -133,8 +133,8 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 	// threads — the zero connection judges to zero unresolved.
 	ob := Outbound{}
 	for _, pr := range authored {
-		unresolved := github.UnresolvedCount(threads[pr.Number])
-		stage := github.ClassifyOutboundStage(pr, unresolved)
+		unresolved := forge.UnresolvedCount(threads[pr.Number])
+		stage := forge.ClassifyOutboundStage(pr, unresolved)
 		ob[stage] = append(ob[stage], outboundItem(pr, unresolved))
 	}
 
@@ -149,7 +149,7 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 	// (which is why the keys read exactly as they always have). Everything that
 	// must be COMPLETE ranges the map instead; here an omission would be merely
 	// cosmetic.
-	stages := github.OutboundStages()
+	stages := forge.OutboundStages()
 	args := make([]any, 0, 2+2*len(stages))
 	args = append(args, "outgoing", ob.Outgoing())
 	for _, stage := range stages {
@@ -163,7 +163,7 @@ func (e *Engine) rebuildOutbound(ctx context.Context) {
 	// current. It is handed ONLY Ready — the Discussion gate is the signature,
 	// not a merge-step clause (ADR 0019). A failed outbound fetch returned
 	// early — the robot never merges on stale data (ADR 0016).
-	e.mergeArmedReady(ctx, ob[github.OutboundStageReady])
+	e.mergeArmedReady(ctx, ob[forge.OutboundStageReady])
 }
 
 // setOutbound swaps the outbound snapshot under lock, publishing the map BY
@@ -181,7 +181,7 @@ func (e *Engine) setOutbound(ob Outbound) {
 
 // outboundItem projects one authored PR plus its judged unresolved-thread
 // count into its stage-list item.
-func outboundItem(pr github.PR, unresolvedThreads int) OutboundItem {
+func outboundItem(pr forge.PR, unresolvedThreads int) OutboundItem {
 	return OutboundItem{
 		Number:            pr.Number,
 		Title:             pr.Title,

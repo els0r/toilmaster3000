@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/armed"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +21,7 @@ import (
 // stage, so the eighth stage is hand-built into the partition here (the
 // staging_internal_test.go / manualapprove_internal_test.go precedent).
 func TestArmSurvivesAnUnanticipatedStage(t *testing.T) {
-	const hypothetical = github.OutboundStage("hypothetical")
+	const hypothetical = forge.OutboundStage("hypothetical")
 
 	arms, err := armed.NewStore(filepath.Join(t.TempDir(), "armed.json"))
 	require.NoError(t, err)

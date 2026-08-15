@@ -9,7 +9,8 @@ import (
 
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
+	"github.com/els0r/toilmaster3000/internal/forge/github"
 	"github.com/els0r/toilmaster3000/internal/server"
 	"github.com/stretchr/testify/require"
 )
@@ -20,19 +21,19 @@ import (
 // server URL.
 func outboundServer(t *testing.T) string {
 	t.Helper()
-	fake := github.NewFake()
-	fake.Authored = []github.PR{
+	fake := forge.NewFake()
+	fake.Authored = []forge.PR{
 		{Number: 11, Title: "feat(ui): wip panel", Author: "me", URL: "u11", IsDraft: true, Checks: greenChecks()},
-		{Number: 12, Title: "fix(api): broken", Author: "me", URL: "u12", Checks: []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}},
-		{Number: 13, Title: "fix(ci): building", Author: "me", URL: "u13", Checks: []github.Check{{Typename: "CheckRun", Status: "IN_PROGRESS"}}},
-		{Number: 14, Title: "feat(db): objected", Author: "me", URL: "u14", Checks: greenChecks(), ReviewDecision: "CHANGES_REQUESTED"},
-		{Number: 15, Title: "feat(web): pending", Author: "me", URL: "u15", Checks: greenChecks(), ReviewDecision: "REVIEW_REQUIRED", Additions: 40, Deletions: 2, ChangedFiles: 3},
-		{Number: 16, Title: "feat(cli)!: approved", Author: "me", URL: "u16", Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "CONFLICTING"},
-		{Number: 17, Title: "feat(sdk): approved too", Author: "me", URL: "u17", Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
-		{Number: 18, Title: "feat(gw): approved with nits", Author: "me", URL: "u18", Checks: greenChecks(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
+		{Number: 12, Title: "fix(api): broken", Author: "me", URL: "u12", Checks: []forge.Check{{State: forge.CheckFail}}},
+		{Number: 13, Title: "fix(ci): building", Author: "me", URL: "u13", Checks: []forge.Check{{State: forge.CheckPending}}},
+		{Number: 14, Title: "feat(db): objected", Author: "me", URL: "u14", Checks: greenChecks(), ReviewDecision: forge.ReviewChangesRequested},
+		{Number: 15, Title: "feat(web): pending", Author: "me", URL: "u15", Checks: greenChecks(), ReviewDecision: forge.ReviewNone, Additions: 40, Deletions: 2, ChangedFiles: 3},
+		{Number: 16, Title: "feat(cli)!: approved", Author: "me", URL: "u16", Checks: greenChecks(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableConflicting},
+		{Number: 17, Title: "feat(sdk): approved too", Author: "me", URL: "u17", Checks: greenChecks(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableMergeable},
+		{Number: 18, Title: "feat(gw): approved with nits", Author: "me", URL: "u18", Checks: greenChecks(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableMergeable},
 	}
-	fake.SetThreads(18, github.RawReviewThreads{
-		Nodes: []github.ReviewThread{{IsResolved: false}, {IsResolved: false}, {IsResolved: true}},
+	fake.SetThreads(18, forge.ReviewThreads{
+		Nodes: []forge.ReviewThread{{IsResolved: false}, {IsResolved: false}, {IsResolved: true}},
 	})
 	eng, store := newEngine(t, fake)
 	eng.RunCycleOnce(context.Background())
@@ -111,12 +112,12 @@ func TestOutboundSnapshotMapping(t *testing.T) {
 
 // armedAuthored is a minimal authored pull spanning the armable stages plus a
 // Changes-Requested PR, for the arm/disarm endpoint tests.
-func armedAuthored() []github.PR {
-	return []github.PR{
+func armedAuthored() []forge.PR {
+	return []forge.PR{
 		{Number: 21, Title: "feat(a): red", Author: "me", URL: "u21",
-			Checks: []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}},
-		{Number: 22, Title: "feat(b): objected", Author: "me", URL: "u22", Checks: greenChecks(), ReviewDecision: "CHANGES_REQUESTED"},
-		{Number: 23, Title: "feat(c): pending", Author: "me", URL: "u23", Checks: greenChecks(), ReviewDecision: "REVIEW_REQUIRED"},
+			Checks: []forge.Check{{State: forge.CheckFail}}},
+		{Number: 22, Title: "feat(b): objected", Author: "me", URL: "u22", Checks: greenChecks(), ReviewDecision: forge.ReviewChangesRequested},
+		{Number: 23, Title: "feat(c): pending", Author: "me", URL: "u23", Checks: greenChecks(), ReviewDecision: forge.ReviewNone},
 	}
 }
 
@@ -124,9 +125,9 @@ func armedAuthored() []github.PR {
 // the given authored pull, with the armed store over an explicit armed.json
 // path so a restart test can rebuild everything over the same file. It returns
 // the server URL.
-func newArmedOutboundServer(t *testing.T, armedPath string, authored []github.PR) string {
+func newArmedOutboundServer(t *testing.T, armedPath string, authored []forge.PR) string {
 	t.Helper()
-	fake := github.NewFake()
+	fake := forge.NewFake()
 	fake.Authored = authored
 	store := storeWith(t, matchAllChores())
 	arms, err := armed.NewStore(armedPath)

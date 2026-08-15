@@ -28,7 +28,8 @@ import (
 
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
+	"github.com/els0r/toilmaster3000/internal/forge/github"
 	"github.com/els0r/toilmaster3000/internal/harness"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
@@ -492,7 +493,7 @@ func execGhAuthStatus(ctx context.Context) error {
 // resolveSelfLogin resolves the @me author token once via the gh seam
 // (`gh api user`). A failure here is a hard preflight error: without @me the
 // matcher cannot evaluate author rules. It is testable via the Fake client.
-func resolveSelfLogin(ctx context.Context, client github.GitHubClient) (string, error) {
+func resolveSelfLogin(ctx context.Context, client forge.Client) (string, error) {
 	login, err := client.CurrentUser(ctx)
 	if err != nil {
 		return "", fmt.Errorf("resolve @me via `gh api user`: %w", err)
@@ -512,7 +513,7 @@ func resolveSelfLogin(ctx context.Context, client github.GitHubClient) (string, 
 // needs the EMU work account) boots fine and reports `ok` with zero counts
 // forever. selfLogin is the @me login preflight already resolved — that IS
 // the active identity.
-func checkRepoVisible(ctx context.Context, client github.GitHubClient, repo, selfLogin string) error {
+func checkRepoVisible(ctx context.Context, client forge.Client, repo, selfLogin string) error {
 	if err := client.CheckRepoVisible(ctx); err != nil {
 		return fmt.Errorf("repo %s is not visible to the active gh account %q: switch identity (`gh auth switch`) or run with a GH_TOKEN that can see it: %w", repo, selfLogin, err)
 	}

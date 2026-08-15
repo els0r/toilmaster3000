@@ -20,7 +20,7 @@ import (
 
 	"github.com/els0r/toilmaster3000/internal/armed"
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/els0r/toilmaster3000/internal/server"
 	"github.com/els0r/toilmaster3000/internal/settings"
@@ -86,7 +86,7 @@ func tempMerges(t *testing.T) string {
 // and a permissive chore-matching rule store. The fake GitHubClient is the only
 // substitution; everything else is asserted through the HTTP API. The store is
 // returned so the server can be wired with the same instance.
-func newEngine(t *testing.T, fake *github.Fake) (*engine.Engine, *rule.Store) {
+func newEngine(t *testing.T, fake *forge.Fake) (*engine.Engine, *rule.Store) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store := storeWith(t, matchAllChores())
@@ -98,7 +98,7 @@ func newEngine(t *testing.T, fake *github.Fake) (*engine.Engine, *rule.Store) {
 // newEngineAt builds an Engine over an explicit state-file path (chore-matching
 // rules), so a test can construct a second engine over the same file to prove
 // restart.
-func newEngineAt(t *testing.T, fake *github.Fake, statePath string) (*engine.Engine, *rule.Store) {
+func newEngineAt(t *testing.T, fake *forge.Fake, statePath string) (*engine.Engine, *rule.Store) {
 	t.Helper()
 	store := storeWith(t, matchAllChores())
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
@@ -108,7 +108,7 @@ func newEngineAt(t *testing.T, fake *github.Fake, statePath string) (*engine.Eng
 
 // newEngineWith builds an Engine over an explicit rule store, for the slice-4
 // matcher tests that pin specific rules and candidates.
-func newEngineWith(t *testing.T, fake *github.Fake, store *rule.Store) *engine.Engine {
+func newEngineWith(t *testing.T, fake *forge.Fake, store *rule.Store) *engine.Engine {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
@@ -145,7 +145,7 @@ func defaultSettings(t *testing.T) *settings.Store {
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	eng, store := newEngine(t, github.NewFake())
+	eng, store := newEngine(t, forge.NewFake())
 	return newTestServerFor(t, eng, store)
 }
 
@@ -154,7 +154,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 // TM3K_SEARCH) is surfaced on the /pipeline snapshot.
 func newServerWithSearch(t *testing.T, search string) *httptest.Server {
 	t.Helper()
-	eng, store := newEngine(t, github.NewFake())
+	eng, store := newEngine(t, forge.NewFake())
 	h, err := server.New(testSPA(), eng, store, defaultSettings(t), search)
 	require.NoError(t, err)
 	srv := httptest.NewServer(h)
@@ -192,15 +192,15 @@ func seedApprovalsFile(t *testing.T, path string, recs ...engine.Approval) {
 // evaluation. Shared fixtures whose PRs are expected to stay ELIGIBLE (approved
 // or queued) carry it; the all-green gate (added in the eligibility slice) drops
 // any PR with an empty rollup, so without it these PRs would be dropped.
-func greenChecks() []github.Check {
-	return []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"}}
+func greenChecks() []forge.Check {
+	return []forge.Check{{State: forge.CheckPass}}
 }
 
 // cannedCandidates are three chore PRs that all match matchAllChores(), so the
 // slice-2 tracer tests (approve, dedup, restart, retry) see all three approved.
 // Each carries a passing rollup so the all-green gate lets them through.
-func cannedCandidates() []github.PR {
-	return []github.PR{
+func cannedCandidates() []forge.PR {
+	return []forge.PR{
 		{Number: 1, Title: "chore: bump deps", Author: "alice", URL: "https://github.com/o/r/pull/1", Checks: greenChecks()},
 		{Number: 2, Title: "chore: tidy", Author: "bob", URL: "https://github.com/o/r/pull/2", Checks: greenChecks()},
 		{Number: 3, Title: "chore: lint", Author: "carol", URL: "https://github.com/o/r/pull/3", Checks: greenChecks()},
@@ -296,7 +296,7 @@ func TestSPAServedWithFallback(t *testing.T) {
 // B4: a cycle approves every candidate exactly once; they appear newest-first
 // in GET /approvals, and GET /status reflects the cycle's counts.
 func TestCycleApprovesAndFeedNewestFirst(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
+	fake := forge.NewFake(cannedCandidates()...)
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
 
@@ -328,11 +328,11 @@ func TestCycleApprovesAndFeedNewestFirst(t *testing.T) {
 // fetching /pipeline. The count is drawn from the same snapshot /pipeline serves.
 func TestStatusReportsStagingCount(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
+	fake := forge.NewFake(
 		// A green chore -> auto-approved (so the cycle is not a no-op).
-		github.PR{Number: 1, Title: "chore: ready", Author: "alice", URL: "u1", Checks: greenChecks()},
+		forge.PR{Number: 1, Title: "chore: ready", Author: "alice", URL: "u1", Checks: greenChecks()},
 		// A green feat matching no rule -> falls through to Staging.
-		github.PR{Number: 2, Title: "feat: new panel", Author: "bob", URL: "u2", Checks: greenChecks()},
+		forge.PR{Number: 2, Title: "feat: new panel", Author: "bob", URL: "u2", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -376,7 +376,7 @@ func TestStatusStagingZeroBeforeFirstCycle(t *testing.T) {
 // B5: an already-approved candidate is never re-approved across cycles
 // (idempotent, quiet), and the feed does not grow.
 func TestDedupAcrossCycles(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
+	fake := forge.NewFake(cannedCandidates()...)
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
 
@@ -395,9 +395,9 @@ func TestDedupAcrossCycles(t *testing.T) {
 // out-of-band at the tail of the cycle (one gh pr view per today's feed entry)
 // and collapsed to the open|merged|closed bucket. A merged PR shows "merged".
 func TestApprovalFeedCarriesPRState(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
-	fake.SetState(3, github.RawPRState{State: "MERGED", MergedAt: "2026-06-19T10:00:00Z"})
-	fake.SetState(2, github.RawPRState{State: "CLOSED"}) // closed without merging
+	fake := forge.NewFake(cannedCandidates()...)
+	fake.SetState(3, forge.Lifecycle{State: forge.LifecycleMerged, MergedAt: "2026-06-19T10:00:00Z"})
+	fake.SetState(2, forge.Lifecycle{State: forge.LifecycleClosed}) // closed without merging
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
 
@@ -419,7 +419,7 @@ func TestApprovalFeedCarriesPRState(t *testing.T) {
 // neutral default rendered as no bar. PR State is never optimistically guessed
 // as open. (gh returns an empty raw state here; CollapsePRState yields unknown.)
 func TestApprovalFeedUnknownPRStateByDefault(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...) // no SetState for any candidate
+	fake := forge.NewFake(cannedCandidates()...) // no SetState for any candidate
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
 
@@ -438,8 +438,8 @@ func TestApprovalFeedUnknownPRStateByDefault(t *testing.T) {
 // refresh is all-or-nothing (ADR 0007): a failed call keeps ALL last-known state,
 // the per-PR approve failure semantics applied wholesale.
 func TestPRStateRefreshFailureKeepsLastKnown(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
-	fake.SetState(3, github.RawPRState{State: "MERGED", MergedAt: "2026-06-19T10:00:00Z"})
+	fake := forge.NewFake(cannedCandidates()...)
+	fake.SetState(3, forge.Lifecycle{State: forge.LifecycleMerged, MergedAt: "2026-06-19T10:00:00Z"})
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
 
@@ -471,11 +471,11 @@ func stateOf(feed []server.Approval, number int) string {
 // in the feed); the engine intersects against today's numbers, so every today
 // entry gets its state and the stranger is dropped.
 func TestPRStateRefreshIsOneBatchedCall(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...) // approves 1, 2, 3 today
-	fake.SetState(1, github.RawPRState{State: "OPEN"})
-	fake.SetState(2, github.RawPRState{State: "CLOSED"}) // closed without merging
-	fake.SetState(3, github.RawPRState{State: "MERGED", MergedAt: "2026-06-19T10:00:00Z"})
-	fake.SetState(999, github.RawPRState{State: "MERGED", MergedAt: "2026-06-19T10:00:00Z"}) // stranger, not in feed
+	fake := forge.NewFake(cannedCandidates()...) // approves 1, 2, 3 today
+	fake.SetState(1, forge.Lifecycle{State: forge.LifecycleOpen})
+	fake.SetState(2, forge.Lifecycle{State: forge.LifecycleClosed}) // closed without merging
+	fake.SetState(3, forge.Lifecycle{State: forge.LifecycleMerged, MergedAt: "2026-06-19T10:00:00Z"})
+	fake.SetState(999, forge.Lifecycle{State: forge.LifecycleMerged, MergedAt: "2026-06-19T10:00:00Z"}) // stranger, not in feed
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
 
@@ -498,8 +498,8 @@ func TestPRStateRefreshIsOneBatchedCall(t *testing.T) {
 // what makes the accepted one-cycle index lag a quiet "no bar yet" rather than a
 // known->unknown->known flicker.
 func TestPRStateAbsentFromBatchKeepsLastKnown(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
-	fake.SetState(3, github.RawPRState{State: "MERGED", MergedAt: "2026-06-19T10:00:00Z"})
+	fake := forge.NewFake(cannedCandidates()...)
+	fake.SetState(3, forge.Lifecycle{State: forge.LifecycleMerged, MergedAt: "2026-06-19T10:00:00Z"})
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
 
@@ -519,7 +519,7 @@ func TestPRStateAbsentFromBatchKeepsLastKnown(t *testing.T) {
 // PS6: with no feed entries to refresh, the batched call is skipped entirely —
 // no gh process is spawned for a set that would intersect to nothing.
 func TestPRStateRefreshSkippedWhenFeedEmpty(t *testing.T) {
-	fake := github.NewFake() // no candidates -> nothing approved -> empty feed
+	fake := forge.NewFake() // no candidates -> nothing approved -> empty feed
 	eng, _ := newEngine(t, fake)
 
 	eng.RunCycleOnce(context.Background())
@@ -533,13 +533,13 @@ func TestPRStateRefreshSkippedWhenFeedEmpty(t *testing.T) {
 func TestApprovalsSurviveRestart(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 
-	fake1 := github.NewFake(cannedCandidates()...)
+	fake1 := forge.NewFake(cannedCandidates()...)
 	eng1, _ := newEngineAt(t, fake1, statePath)
 	eng1.RunCycleOnce(context.Background())
 	require.Equal(t, []int{1, 2, 3}, fake1.ApprovedCalls())
 
 	// Restart: a fresh engine + server over the same state file.
-	fake2 := github.NewFake(cannedCandidates()...)
+	fake2 := forge.NewFake(cannedCandidates()...)
 	eng2, store2 := newEngineAt(t, fake2, statePath)
 	srv2 := newTestServerFor(t, eng2, store2)
 
@@ -558,7 +558,7 @@ func TestApprovalsSurviveRestart(t *testing.T) {
 // approved and the failed PR is retried (and succeeds) next cycle, because the
 // record is written only on success.
 func TestFailedApproveRetriesNextCycle(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
+	fake := forge.NewFake(cannedCandidates()...)
 	fake.FailApprove(2)
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
@@ -584,7 +584,7 @@ func TestFailedApproveRetriesNextCycle(t *testing.T) {
 // B8: a failed ListCandidates skips the whole cycle (approves nothing) and is
 // recorded as a gh error outcome in GET /status.
 func TestListFailureSkipsCycle(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
+	fake := forge.NewFake(cannedCandidates()...)
 	fake.ListErr = context.DeadlineExceeded
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
@@ -611,13 +611,13 @@ func TestListFailureSkipsCycle(t *testing.T) {
 // approved — and GET /status reports it in dropped_count.
 func TestDraftDroppedBeforeEvaluation(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
+	fake := forge.NewFake(
 		// Would match matchAllChores() (chore type) but is a draft -> dropped.
-		github.PR{Number: 300, Title: "chore: still cooking", Author: "alice", URL: "https://github.com/o/r/pull/300", IsDraft: true},
+		forge.PR{Number: 300, Title: "chore: still cooking", Author: "alice", URL: "https://github.com/o/r/pull/300", IsDraft: true},
 		// A ready chore that DOES auto-approve, so the cycle is not a no-op. It
 		// carries a passing rollup so the all-green gate lets it through (else it
 		// too would be dropped, masking the draft-gate assertion).
-		github.PR{Number: 301, Title: "chore: ready", Author: "bob", URL: "https://github.com/o/r/pull/301", Checks: greenChecks()},
+		forge.PR{Number: 301, Title: "chore: ready", Author: "bob", URL: "https://github.com/o/r/pull/301", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -644,7 +644,7 @@ func TestDraftDroppedBeforeEvaluation(t *testing.T) {
 // E2: a failed candidate fetch reports dropped 0 — nothing was evaluated, so
 // nothing was dropped (parallel to approved/queue both being 0).
 func TestListFailureReportsDroppedZero(t *testing.T) {
-	fake := github.NewFake(cannedCandidates()...)
+	fake := forge.NewFake(cannedCandidates()...)
 	fake.ListErr = context.DeadlineExceeded
 	eng, store := newEngine(t, fake)
 	srv := newTestServerFor(t, eng, store)
@@ -661,21 +661,21 @@ func TestListFailureReportsDroppedZero(t *testing.T) {
 
 // passingCheck is one completed, successful CheckRun — the minimal rollup that
 // makes a PR all-green so the gate lets it through to evaluation.
-func passingCheck() github.Check {
-	return github.Check{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"}
+func passingCheck() forge.Check {
+	return forge.Check{State: forge.CheckPass}
 }
 
 // EG1: a PR with a failing check is absent from /approvals and /queue and is
 // never approved — even though it matches a rule. It is counted in dropped_count.
 func TestFailingCheckDroppedBeforeEvaluation(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
+	fake := forge.NewFake(
 		// Matches matchAllChores() but a failing check drops it before evaluation.
-		github.PR{Number: 400, Title: "chore: red pipeline", Author: "alice", URL: "u400",
-			Checks: []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}},
+		forge.PR{Number: 400, Title: "chore: red pipeline", Author: "alice", URL: "u400",
+			Checks: []forge.Check{{State: forge.CheckFail}}},
 		// A green chore that DOES auto-approve, so the cycle is not a no-op.
-		github.PR{Number: 401, Title: "chore: green", Author: "bob", URL: "u401",
-			Checks: []github.Check{passingCheck()}},
+		forge.PR{Number: 401, Title: "chore: green", Author: "bob", URL: "u401",
+			Checks: []forge.Check{passingCheck()}},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -704,9 +704,9 @@ func TestFailingCheckDroppedBeforeEvaluation(t *testing.T) {
 // a later cycle once the check heals to SUCCESS — no persistent waiting state.
 func TestPendingCheckDroppedThenEligibleNextCycle(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	pending := github.PR{Number: 410, Title: "chore: ci running", Author: "alice", URL: "u410",
-		Checks: []github.Check{{Typename: "CheckRun", Status: "IN_PROGRESS"}}}
-	fake := github.NewFake(pending)
+	pending := forge.PR{Number: 410, Title: "chore: ci running", Author: "alice", URL: "u410",
+		Checks: []forge.Check{{State: forge.CheckPending}}}
+	fake := forge.NewFake(pending)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
 
@@ -719,8 +719,8 @@ func TestPendingCheckDroppedThenEligibleNextCycle(t *testing.T) {
 	require.Empty(t, fake.ApprovedCalls(), "a pending PR is never approved")
 
 	// Heal the check to SUCCESS; the recomputed candidate set now passes the gate.
-	pending.Checks = []github.Check{passingCheck()}
-	fake.Candidates = []github.PR{pending}
+	pending.Checks = []forge.Check{passingCheck()}
+	fake.Candidates = []forge.PR{pending}
 
 	eng.RunCycleOnce(context.Background())
 
@@ -734,9 +734,9 @@ func TestPendingCheckDroppedThenEligibleNextCycle(t *testing.T) {
 // auto-approver must never fire on no signal.
 func TestEmptyRollupDropped(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
+	fake := forge.NewFake(
 		// Matches the rule but has no checks at all -> not all-green -> dropped.
-		github.PR{Number: 420, Title: "chore: no signal", Author: "alice", URL: "u420"},
+		forge.PR{Number: 420, Title: "chore: no signal", Author: "alice", URL: "u420"},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -757,13 +757,13 @@ func TestEmptyRollupDropped(t *testing.T) {
 // gate and is evaluated normally (auto-approved here).
 func TestAllPassingChecksEvaluatedNormally(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 430, Title: "chore: mixed green", Author: "alice", URL: "u430",
-			Checks: []github.Check{
-				{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"},
-				{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SKIPPED"},
-				{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "NEUTRAL"},
-				{Typename: "StatusContext", State: "SUCCESS"},
+	fake := forge.NewFake(
+		forge.PR{Number: 430, Title: "chore: mixed green", Author: "alice", URL: "u430",
+			Checks: []forge.Check{
+				{State: forge.CheckPass},
+				{State: forge.CheckPass},
+				{State: forge.CheckPass},
+				{State: forge.CheckPass},
 			}},
 	)
 	eng := newEngineWith(t, fake, store)
@@ -809,8 +809,8 @@ func approvedNumbers(feed []server.Approval) map[int]bool {
 // Every candidate carries a passing rollup so the all-green gate lets them
 // through to rule evaluation — these tests assert RULE-driven matching, so the
 // exclusions must come from the rules (scope/@me/non-conventional), not the gate.
-func mixedCandidates(selfLogin string) []github.PR {
-	return []github.PR{
+func mixedCandidates(selfLogin string) []forge.PR {
+	return []forge.PR{
 		{Number: 10, Title: "chore(deps): bump x", Author: "alice", URL: "https://github.com/o/r/pull/10", Checks: greenChecks()},
 		{Number: 11, Title: "chore(renovate): bump y", Author: "renovate-bot", URL: "https://github.com/o/r/pull/11", Checks: greenChecks()},
 		{Number: 12, Title: "feat(team/service-a): add panel", Author: "teammate_a", URL: "https://github.com/o/r/pull/12", Checks: greenChecks()},
@@ -828,7 +828,7 @@ func TestRuleDrivenApprovesOnlyMatches(t *testing.T) {
 		rule.Rule{Name: "team chores", Enabled: true, AuthorsExclude: []string{"@me"}, TypeInclude: "^chore$", ScopeExclude: "renovate"},
 		rule.Rule{Name: "service-a — teammate_a", Enabled: true, AuthorsInclude: []string{"teammate_a"}, ScopeInclude: "service-a"},
 	)
-	fake := github.NewFake(mixedCandidates(self)...)
+	fake := forge.NewFake(mixedCandidates(self)...)
 	fake.Login = self
 	eng := newEngineWith(t, fake, store)
 	eng.SetSelfLogin(self)
@@ -868,9 +868,9 @@ func TestRuleOrAndFirstMatchAttribution(t *testing.T) {
 		rule.Rule{Name: "second deps", Enabled: true, ScopeInclude: "deps"},
 	)
 	// PR 20 matches BOTH rules; PR 21 matches only the second.
-	fake := github.NewFake(
-		github.PR{Number: 20, Title: "chore(deps): bump", Author: "alice", URL: "u20", Checks: greenChecks()},
-		github.PR{Number: 21, Title: "fix(deps): bump", Author: "alice", URL: "u21", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 20, Title: "chore(deps): bump", Author: "alice", URL: "u20", Checks: greenChecks()},
+		forge.PR{Number: 21, Title: "fix(deps): bump", Author: "alice", URL: "u21", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -894,9 +894,9 @@ func TestDisabledRulesDoNotMatch(t *testing.T) {
 		rule.Rule{Name: "disabled chores", Enabled: false, TypeInclude: "^chore$"},
 		rule.Rule{Name: "enabled feats", Enabled: true, TypeInclude: "^feat$"},
 	)
-	fake := github.NewFake(
-		github.PR{Number: 30, Title: "chore: x", Author: "alice", URL: "u30", Checks: greenChecks()},
-		github.PR{Number: 31, Title: "feat: y", Author: "alice", URL: "u31", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 30, Title: "chore: x", Author: "alice", URL: "u30", Checks: greenChecks()},
+		forge.PR{Number: 31, Title: "feat: y", Author: "alice", URL: "u31", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -921,7 +921,7 @@ func TestSeededDefaultsDriveCycle(t *testing.T) {
 	require.NoError(t, err)
 	require.FileExists(t, rulesPath)
 
-	fake := github.NewFake(mixedCandidates(self)...)
+	fake := forge.NewFake(mixedCandidates(self)...)
 	fake.Login = self
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
@@ -953,7 +953,7 @@ func TestSeededDefaultsDriveCycle(t *testing.T) {
 // reload the store from disk to prove persistence.
 func newRulesServer(t *testing.T, store *rule.Store) *httptest.Server {
 	t.Helper()
-	eng := newEngineWith(t, github.NewFake(), store)
+	eng := newEngineWith(t, forge.NewFake(), store)
 	return newTestServerFor(t, eng, store)
 }
 
@@ -1135,10 +1135,10 @@ func queueNumbers(items []server.QueueItem) map[int]server.QueueItem {
 // auto-approve in the same cycle. Status queue_count reflects the live queue.
 func TestBreakingChangeRoutedToQueueNotApproved(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 40, Title: "chore: tidy", Author: "alice", URL: "https://github.com/o/r/pull/40", Checks: greenChecks()},
-		github.PR{Number: 41, Title: "chore!: drop legacy flag", Author: "bob", URL: "https://github.com/o/r/pull/41", Additions: 40, Deletions: 12, ChangedFiles: 3, Checks: greenChecks()},
-		github.PR{Number: 42, Title: "chore(api)!: rename field", Author: "carol", URL: "https://github.com/o/r/pull/42", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 40, Title: "chore: tidy", Author: "alice", URL: "https://github.com/o/r/pull/40", Checks: greenChecks()},
+		forge.PR{Number: 41, Title: "chore!: drop legacy flag", Author: "bob", URL: "https://github.com/o/r/pull/41", Additions: 40, Deletions: 12, ChangedFiles: 3, Checks: greenChecks()},
+		forge.PR{Number: 42, Title: "chore(api)!: rename field", Author: "carol", URL: "https://github.com/o/r/pull/42", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1179,9 +1179,9 @@ func TestBreakingChangeRoutedToQueueNotApproved(t *testing.T) {
 func TestNoRuleCanAutoApproveBreaking(t *testing.T) {
 	// A maximally-permissive rule: matches any conventional commit of any type.
 	store := storeWith(t, rule.Rule{Name: "approve everything typed", Enabled: true, TypeInclude: ".*"})
-	fake := github.NewFake(
-		github.PR{Number: 50, Title: "feat(service-a)!: breaking thing", Author: "teammate_a", URL: "u50", Checks: greenChecks()},
-		github.PR{Number: 51, Title: "fix!: also breaking", Author: "alice", URL: "u51", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 50, Title: "feat(service-a)!: breaking thing", Author: "teammate_a", URL: "u50", Checks: greenChecks()},
+		forge.PR{Number: 51, Title: "fix!: also breaking", Author: "alice", URL: "u51", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1205,11 +1205,11 @@ func TestNoRuleCanAutoApproveBreaking(t *testing.T) {
 // A file GitHub omits the patch for (binary) crosses the wire with an empty patch.
 func TestPRDiffReturnsFilesAndTotalForAQueuedPR(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 60, Title: "chore!: breaking chore", Author: "alice", URL: "u60",
+	fake := forge.NewFake(
+		forge.PR{Number: 60, Title: "chore!: breaking chore", Author: "alice", URL: "u60",
 			Additions: 902, Deletions: 100, ChangedFiles: 142, Checks: greenChecks()},
 	)
-	fake.SetDiff(60, []github.FileDiff{
+	fake.SetDiff(60, []forge.FileDiff{
 		{Filename: "main.go", Status: "modified", Additions: 2, Deletions: 1, Patch: "@@ -1 +1 @@\n+a\n-b"},
 		{Filename: "logo.png", Status: "added", Additions: 0, Deletions: 0, Patch: ""},
 	})
@@ -1232,11 +1232,11 @@ func TestPRDiffReturnsFilesAndTotalForAQueuedPR(t *testing.T) {
 // (ADR 0015) so Staging's diff pill works exactly like the queue's.
 func TestPRDiffReturnsFilesAndTotalForAStagedPR(t *testing.T) {
 	store := storeWith(t) // no rules: an eligible PR matching nothing falls into Staging
-	fake := github.NewFake(
-		github.PR{Number: 70, Title: "feat: a new panel", Author: "camille", URL: "u70",
+	fake := forge.NewFake(
+		forge.PR{Number: 70, Title: "feat: a new panel", Author: "camille", URL: "u70",
 			Additions: 120, Deletions: 8, ChangedFiles: 5, Checks: greenChecks()},
 	)
-	fake.SetDiff(70, []github.FileDiff{
+	fake.SetDiff(70, []forge.FileDiff{
 		{Filename: "panel.go", Status: "added", Additions: 118, Deletions: 0, Patch: "@@ -0,0 +1 @@"},
 	})
 	eng := newEngineWith(t, fake, store)
@@ -1256,13 +1256,13 @@ func TestPRDiffReturnsFilesAndTotalForAStagedPR(t *testing.T) {
 // tracked in an outbound stage list) — the lookup widened beyond inbound (ADR
 // 0017) so the Diff pill rides outbound rows exactly as it does inbound ones.
 func TestPRDiffReturnsFilesAndTotalForAnOutboundPR(t *testing.T) {
-	fake := github.NewFake()
-	fake.Authored = []github.PR{
+	fake := forge.NewFake()
+	fake.Authored = []forge.PR{
 		{Number: 80, Title: "feat(web): pending", Author: "me", URL: "u80",
 			Additions: 40, Deletions: 2, ChangedFiles: 3,
-			Checks: greenChecks(), ReviewDecision: "REVIEW_REQUIRED"},
+			Checks: greenChecks(), ReviewDecision: forge.ReviewNone},
 	}
-	fake.SetDiff(80, []github.FileDiff{
+	fake.SetDiff(80, []forge.FileDiff{
 		{Filename: "web.go", Status: "modified", Additions: 40, Deletions: 2, Patch: "@@ -1 +1 @@"},
 	})
 	eng, store := newEngine(t, fake)
@@ -1295,8 +1295,8 @@ func TestPRDiffUntrackedIs404(t *testing.T) {
 // cycle.
 func TestManualApproveMovesToFeedAndLeavesQueue(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 60, Title: "chore!: breaking chore", Author: "alice", URL: "https://github.com/o/r/pull/60", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 60, Title: "chore!: breaking chore", Author: "alice", URL: "https://github.com/o/r/pull/60", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1337,8 +1337,8 @@ func TestManualApproveMovesToFeedAndLeavesQueue(t *testing.T) {
 // returns a clear 404.
 func TestManualApproveUnknownNumberNotFound(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 70, Title: "chore!: breaking", Author: "alice", URL: "u70", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 70, Title: "chore!: breaking", Author: "alice", URL: "u70", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1355,9 +1355,9 @@ func TestManualApproveUnknownNumberNotFound(t *testing.T) {
 // the fake's candidates between cycles.
 func TestQueueRecomputedEachCycle(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 80, Title: "chore!: breaking one", Author: "alice", URL: "u80", Checks: greenChecks()},
-		github.PR{Number: 81, Title: "chore!: breaking two", Author: "bob", URL: "u81", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 80, Title: "chore!: breaking one", Author: "alice", URL: "u80", Checks: greenChecks()},
+		forge.PR{Number: 81, Title: "chore!: breaking two", Author: "bob", URL: "u81", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1369,7 +1369,7 @@ func TestQueueRecomputedEachCycle(t *testing.T) {
 
 	// #80 merges/closes (no longer a candidate); #81 retitled to a non-breaking
 	// title that still matches the chore rule -> auto-approved, leaves the queue.
-	fake.Candidates = []github.PR{
+	fake.Candidates = []forge.PR{
 		{Number: 81, Title: "chore: no longer breaking", Author: "bob", URL: "u81", Checks: greenChecks()},
 		{Number: 82, Title: "chore!: a new breaking", Author: "carol", URL: "u82", Checks: greenChecks()},
 	}
@@ -1395,8 +1395,8 @@ func TestQueueRecomputedEachCycle(t *testing.T) {
 // race detector stays quiet. Run with -race to exercise the data-race guarantee.
 func TestManualApproveRacesCycleSafely(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 90, Title: "chore!: breaking", Author: "alice", URL: "u90", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 90, Title: "chore!: breaking", Author: "alice", URL: "u90", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1449,10 +1449,10 @@ func TestDiffMaxApproveRuleBoundsBySize(t *testing.T) {
 	store := storeWith(t,
 		rule.Rule{Name: "small chores", Enabled: true, TypeInclude: "^chore$", DiffMax: 50},
 	)
-	fake := github.NewFake(
-		github.PR{Number: 100, Title: "chore: small", Author: "alice", URL: "u100", Additions: 30, Deletions: 20, Checks: greenChecks()}, // 50, at bound
-		github.PR{Number: 101, Title: "chore: tiny", Author: "alice", URL: "u101", Additions: 1, Deletions: 0, Checks: greenChecks()},    // 1, below
-		github.PR{Number: 102, Title: "chore: huge", Author: "alice", URL: "u102", Additions: 40, Deletions: 11, Checks: greenChecks()},  // 51, over
+	fake := forge.NewFake(
+		forge.PR{Number: 100, Title: "chore: small", Author: "alice", URL: "u100", Additions: 30, Deletions: 20, Checks: greenChecks()}, // 50, at bound
+		forge.PR{Number: 101, Title: "chore: tiny", Author: "alice", URL: "u101", Additions: 1, Deletions: 0, Checks: greenChecks()},    // 1, below
+		forge.PR{Number: 102, Title: "chore: huge", Author: "alice", URL: "u102", Additions: 40, Deletions: 11, Checks: greenChecks()},  // 51, over
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1476,9 +1476,9 @@ func TestDiffMinApproveRuleBoundsBySize(t *testing.T) {
 	store := storeWith(t,
 		rule.Rule{Name: "big chores", Enabled: true, TypeInclude: "^chore$", DiffMin: 100, DiffMax: 1000},
 	)
-	fake := github.NewFake(
-		github.PR{Number: 110, Title: "chore: in window", Author: "alice", URL: "u110", Additions: 120, Deletions: 80, Checks: greenChecks()}, // 200, inside
-		github.PR{Number: 111, Title: "chore: too small", Author: "alice", URL: "u111", Additions: 50, Deletions: 49, Checks: greenChecks()},  // 99, below
+	fake := forge.NewFake(
+		forge.PR{Number: 110, Title: "chore: in window", Author: "alice", URL: "u110", Additions: 120, Deletions: 80, Checks: greenChecks()}, // 200, inside
+		forge.PR{Number: 111, Title: "chore: too small", Author: "alice", URL: "u111", Additions: 50, Deletions: 49, Checks: greenChecks()},  // 99, below
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1561,8 +1561,8 @@ func TestNegativeDiffRejectedStructurally(t *testing.T) {
 // Every candidate carries a passing rollup so the all-green gate lets them
 // through: the precedence matrix is about Review-vs-Approve and queueing, which
 // happen AFTER the gate, so each PR must clear the gate first.
-func reviewCandidates() []github.PR {
-	return []github.PR{
+func reviewCandidates() []forge.PR {
+	return []forge.PR{
 		{Number: 200, Title: "chore(osixpatch): patch one", Author: "alice", URL: "u200", Checks: greenChecks()},
 		{Number: 201, Title: "chore: plain approve", Author: "bob", URL: "u201", Checks: greenChecks()},
 		{Number: 202, Title: "chore(osixpatch/deps): both", Author: "carol", URL: "u202", Checks: greenChecks()},
@@ -1590,9 +1590,9 @@ func TestReviewRuleQueuesNotApproves(t *testing.T) {
 		rule.Rule{Name: "approve fixes", Enabled: true, Class: "approve", TypeInclude: "^fix$"},
 		reviewOsixpatch(),
 	)
-	fake := github.NewFake(
+	fake := forge.NewFake(
 		// Matches the Review Rule (osixpatch) but NOT the Approve Rule (chore != fix).
-		github.PR{Number: 210, Title: "chore(osixpatch): patch", Author: "alice", URL: "u210", Checks: greenChecks()},
+		forge.PR{Number: 210, Title: "chore(osixpatch): patch", Author: "alice", URL: "u210", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1617,7 +1617,7 @@ func TestReviewRuleQueuesNotApproves(t *testing.T) {
 // chore matched only by the Approve Rule still auto-approves.
 func TestReviewWinsOverApprove(t *testing.T) {
 	store := storeWith(t, approveAllChores(), reviewOsixpatch())
-	fake := github.NewFake(reviewCandidates()...)
+	fake := forge.NewFake(reviewCandidates()...)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
 
@@ -1649,8 +1649,8 @@ func TestBreakingReasonTiedToApproveMatch(t *testing.T) {
 		rule.Rule{Name: "approve fixes", Enabled: true, Class: "approve", TypeInclude: "^fix$"},
 		reviewOsixpatch(),
 	)
-	fake := github.NewFake(
-		github.PR{Number: 220, Title: "chore(osixpatch)!: breaking patch", Author: "dave", URL: "u220", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 220, Title: "chore(osixpatch)!: breaking patch", Author: "dave", URL: "u220", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1667,9 +1667,9 @@ func TestBreakingReasonTiedToApproveMatch(t *testing.T) {
 // (Approve match only) lists just breaking_change.
 func TestBreakingWithReviewListsBoth(t *testing.T) {
 	store := storeWith(t, approveAllChores(), reviewOsixpatch())
-	fake := github.NewFake(
-		github.PR{Number: 230, Title: "chore(osixpatch)!: breaking patch", Author: "dave", URL: "u230", Checks: greenChecks()},
-		github.PR{Number: 231, Title: "chore!: breaking plain", Author: "erin", URL: "u231", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 230, Title: "chore(osixpatch)!: breaking patch", Author: "dave", URL: "u230", Checks: greenChecks()},
+		forge.PR{Number: 231, Title: "chore!: breaking plain", Author: "erin", URL: "u231", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1692,8 +1692,8 @@ func TestBreakingWithReviewListsBoth(t *testing.T) {
 // records matched_rule as "human approval: <reasons joined>".
 func TestMultiReasonManualApprovalRecordsAllReasons(t *testing.T) {
 	store := storeWith(t, approveAllChores(), reviewOsixpatch())
-	fake := github.NewFake(
-		github.PR{Number: 240, Title: "chore(osixpatch)!: breaking patch", Author: "dave", URL: "u240", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 240, Title: "chore(osixpatch)!: breaking patch", Author: "dave", URL: "u240", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1769,9 +1769,9 @@ func TestDisabledReviewRuleStopsGating(t *testing.T) {
 		approveAllChores(),
 		rule.Rule{Name: "osixpatch gate", Enabled: false, Class: "review", ScopeInclude: "osixpatch"},
 	)
-	fake := github.NewFake(
-		github.PR{Number: 250, Title: "chore(osixpatch): patch", Author: "alice", URL: "u250", Checks: greenChecks()},
-		github.PR{Number: 251, Title: "not conventional at all", Author: "bob", URL: "u251", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 250, Title: "chore(osixpatch): patch", Author: "alice", URL: "u250", Checks: greenChecks()},
+		forge.PR{Number: 251, Title: "not conventional at all", Author: "bob", URL: "u251", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1795,8 +1795,8 @@ func TestDisabledReviewRuleStopsGating(t *testing.T) {
 // the wire's scope list.
 func TestApprovalShipsTitleParts(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 500, Title: "chore(deps,ci): bump x", Author: "alice", URL: "u500", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 500, Title: "chore(deps,ci): bump x", Author: "alice", URL: "u500", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1817,8 +1817,8 @@ func TestApprovalShipsTitleParts(t *testing.T) {
 // independent of the queueing reason.
 func TestQueueItemShipsBreakingTitleParts(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
-		github.PR{Number: 510, Title: "chore(team/service-a)!: rename field", Author: "bob", URL: "u510", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 510, Title: "chore(team/service-a)!: rename field", Author: "bob", URL: "u510", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1843,11 +1843,11 @@ func TestQueueItemShipsBreakingTitleParts(t *testing.T) {
 // matchedRule.startsWith("manual") sniff.
 func TestApprovalManualFlagDerived(t *testing.T) {
 	store := storeWith(t, matchAllChores())
-	fake := github.NewFake(
+	fake := forge.NewFake(
 		// Auto-approves (non-breaking chore).
-		github.PR{Number: 600, Title: "chore: auto", Author: "alice", URL: "u600", Checks: greenChecks()},
+		forge.PR{Number: 600, Title: "chore: auto", Author: "alice", URL: "u600", Checks: greenChecks()},
 		// Breaking chore -> queued, then manually approved below.
-		github.PR{Number: 601, Title: "chore!: needs a human", Author: "bob", URL: "u601", Checks: greenChecks()},
+		forge.PR{Number: 601, Title: "chore!: needs a human", Author: "bob", URL: "u601", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)
@@ -1880,7 +1880,7 @@ func TestLegacyApprovalNotManual(t *testing.T) {
 		ApprovedAt:  time.Now(),
 	})
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -1912,7 +1912,7 @@ func TestApprovalsTodayScopedAtLocalMidnight(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -1955,7 +1955,7 @@ func TestAnalyticsTodayStatsRow(t *testing.T) {
 			MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -1986,7 +1986,7 @@ func TestAnalyticsRangeParamDrivesCutoff(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2033,7 +2033,7 @@ func TestAnalyticsSeriesPerDay(t *testing.T) {
 			MatchedRule: engine.ManualApprovalPrefix + "breaking_change", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2096,7 +2096,7 @@ func TestAnalyticsHeadlineDeltasVsAlignedPriorPeriod(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now.Add(-1 * time.Hour)},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2121,7 +2121,7 @@ func TestAnalyticsWireIsSnakeCase(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: time.Now()},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2143,7 +2143,7 @@ func TestAnalyticsWireIsSnakeCase(t *testing.T) {
 func TestAnalyticsEmptyRangeAllZeros(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil) // no file -> empty feed
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil) // no file -> empty feed
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 
@@ -2170,7 +2170,7 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.yaml")
 	set, err := settings.NewStore(path)
 	require.NoError(t, err)
-	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
+	srv := newServerWith(t, newEngineWith(t, forge.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
 
 	// GET returns the seeded defaults in snake_case.
 	var got server.Assumptions
@@ -2198,7 +2198,7 @@ func TestSettingsGetPutRoundTrip(t *testing.T) {
 
 // AN5b: the wire is snake_case (the contract the generated frontend types track).
 func TestSettingsWireIsSnakeCase(t *testing.T) {
-	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), defaultSettings(t))
+	srv := newServerWith(t, newEngineWith(t, forge.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), defaultSettings(t))
 	var raw map[string]any
 	getJSON(t, srv.URL+apiPrefix+"/settings", &raw)
 	require.Contains(t, raw, "cost_low")
@@ -2212,7 +2212,7 @@ func TestSettingsPutValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.yaml")
 	set, err := settings.NewStore(path)
 	require.NoError(t, err)
-	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
+	srv := newServerWith(t, newEngineWith(t, forge.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
 
 	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings",
 		map[string]any{"cost_low": 0, "cost_high": 26, "currency": "CHF"}, nil)
@@ -2229,7 +2229,7 @@ func TestSettingsPutRejectsInvertedBand(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.yaml")
 	set, err := settings.NewStore(path)
 	require.NoError(t, err)
-	srv := newServerWith(t, newEngineWith(t, github.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
+	srv := newServerWith(t, newEngineWith(t, forge.NewFake(), storeWith(t, matchAllChores())), storeWith(t, matchAllChores()), set)
 
 	code := doJSON(t, http.MethodPut, srv.URL+apiPrefix+"/settings",
 		server.Assumptions{CostLow: 30, CostHigh: 10, Currency: "CHF"}, nil)
@@ -2254,7 +2254,7 @@ func TestAnalyticsSwitchesSavedMoneyRange(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	set, err := settings.NewStore(filepath.Join(t.TempDir(), "settings.yaml"))
 	require.NoError(t, err)
@@ -2301,7 +2301,7 @@ func TestAnalyticsByTypeCohort(t *testing.T) {
 			MatchedRule: "team chores", ApprovedAt: now},
 	)
 	store := storeWith(t, matchAllChores())
-	eng, err := engine.New(github.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
+	eng, err := engine.New(forge.NewFake(), statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	srv := newTestServerFor(t, eng, store)
 

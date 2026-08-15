@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ import (
 // (any docs-typed PR) so a green docs PR lands in the Needs-Human-Review queue
 // in one cycle — the manual-override subject under test. It returns the engine
 // and the fake.
-func queueEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *github.Fake) {
+func queueEngine(t *testing.T, candidates ...forge.PR) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
@@ -23,15 +23,15 @@ func queueEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *github
 	_, err = store.Create(rule.Rule{Name: "docs gate", Class: "review", Enabled: true, TypeInclude: "^docs$"})
 	require.NoError(t, err)
 
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	return eng, fake
 }
 
 // queuedDocsPR is a green docs PR the seeded Review Rule routes to the queue.
-func queuedDocsPR(number int) github.PR {
-	return github.PR{Number: number, Title: "docs: gate me", Author: "b", URL: "u12", Checks: green()}
+func queuedDocsPR(number int) forge.PR {
+	return forge.PR{Number: number, Title: "docs: gate me", Author: "b", URL: "u12", Checks: green()}
 }
 
 // MA1 (tracer): a manual override approve removes the PR from the queue

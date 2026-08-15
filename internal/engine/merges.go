@@ -15,7 +15,7 @@ type Merge struct {
 	URL      string    `json:"url"`
 	MergedAt time.Time `json:"merged_at"`
 	// ApprovedBy is the deduped, normalized approver login list — the same
-	// logins the commit's "Approved by:" trailer names (github.ApprovedBy).
+	// logins the commit's "Approved by:" trailer names (forge.ApprovedBy).
 	ApprovedBy []string `json:"approved_by"`
 }
 

@@ -21,7 +21,7 @@ import (
 // path — never a fabricated verdict.
 type Claude struct {
 	// fetchDiff, invoke, and act are the process seams, injectable in tests so
-	// the real gh/claude CLIs never execute there (the internal/github fake
+	// the real gh/claude CLIs never execute there (the internal/forge fake
 	// precedent). Production wiring uses ghPRDiff, claudeInvoke, and
 	// claudeActInvoke. act is separate from invoke because the two runs carry
 	// different authority: a screen run answers over a diff tm3k fetched, an
@@ -75,7 +75,7 @@ func (c *Claude) Act(ctx context.Context, req Request) (string, error) {
 }
 
 // ghPRDiff fetches one PR's unified diff via a single `gh pr diff` call —
-// no checkout, reusing the gh auth (the internal/github command style).
+// no checkout, reusing the gh auth (the internal/forge/github command style).
 // CommandContext kills gh when the run's context ends, so a timed-out screen
 // leaks no process.
 func ghPRDiff(ctx context.Context, repo string, number int) (string, error) {

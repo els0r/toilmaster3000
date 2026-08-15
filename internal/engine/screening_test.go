@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
@@ -63,7 +63,7 @@ func enabledSpec(id, name string) hook.Spec {
 // store — the funnelEngine of the screening slice. The store is built by the
 // caller so tests can await the async verdict write (the store is the real
 // seam between runner and cycle; runner internals stay untested).
-func screeningEngine(t *testing.T, store *hook.VerdictStore, screens []hook.ScreenInstance, candidates ...github.PR) (*engine.Engine, *github.Fake) {
+func screeningEngine(t *testing.T, store *hook.VerdictStore, screens []hook.ScreenInstance, candidates ...forge.PR) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	rules, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
@@ -71,7 +71,7 @@ func screeningEngine(t *testing.T, store *hook.VerdictStore, screens []hook.Scre
 	_, err = rules.Create(rule.Rule{Name: "any chore", Class: "approve", Enabled: true, TypeInclude: "^chore$"})
 	require.NoError(t, err)
 
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, statePath, tempMerges(t), rules, testArms(t), hook.NewScreener(store, screens...))
 	require.NoError(t, err)
 	return eng, fake
@@ -101,7 +101,7 @@ func TestScreeningParksWouldApproveWithNoVerdict(t *testing.T) {
 	defer close(scr.release)
 	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
 
-	pr := github.PR{Number: 21, Title: "chore: bump dep", Author: "ann", URL: "u21", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 21, Title: "chore: bump dep", Author: "ann", URL: "u21", Checks: green(), HeadSHA: "head-1"}
 	eng, fake := screeningEngine(t, tempVerdicts(t), screens, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -140,7 +140,7 @@ func TestAllProceedApprovesOnNextPassSilently(t *testing.T) {
 	}
 	store := tempVerdicts(t)
 
-	pr := github.PR{Number: 22, Title: "chore: bump dep", Author: "ann", URL: "u22", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 22, Title: "chore: bump dep", Author: "ann", URL: "u22", Checks: green(), HeadSHA: "head-1"}
 	eng, fake := screeningEngine(t, store, screens, pr)
 
 	// Cycle 1: no verdicts yet — the PR parks in Screening and both runs dispatch.
@@ -184,7 +184,7 @@ func TestHoldDivertsToQueueCarryingEveryHoldingScreen(t *testing.T) {
 	}
 	store := tempVerdicts(t)
 
-	pr := github.PR{Number: 23, Title: "chore: sneaky", Author: "mal", URL: "u23", Checks: green(), HeadSHA: "head-1", Additions: 9, Deletions: 2, ChangedFiles: 3}
+	pr := forge.PR{Number: 23, Title: "chore: sneaky", Author: "mal", URL: "u23", Checks: green(), HeadSHA: "head-1", Additions: 9, Deletions: 2, ChangedFiles: 3}
 	eng, fake := screeningEngine(t, store, screens, pr)
 
 	// Cycle 1 dispatches; the holds land off-cycle.
@@ -224,7 +224,7 @@ func TestInFlightRunIsNotDispatchedTwice(t *testing.T) {
 	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
 	store := tempVerdicts(t)
 
-	pr := github.PR{Number: 24, Title: "chore: slow screen", Author: "ann", URL: "u24", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 24, Title: "chore: slow screen", Author: "ann", URL: "u24", Checks: green(), HeadSHA: "head-1"}
 	eng, fake := screeningEngine(t, store, screens, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -251,7 +251,7 @@ func TestTimedOutRunRecordsErrorAndRedispatches(t *testing.T) {
 	screens := []hook.ScreenInstance{{Spec: spec, Screen: scr}}
 	store := tempVerdicts(t)
 
-	pr := github.PR{Number: 25, Title: "chore: hung harness", Author: "ann", URL: "u25", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 25, Title: "chore: hung harness", Author: "ann", URL: "u25", Checks: green(), HeadSHA: "head-1"}
 	eng, fake := screeningEngine(t, store, screens, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -279,7 +279,7 @@ func TestNewPushRescreens(t *testing.T) {
 	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
 	store := tempVerdicts(t)
 
-	pr := github.PR{Number: 26, Title: "chore: evolving", Author: "ann", URL: "u26", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 26, Title: "chore: evolving", Author: "ann", URL: "u26", Checks: green(), HeadSHA: "head-1"}
 	eng, fake := screeningEngine(t, store, screens, pr)
 
 	// Head-1 screens and holds.
@@ -292,7 +292,7 @@ func TestNewPushRescreens(t *testing.T) {
 	// longer matches — the PR re-screens from scratch.
 	prPushed := pr
 	prPushed.HeadSHA = "head-2"
-	fake.Candidates = []github.PR{prPushed}
+	fake.Candidates = []forge.PR{prPushed}
 
 	eng.RunCycleOnce(context.Background())
 	f := eng.Funnel()
@@ -317,13 +317,13 @@ func TestUnchangedHeadReusesVerdictAcrossRestart(t *testing.T) {
 
 	scr := newScriptedScreen(hook.Verdict{Outcome: hook.Proceed, Reason: "clean"}, nil, false)
 	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
-	pr := github.PR{Number: 27, Title: "chore: stable head", Author: "ann", URL: "u27", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 27, Title: "chore: stable head", Author: "ann", URL: "u27", Checks: green(), HeadSHA: "head-1"}
 
 	// First process life: dispatch, verdict lands, process "dies" before the
 	// next cycle can act on it.
 	store1, err := hook.NewVerdictStore(verdictsPath)
 	require.NoError(t, err)
-	eng1, err := engine.New(github.NewFake(pr), statePath, tempMerges(t), rules, testArms(t), hook.NewScreener(store1, screens...))
+	eng1, err := engine.New(forge.NewFake(pr), statePath, tempMerges(t), rules, testArms(t), hook.NewScreener(store1, screens...))
 	require.NoError(t, err)
 	eng1.RunCycleOnce(context.Background())
 	awaitVerdict(t, store1, "id-sec", 27, "head-1")
@@ -332,7 +332,7 @@ func TestUnchangedHeadReusesVerdictAcrossRestart(t *testing.T) {
 	// Restart: fresh engine, fresh store instance, SAME files.
 	store2, err := hook.NewVerdictStore(verdictsPath)
 	require.NoError(t, err)
-	fake2 := github.NewFake(pr)
+	fake2 := forge.NewFake(pr)
 	eng2, err := engine.New(fake2, statePath, tempMerges(t), rules, testArms(t), hook.NewScreener(store2, screens...))
 	require.NoError(t, err)
 	eng2.RunCycleOnce(context.Background())
@@ -366,18 +366,18 @@ func TestFunnelPartitionSumsToIncomingWithScreening(t *testing.T) {
 	// #7 (approved on cycle 1, standing on cycle 2) proceeds by stored verdict.
 	require.NoError(t, store.Append(hook.VerdictRecord{ScreenID: "id-sec", Number: 7, Head: "h7", Outcome: hook.Proceed, Reason: "clean", At: time.Now()}))
 
-	redChecks := []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}
-	candidates := []github.PR{
-		{Number: 1, Title: "chore: screening", Author: "a", URL: "u1", Checks: green(), HeadSHA: "h1"},                             // pending verdict -> Screening
-		{Number: 2, Title: "chore: held", Author: "b", URL: "u2", Checks: green(), HeadSHA: "h2"},                                  // stored hold -> NeedsHumanReview
-		{Number: 3, Title: "docs: gate me", Author: "c", URL: "u3", Checks: green(), HeadSHA: "h3"},                                // review rule -> NeedsHumanReview
-		{Number: 4, Title: "feat: no rule", Author: "d", URL: "u4", Checks: green(), HeadSHA: "h4"},                                // no match -> Staging
-		{Number: 5, Title: "chore: draft", Author: "e", URL: "u5", IsDraft: true, Checks: green(), HeadSHA: "h5"},                  // draft -> DroppedDraft
-		{Number: 6, Title: "chore: red", Author: "f", URL: "u6", Checks: redChecks, HeadSHA: "h6"},                                 // red -> DroppedRed
-		{Number: 7, Title: "chore: pass", Author: "g", URL: "u7", Checks: green(), HeadSHA: "h7"},                                  // proceed -> approved (standing on cycle 2)
-		{Number: 8, Title: "chore: elsewhere", Author: "h", URL: "u8", Checks: green(), ReviewDecision: "APPROVED", HeadSHA: "h8"}, // approved elsewhere
+	redChecks := []forge.Check{{State: forge.CheckFail}}
+	candidates := []forge.PR{
+		{Number: 1, Title: "chore: screening", Author: "a", URL: "u1", Checks: green(), HeadSHA: "h1"},                                       // pending verdict -> Screening
+		{Number: 2, Title: "chore: held", Author: "b", URL: "u2", Checks: green(), HeadSHA: "h2"},                                            // stored hold -> NeedsHumanReview
+		{Number: 3, Title: "docs: gate me", Author: "c", URL: "u3", Checks: green(), HeadSHA: "h3"},                                          // review rule -> NeedsHumanReview
+		{Number: 4, Title: "feat: no rule", Author: "d", URL: "u4", Checks: green(), HeadSHA: "h4"},                                          // no match -> Staging
+		{Number: 5, Title: "chore: draft", Author: "e", URL: "u5", IsDraft: true, Checks: green(), HeadSHA: "h5"},                            // draft -> DroppedDraft
+		{Number: 6, Title: "chore: red", Author: "f", URL: "u6", Checks: redChecks, HeadSHA: "h6"},                                           // red -> DroppedRed
+		{Number: 7, Title: "chore: pass", Author: "g", URL: "u7", Checks: green(), HeadSHA: "h7"},                                            // proceed -> approved (standing on cycle 2)
+		{Number: 8, Title: "chore: elsewhere", Author: "h", URL: "u8", Checks: green(), ReviewDecision: forge.ReviewApproved, HeadSHA: "h8"}, // approved elsewhere
 	}
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, filepath.Join(dir, "approvals.jsonl"), tempMerges(t), rules, testArms(t), hook.NewScreener(store, hook.ScreenInstance{Spec: spec, Screen: scr}))
 	require.NoError(t, err)
 
@@ -409,7 +409,7 @@ func TestThreeErrorAttemptsSynthesizeScreenUnavailableHold(t *testing.T) {
 	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
 	store := tempVerdicts(t)
 
-	pr := github.PR{Number: 28, Title: "chore: flaky harness", Author: "ann", URL: "u28", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 28, Title: "chore: flaky harness", Author: "ann", URL: "u28", Checks: green(), HeadSHA: "head-1"}
 	eng, fake := screeningEngine(t, store, screens, pr)
 
 	// Cycles 1-3: each consult still has no verdict (an error row is no
@@ -459,7 +459,7 @@ func TestManualOverrideOutranksScreenHold(t *testing.T) {
 	scr := newScriptedScreen(hook.Verdict{Outcome: hook.Hold, Reason: "touches auth code"}, nil, false)
 	screens := []hook.ScreenInstance{{Spec: enabledSpec("id-sec", "security"), Screen: scr}}
 
-	pr := github.PR{Number: 29, Title: "chore: contested", Author: "ann", URL: "u29", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 29, Title: "chore: contested", Author: "ann", URL: "u29", Checks: green(), HeadSHA: "head-1"}
 	eng, fake := screeningEngine(t, store, screens, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -499,7 +499,7 @@ func TestManualOverrideOutranksScreenHold(t *testing.T) {
 func TestDisabledScreenReleasesItsHoldsAfterRestart(t *testing.T) {
 	verdictsPath := filepath.Join(t.TempDir(), "verdicts.jsonl")
 	scr := newScriptedScreen(hook.Verdict{Outcome: hook.Hold, Reason: "touches auth code"}, nil, false)
-	pr := github.PR{Number: 30, Title: "chore: misjudged", Author: "ann", URL: "u30", Checks: green(), HeadSHA: "head-1"}
+	pr := forge.PR{Number: 30, Title: "chore: misjudged", Author: "ann", URL: "u30", Checks: green(), HeadSHA: "head-1"}
 
 	// Life 1: the enabled screen's stored hold diverts the PR to the queue.
 	store1, err := hook.NewVerdictStore(verdictsPath)
@@ -543,15 +543,15 @@ func TestScreensRunOnlyOnWouldApproveSubset(t *testing.T) {
 	require.NoError(t, err)
 
 	scr := newScriptedScreen(hook.Verdict{Outcome: hook.Proceed}, nil, false)
-	redChecks := []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}
-	candidates := []github.PR{
+	redChecks := []forge.Check{{State: forge.CheckFail}}
+	candidates := []forge.PR{
 		{Number: 1, Title: "docs: routed by rule", Author: "a", URL: "u1", Checks: green(), HeadSHA: "h1"},
 		{Number: 2, Title: "chore!: breaking", Author: "b", URL: "u2", Checks: green(), HeadSHA: "h2"},
 		{Number: 3, Title: "feat: staged", Author: "c", URL: "u3", Checks: green(), HeadSHA: "h3"},
 		{Number: 4, Title: "chore: draft", Author: "d", URL: "u4", IsDraft: true, Checks: green(), HeadSHA: "h4"},
 		{Number: 5, Title: "chore: red", Author: "e", URL: "u5", Checks: redChecks, HeadSHA: "h5"},
 	}
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, filepath.Join(dir, "approvals.jsonl"), tempMerges(t), rules, testArms(t),
 		hook.NewScreener(tempVerdicts(t), hook.ScreenInstance{Spec: enabledSpec("id-sec", "security"), Screen: scr}))
 	require.NoError(t, err)

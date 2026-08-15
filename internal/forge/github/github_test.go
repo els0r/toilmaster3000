@@ -61,7 +61,13 @@ JSON
 	prs, err := github.NewCLI(testRepo, testSearch).ListCandidates(context.Background())
 	require.NoError(t, err)
 	require.Len(t, prs, 2)
-	require.Equal(t, forge.PR{Number: 7, Title: "chore: x", Author: "alice", URL: "https://gh/pull/7", Additions: 12, Deletions: 3, ChangedFiles: 4}, prs[0])
+	require.Equal(t, forge.PR{
+		Number: 7, Title: "chore: x", Author: "alice", URL: "https://gh/pull/7",
+		Additions: 12, Deletions: 3, ChangedFiles: 4,
+		// The inbound pull asks for neither, so both normalise to their
+		// "nobody answered" value rather than to a guess.
+		ReviewDecision: forge.ReviewNone, Mergeable: forge.MergeableUnknown,
+	}, prs[0])
 	require.Equal(t, "bob", prs[1].Author)
 
 	// additions/deletions/changedFiles ride the SAME single gh pr list --json call.

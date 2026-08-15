@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,20 +15,20 @@ import (
 // threads ride the cycle in ONE batched call.
 func TestUnresolvedThreadsFoldToInDiscussion(t *testing.T) {
 	eng, fake := outboundEngine(t,
-		github.PR{Number: 6, Title: "feat(f): approved", Author: "me", URL: "u6",
-			Checks: green(), ReviewDecision: "APPROVED", Mergeable: "MERGEABLE"},
+		forge.PR{Number: 6, Title: "feat(f): approved", Author: "me", URL: "u6",
+			Checks: green(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableMergeable},
 	)
-	fake.SetThreads(6, github.RawReviewThreads{
-		Nodes: []github.ReviewThread{{IsResolved: false}, {IsResolved: true}},
+	fake.SetThreads(6, forge.ReviewThreads{
+		Nodes: []forge.ReviewThread{{IsResolved: false}, {IsResolved: true}},
 	})
 
 	eng.RunCycleOnce(context.Background())
 
 	ob := eng.Outbound()
-	require.Empty(t, ob[github.OutboundStageReady], "an approved PR with an unresolved thread is not Ready")
-	require.Len(t, ob[github.OutboundStageInDiscussion], 1)
-	require.Equal(t, 6, ob[github.OutboundStageInDiscussion][0].Number)
-	require.Equal(t, 1, ob[github.OutboundStageInDiscussion][0].UnresolvedThreads, "the judged unresolved count rides the item")
+	require.Empty(t, ob[forge.OutboundStageReady], "an approved PR with an unresolved thread is not Ready")
+	require.Len(t, ob[forge.OutboundStageInDiscussion], 1)
+	require.Equal(t, 6, ob[forge.OutboundStageInDiscussion][0].Number)
+	require.Equal(t, 1, ob[forge.OutboundStageInDiscussion][0].UnresolvedThreads, "the judged unresolved count rides the item")
 	require.Equal(t, 1, ob.Outgoing(), "the partition still sums — In Discussion is one of its lists")
 	require.Equal(t, 1, fake.ThreadsCallCount(), "threads ride one batched call per cycle, no N+1")
 }
@@ -41,12 +41,12 @@ func TestUnresolvedThreadsFoldToInDiscussion(t *testing.T) {
 // Ready prune intact (ADR 0018) — even with nobody at the keyboard: that is
 // what standing consent means.
 func TestArmedInDiscussionHeldThenMergesOnResolution(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
-	fake.SetThreads(21, github.RawReviewThreads{Nodes: []github.ReviewThread{{IsResolved: false}}})
+	fake.SetThreads(21, forge.ReviewThreads{Nodes: []forge.ReviewThread{{IsResolved: false}}})
 
 	eng.RunCycleOnce(context.Background())
 	require.NoError(t, eng.Arm(21), "the Arm toggle stays available on the In Discussion stage")
@@ -57,13 +57,13 @@ func TestArmedInDiscussionHeldThenMergesOnResolution(t *testing.T) {
 	require.True(t, eng.ArmedSet()[21], "In Discussion holds, never disarms")
 
 	// The reviewer's resolve click closes the conversation; nobody touches tm3k.
-	fake.SetThreads(21, github.RawReviewThreads{Nodes: []github.ReviewThread{{IsResolved: true}}})
+	fake.SetThreads(21, forge.ReviewThreads{Nodes: []forge.ReviewThread{{IsResolved: true}}})
 	eng.RunCycleOnce(context.Background())
 
 	require.Len(t, fake.MergeCalls(), 1, "the first zero-unresolved cycle merges")
 	require.Len(t, eng.Merges(), 1, "the ledger append rides the merge")
 	ob := eng.Outbound()
-	require.Empty(t, ob[github.OutboundStageReady], "Ready pruned atomically with the ledger append (ADR 0018)")
+	require.Empty(t, ob[forge.OutboundStageReady], "Ready pruned atomically with the ledger append (ADR 0018)")
 	require.Zero(t, ob.Outgoing(), "the derived Outgoing follows the prune — the partition still sums")
 }
 
@@ -73,10 +73,10 @@ func TestArmedInDiscussionHeldThenMergesOnResolution(t *testing.T) {
 // every failed outbound fetch — the armed set is untouched (consent is never
 // withdrawn on missing data). The next healthy cycle recovers on its own.
 func TestFailedThreadsFetchClearsOutboundAndMergesNothing(t *testing.T) {
-	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, "MERGEABLE"))
-	fake.SetMergeInfo(21, github.MergeDetails{
+	eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, forge.MergeableMergeable))
+	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat: t", Body: "b",
-		Reviews: []github.Review{{Author: "alice", State: "APPROVED"}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 
 	eng.RunCycleOnce(context.Background())
@@ -89,7 +89,7 @@ func TestFailedThreadsFetchClearsOutboundAndMergesNothing(t *testing.T) {
 	require.Empty(t, eng.Merges())
 	ob := eng.Outbound()
 	require.Zero(t, ob.Outgoing(), "a failed threads fetch clears the outbound snapshot")
-	require.Empty(t, ob[github.OutboundStageReady])
+	require.Empty(t, ob[forge.OutboundStageReady])
 	require.True(t, eng.ArmedSet()[21], "a failed fetch never touches the armed set")
 
 	// The next cycle's threads call succeeds: the still-armed Ready PR merges.
@@ -106,17 +106,17 @@ func TestNewThreadOnArmedReadyPRHoldsAgain(t *testing.T) {
 
 	eng.RunCycleOnce(context.Background())
 	require.NoError(t, eng.Arm(21))
-	require.Len(t, eng.Outbound()[github.OutboundStageReady], 1, "no threads yet: the armed PR sits in Ready (unmerged only for its UNKNOWN mergeability)")
+	require.Len(t, eng.Outbound()[forge.OutboundStageReady], 1, "no threads yet: the armed PR sits in Ready (unmerged only for its UNKNOWN mergeability)")
 
 	// A reviewer opens a fresh thread on the armed, Ready PR.
-	fake.SetThreads(21, github.RawReviewThreads{Nodes: []github.ReviewThread{{IsResolved: false}}})
+	fake.SetThreads(21, forge.ReviewThreads{Nodes: []forge.ReviewThread{{IsResolved: false}}})
 	eng.RunCycleOnce(context.Background())
 
 	require.Empty(t, fake.MergeCalls(), "held again — the merge step never saw it in Ready")
 	ob := eng.Outbound()
-	require.Empty(t, ob[github.OutboundStageReady], "the PR left Ready for In Discussion")
-	require.Len(t, ob[github.OutboundStageInDiscussion], 1)
-	require.Equal(t, 21, ob[github.OutboundStageInDiscussion][0].Number)
+	require.Empty(t, ob[forge.OutboundStageReady], "the PR left Ready for In Discussion")
+	require.Len(t, ob[forge.OutboundStageInDiscussion], 1)
+	require.Equal(t, 21, ob[forge.OutboundStageInDiscussion][0].Number)
 	require.True(t, eng.ArmedSet()[21], "still armed — the hold is not a disarm")
 }
 
@@ -125,21 +125,21 @@ func TestNewThreadOnArmedReadyPRHoldsAgain(t *testing.T) {
 // like every other outbound stage row.
 func TestDiffOfInDiscussionPRReturnsFilesAndTotal(t *testing.T) {
 	eng, fake := outboundEngine(t,
-		github.PR{Number: 91, Title: "feat(api): approved with nits", Author: "me", URL: "u91",
+		forge.PR{Number: 91, Title: "feat(api): approved with nits", Author: "me", URL: "u91",
 			Additions: 12, Deletions: 2, ChangedFiles: 4,
-			Checks: green(), ReviewDecision: "APPROVED"},
+			Checks: green(), ReviewDecision: forge.ReviewApproved},
 	)
-	fake.SetThreads(91, github.RawReviewThreads{Nodes: []github.ReviewThread{{IsResolved: false}}})
-	fake.SetDiff(91, []github.FileDiff{
+	fake.SetThreads(91, forge.ReviewThreads{Nodes: []forge.ReviewThread{{IsResolved: false}}})
+	fake.SetDiff(91, []forge.FileDiff{
 		{Filename: "api.go", Status: "modified", Additions: 12, Deletions: 2, Patch: "@@ -1 +1 @@"},
 	})
 	eng.RunCycleOnce(context.Background())
-	require.Len(t, eng.Outbound()[github.OutboundStageInDiscussion], 1, "precondition: the PR sits in In Discussion")
+	require.Len(t, eng.Outbound()[forge.OutboundStageInDiscussion], 1, "precondition: the PR sits in In Discussion")
 
 	files, total, err := eng.Diff(context.Background(), 91)
 	require.NoError(t, err)
 	require.Equal(t, 4, total, "total_files is the in-discussion item's changed_files")
-	require.Equal(t, []github.FileDiff{
+	require.Equal(t, []forge.FileDiff{
 		{Filename: "api.go", Status: "modified", Additions: 12, Deletions: 2, Patch: "@@ -1 +1 @@"},
 	}, files)
 }

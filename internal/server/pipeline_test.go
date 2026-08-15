@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/hook"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/els0r/toilmaster3000/internal/server"
@@ -26,14 +26,14 @@ func pipelineServer(t *testing.T) string {
 		rule.Rule{Name: "chore approve", Class: "approve", Enabled: true, TypeInclude: "^chore$"},
 		rule.Rule{Name: "docs gate", Class: "review", Enabled: true, TypeInclude: "^docs$"},
 	)
-	red := []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}, {Typename: "StatusContext", State: "PENDING"}}
-	fake := github.NewFake(
-		github.PR{Number: 1, Title: "chore(api): bump", Author: "al", URL: "u1", Checks: greenChecks()},
-		github.PR{Number: 2, Title: "docs(team/web): readme", Author: "bo", URL: "u2", Checks: greenChecks()},
-		github.PR{Number: 3, Title: "feat(ui): panel", Author: "ca", URL: "u3", Checks: greenChecks(), Additions: 120, Deletions: 8, ChangedFiles: 5},
-		github.PR{Number: 4, Title: "chore: wip", Author: "de", URL: "u4", IsDraft: true, Checks: greenChecks()},
-		github.PR{Number: 5, Title: "chore: flaky", Author: "ed", URL: "u5", Checks: red},
-		github.PR{Number: 6, Title: "chore: theirs", Author: "fa", URL: "u6", Checks: greenChecks(), ReviewDecision: "APPROVED"},
+	red := []forge.Check{{State: forge.CheckFail}, {State: forge.CheckPending}}
+	fake := forge.NewFake(
+		forge.PR{Number: 1, Title: "chore(api): bump", Author: "al", URL: "u1", Checks: greenChecks()},
+		forge.PR{Number: 2, Title: "docs(team/web): readme", Author: "bo", URL: "u2", Checks: greenChecks()},
+		forge.PR{Number: 3, Title: "feat(ui): panel", Author: "ca", URL: "u3", Checks: greenChecks(), Additions: 120, Deletions: 8, ChangedFiles: 5},
+		forge.PR{Number: 4, Title: "chore: wip", Author: "de", URL: "u4", IsDraft: true, Checks: greenChecks()},
+		forge.PR{Number: 5, Title: "chore: flaky", Author: "ed", URL: "u5", Checks: red, FailingChecks: 2},
+		forge.PR{Number: 6, Title: "chore: theirs", Author: "fa", URL: "u6", Checks: greenChecks(), ReviewDecision: forge.ReviewApproved},
 	)
 	eng := newEngineWith(t, fake, store)
 	eng.RunCycleOnce(context.Background())
@@ -70,7 +70,7 @@ func TestPipelineSnapshotMapping(t *testing.T) {
 	require.Equal(t, "feat", body.Staging[0].TitleParts.Type)
 	require.Equal(t, []string{"ui"}, body.Staging[0].TitleParts.Scopes)
 	// Diff magnitude rides each row from the single list fetch (the Staging area
-	// renders it; threaded from github.PR's Additions/Deletions/ChangedFiles).
+	// renders it; threaded from forge.PR's Additions/Deletions/ChangedFiles).
 	require.Equal(t, 120, body.Staging[0].Additions)
 	require.Equal(t, 8, body.Staging[0].Deletions)
 	require.Equal(t, 5, body.Staging[0].ChangedFiles)
@@ -113,9 +113,9 @@ func TestPipelineScreeningAndQueueScreenHolds(t *testing.T) {
 	store := storeWith(t,
 		rule.Rule{Name: "chore approve", Class: "approve", Enabled: true, TypeInclude: "^chore$"},
 	)
-	fake := github.NewFake(
-		github.PR{Number: 1, Title: "chore(api): pending", Author: "al", URL: "u1", Checks: greenChecks(), HeadSHA: "h1"},
-		github.PR{Number: 2, Title: "chore(auth): held", Author: "bo", URL: "u2", Checks: greenChecks(), HeadSHA: "h2"},
+	fake := forge.NewFake(
+		forge.PR{Number: 1, Title: "chore(api): pending", Author: "al", URL: "u1", Checks: greenChecks(), HeadSHA: "h1"},
+		forge.PR{Number: 2, Title: "chore(auth): held", Author: "bo", URL: "u2", Checks: greenChecks(), HeadSHA: "h2"},
 	)
 
 	// The verdict store is pre-seeded: #2 carries a recorded hold; #1 has no
@@ -160,8 +160,8 @@ func TestQueueScreenHoldsEmptyOnRuleRoutedEntries(t *testing.T) {
 	store := storeWith(t,
 		rule.Rule{Name: "docs gate", Class: "review", Enabled: true, TypeInclude: "^docs$"},
 	)
-	fake := github.NewFake(
-		github.PR{Number: 3, Title: "docs: gate me", Author: "ca", URL: "u3", Checks: greenChecks()},
+	fake := forge.NewFake(
+		forge.PR{Number: 3, Title: "docs: gate me", Author: "ca", URL: "u3", Checks: greenChecks()},
 	)
 	eng := newEngineWith(t, fake, store)
 	eng.RunCycleOnce(context.Background())

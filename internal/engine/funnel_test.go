@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/engine"
-	"github.com/els0r/toilmaster3000/internal/github"
+	"github.com/els0r/toilmaster3000/internal/forge"
 	"github.com/els0r/toilmaster3000/internal/rule"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +17,7 @@ import (
 // eligible PR with no matching rule falls through to Staging, drafts and
 // not-all-green PRs drop, and an APPROVED-elsewhere PR is left alone. It returns
 // the engine and the fake so a test can drive RunCycleOnce and read the snapshot.
-func funnelEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *github.Fake) {
+func funnelEngine(t *testing.T, candidates ...forge.PR) (*engine.Engine, *forge.Fake) {
 	t.Helper()
 	statePath := filepath.Join(t.TempDir(), "approvals.jsonl")
 	store, err := rule.NewStore(filepath.Join(t.TempDir(), "rules.yaml"))
@@ -25,21 +25,21 @@ func funnelEngine(t *testing.T, candidates ...github.PR) (*engine.Engine, *githu
 	_, err = store.Create(rule.Rule{Name: "any chore", Class: "approve", Enabled: true, TypeInclude: "^chore$"})
 	require.NoError(t, err)
 
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 	return eng, fake
 }
 
-func green() []github.Check {
-	return []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"}}
+func green() []forge.Check {
+	return []forge.Check{{State: forge.CheckPass}}
 }
 
 // F1 (tracer): a draft PR is dropped by the Ready-for-Review gate and retained
 // in the funnel snapshot's dropped_draft list — what the cycle used to discard
 // as a bare count is now itemized.
 func TestFunnelDroppedDraft(t *testing.T) {
-	pr := github.PR{Number: 3, Title: "chore: wip", Author: "ann", URL: "u3", IsDraft: true, Checks: green()}
+	pr := forge.PR{Number: 3, Title: "chore: wip", Author: "ann", URL: "u3", IsDraft: true, Checks: green()}
 	eng, _ := funnelEngine(t, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -51,14 +51,14 @@ func TestFunnelDroppedDraft(t *testing.T) {
 }
 
 // F2: a not-all-green PR is dropped by the All-Green gate into dropped_red,
-// carrying the count of non-passing checks folded from the rollup already in
-// hand (the "N checks failing" station signal).
+// carrying through the count of non-passing checks the adapter supplied on the
+// PR (the "N checks failing" station signal).
 func TestFunnelDroppedRedCarriesFailingCount(t *testing.T) {
-	pr := github.PR{Number: 5, Title: "chore: flaky", Author: "ben", URL: "u5", Checks: []github.Check{
-		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"},
-		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"},
-		{Typename: "StatusContext", State: "PENDING"},
-	}}
+	pr := forge.PR{Number: 5, Title: "chore: flaky", Author: "ben", URL: "u5", Checks: []forge.Check{
+		{State: forge.CheckPass},
+		{State: forge.CheckFail},
+		{State: forge.CheckPending},
+	}, FailingChecks: 2}
 	eng, _ := funnelEngine(t, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -74,7 +74,7 @@ func TestFunnelDroppedRedCarriesFailingCount(t *testing.T) {
 // genuinely new, invisible before — itemized so the user can drain it with a
 // rule. (The seeded rule matches only chore; a feat PR matches nothing.)
 func TestFunnelStaging(t *testing.T) {
-	pr := github.PR{Number: 8, Title: "feat(ui): new panel", Author: "cara", URL: "u8", Checks: green()}
+	pr := forge.PR{Number: 8, Title: "feat(ui): new panel", Author: "cara", URL: "u8", Checks: green()}
 	eng, fake := funnelEngine(t, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -89,7 +89,7 @@ func TestFunnelStaging(t *testing.T) {
 // a soft dedup and itemized in approved_elsewhere — the highlighted "left alone"
 // segment, distinct from approved_this_cycle.
 func TestFunnelApprovedElsewhere(t *testing.T) {
-	pr := github.PR{Number: 9, Title: "chore: tidy", Author: "dee", URL: "u9", Checks: green(), ReviewDecision: "APPROVED"}
+	pr := forge.PR{Number: 9, Title: "chore: tidy", Author: "dee", URL: "u9", Checks: green(), ReviewDecision: forge.ReviewApproved}
 	eng, fake := funnelEngine(t, pr)
 
 	eng.RunCycleOnce(context.Background())
@@ -116,16 +116,16 @@ func TestFunnelPartitionSumsToIncoming(t *testing.T) {
 	_, err = store.Create(rule.Rule{Name: "docs gate", Class: "review", Enabled: true, TypeInclude: "^docs$"})
 	require.NoError(t, err)
 
-	redChecks := []github.Check{{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}}
-	candidates := []github.PR{
-		{Number: 1, Title: "chore: approve me", Author: "a", URL: "u1", Checks: green()},                            // approved this cycle -> ApprovedByTm3k
-		{Number: 2, Title: "docs: gate me", Author: "b", URL: "u2", Checks: green()},                                // review match -> NeedsHumanReview
-		{Number: 3, Title: "feat: no rule", Author: "c", URL: "u3", Checks: green()},                                // no match -> Staging
-		{Number: 4, Title: "chore: draft", Author: "d", URL: "u4", IsDraft: true, Checks: green()},                  // draft -> DroppedDraft
-		{Number: 5, Title: "chore: red", Author: "e", URL: "u5", Checks: redChecks},                                 // red -> DroppedRed
-		{Number: 6, Title: "chore: elsewhere", Author: "f", URL: "u6", Checks: green(), ReviewDecision: "APPROVED"}, // approved elsewhere
+	redChecks := []forge.Check{{State: forge.CheckFail}}
+	candidates := []forge.PR{
+		{Number: 1, Title: "chore: approve me", Author: "a", URL: "u1", Checks: green()},                                      // approved this cycle -> ApprovedByTm3k
+		{Number: 2, Title: "docs: gate me", Author: "b", URL: "u2", Checks: green()},                                          // review match -> NeedsHumanReview
+		{Number: 3, Title: "feat: no rule", Author: "c", URL: "u3", Checks: green()},                                          // no match -> Staging
+		{Number: 4, Title: "chore: draft", Author: "d", URL: "u4", IsDraft: true, Checks: green()},                            // draft -> DroppedDraft
+		{Number: 5, Title: "chore: red", Author: "e", URL: "u5", Checks: redChecks},                                           // red -> DroppedRed
+		{Number: 6, Title: "chore: elsewhere", Author: "f", URL: "u6", Checks: green(), ReviewDecision: forge.ReviewApproved}, // approved elsewhere
 	}
-	fake := github.NewFake(candidates...)
+	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, statePath, tempMerges(t), store, testArms(t), nil)
 	require.NoError(t, err)
 
@@ -151,7 +151,7 @@ func TestFunnelPartitionSumsToIncoming(t *testing.T) {
 // (no cycle yet), current as of the last completed cycle, and CLEARED by a failed
 // candidate fetch so stale buckets are never shown.
 func TestFunnelLifecycle(t *testing.T) {
-	pr := github.PR{Number: 2, Title: "feat: stage", Author: "g", URL: "u2", Checks: green()}
+	pr := forge.PR{Number: 2, Title: "feat: stage", Author: "g", URL: "u2", Checks: green()}
 	eng, fake := funnelEngine(t, pr)
 
 	// Before any cycle: the zero value (empty after restart).
