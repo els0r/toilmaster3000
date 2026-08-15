@@ -7,6 +7,13 @@ package forge
 // StatusContext states, GitLab's single pipeline status. The folds never see a
 // forge's raw strings, so a mis-mapped status is the adapter's bug and is
 // caught by the adapter's own normalisation table (ADR 0030 §10).
+//
+// Only CheckPass is treated as a pass and only CheckPending as a wait; ANY
+// other value — the zero value, or a state a future adapter invents without
+// teaching the folds about it — is judged a FAILURE. The folds fail closed on
+// their own vocabulary for the same reason each adapter defaults an
+// unrecognised raw entry to CheckFail: an unreadable verdict must draw the
+// author's eye, never read as a harmless wait, and must never clear a gate.
 type CheckState string
 
 const (
@@ -22,13 +29,15 @@ const (
 	CheckPending CheckState = "pending"
 )
 
-// Check is one NORMALISED entry of a PR's check rollup. It carries the neutral
-// verdict and nothing else: the raw discriminators an adapter decoded to reach
-// it never leave that adapter.
+// Check is one NORMALISED entry of a PR's check rollup. Today it carries the
+// neutral verdict alone — the raw discriminators an adapter decoded to reach it
+// never leave that adapter. It is a struct rather than a bare CheckState so a
+// later slice can hang forge-neutral detail (a name, a URL) on an entry without
+// changing every fold's signature.
 //
-// The zero value carries no verdict. It is neither pass nor fail, so it blocks
-// the all-green gate and reads as a wait rather than as red — the conservative
-// reading for an auto-approver.
+// The ZERO VALUE is not a valid entry: an adapter always sets State. Should one
+// fail to, the folds read it as a failure — it blocks the all-green gate AND
+// lands the PR in Red, so the omission surfaces instead of hiding as a wait.
 type Check struct {
 	State CheckState
 }

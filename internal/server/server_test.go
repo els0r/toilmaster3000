@@ -672,7 +672,7 @@ func TestFailingCheckDroppedBeforeEvaluation(t *testing.T) {
 	fake := forge.NewFake(
 		// Matches matchAllChores() but a failing check drops it before evaluation.
 		forge.PR{Number: 400, Title: "chore: red pipeline", Author: "alice", URL: "u400",
-			Checks: []forge.Check{{State: forge.CheckFail}}},
+			Checks: []forge.Check{{State: forge.CheckFail}}, FailingChecks: 1},
 		// A green chore that DOES auto-approve, so the cycle is not a no-op.
 		forge.PR{Number: 401, Title: "chore: green", Author: "bob", URL: "u401",
 			Checks: []forge.Check{passingCheck()}},
@@ -705,7 +705,7 @@ func TestFailingCheckDroppedBeforeEvaluation(t *testing.T) {
 func TestPendingCheckDroppedThenEligibleNextCycle(t *testing.T) {
 	store := storeWith(t, matchAllChores())
 	pending := forge.PR{Number: 410, Title: "chore: ci running", Author: "alice", URL: "u410",
-		Checks: []forge.Check{{State: forge.CheckPending}}}
+		Checks: []forge.Check{{State: forge.CheckPending}}, FailingChecks: 1}
 	fake := forge.NewFake(pending)
 	eng := newEngineWith(t, fake, store)
 	srv := newTestServerFor(t, eng, store)

@@ -55,9 +55,23 @@ func TestClassifyOutboundStage(t *testing.T) {
 			want: forge.OutboundStageRunning,
 		},
 		{
-			name: "a verdictless entry blocks green without turning the PR red",
+			// Fail closed: an entry the adapter left unset is a bug, and a bug
+			// must draw the author's eye rather than read as a harmless wait.
+			// This is the pre-seam behaviour — the old zero Check carried no
+			// __typename and the old isFail defaulted it to failing.
+			name: "a verdictless entry is red, not running — an unset verdict fails closed",
 			pr:   forge.PR{Checks: []forge.Check{{}}},
-			want: forge.OutboundStageRunning,
+			want: forge.OutboundStageRed,
+		},
+		{
+			name: "a CheckState the folds do not recognise is red too",
+			pr:   forge.PR{Checks: []forge.Check{{State: forge.CheckState("something_new")}}},
+			want: forge.OutboundStageRed,
+		},
+		{
+			name: "a verdictless entry beside a pass is still red",
+			pr:   forge.PR{Checks: []forge.Check{{State: forge.CheckPass}, {}}},
+			want: forge.OutboundStageRed,
 		},
 		{
 			name: "green + changes-requested is changes-requested (the wait is on the author)",

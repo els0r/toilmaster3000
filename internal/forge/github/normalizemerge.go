@@ -1,6 +1,10 @@
 package github
 
-import "github.com/els0r/toilmaster3000/internal/forge"
+import (
+	"strings"
+
+	"github.com/els0r/toilmaster3000/internal/forge"
+)
 
 // ghViewItem mirrors the JSON gh emits for `gh pr view --json
 // title,body,reviews`. Reviewer logins nest under author.login, like the list
@@ -37,15 +41,33 @@ func normalizeReviewState(raw string) forge.ReviewState {
 	}
 }
 
+// botLoginPrefix is GitHub's marker on a GitHub App's reviewer login; emuSuffix
+// is the org's Enterprise Managed User suffix on a human's. Both are GitHub
+// spellings of an identity, not part of the identity, and gh-land strips both
+// when it builds the "Approved by:" trailer — parity means tm3k strips exactly
+// these two and nothing else (ADR 0016).
+const (
+	botLoginPrefix = "app/"
+	emuSuffix      = "_osag"
+)
+
+// normalizeLogin maps a raw GitHub reviewer login to the bare identity. It is
+// decode, not judge: which spellings GitHub uses is this adapter's knowledge,
+// while deciding that two spellings are ONE approver stays with the shared
+// fold (ADR 0030 §3). A login that is nothing but a prefix normalises to the
+// empty string, which the fold then skips.
+func normalizeLogin(raw string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(raw, botLoginPrefix), emuSuffix)
+}
+
 // normalizeMergeDetails maps the decoded merge-time view into the neutral
-// details CommitMessage composes from. Logins cross verbatim: stripping the
-// "app/" prefix and the "_osag" suffix is gh-land commit-message parity, which
-// the shared fold owns (ADR 0016) — not a GitHub vocabulary this seam decodes.
+// details CommitMessage composes from, with each reviewer login reduced to its
+// bare identity.
 func normalizeMergeDetails(item ghViewItem) forge.MergeDetails {
 	details := forge.MergeDetails{Title: item.Title, Body: item.Body}
 	for _, r := range item.Reviews {
 		details.Reviews = append(details.Reviews, forge.Review{
-			Author: r.Author.Login,
+			Author: normalizeLogin(r.Author.Login),
 			State:  normalizeReviewState(r.State),
 		})
 	}

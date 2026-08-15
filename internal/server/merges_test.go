@@ -42,7 +42,7 @@ func mergesServer(t *testing.T, mergesPath string, authored ...forge.PR) (*engin
 	fake.Authored = authored
 	fake.SetMergeInfo(21, forge.MergeDetails{
 		Title: "feat(cli): live title", Body: "b",
-		Reviews: []forge.Review{{Author: "alice_osag", State: forge.ReviewStateApproved}},
+		Reviews: []forge.Review{{Author: "alice", State: forge.ReviewStateApproved}},
 	})
 	store := storeWith(t, matchAllChores())
 	eng, err := engine.New(fake, filepath.Join(t.TempDir(), "approvals.jsonl"), mergesPath, store, testArms(t), nil)
@@ -75,7 +75,7 @@ func TestMergesEndpointServesLedger(t *testing.T) {
 	require.Equal(t, "feat(cli): live title", body[0].Title, "the ledger records what landed")
 	require.Equal(t, "feat", body[0].TitleParts.Type)
 	require.Equal(t, "u21", body[0].URL)
-	require.Equal(t, []string{"alice"}, body[0].ApprovedBy, "logins are normalized (_osag stripped)")
+	require.Equal(t, []string{"alice"}, body[0].ApprovedBy, "the approver list rides the wire as the ledger holds it")
 	require.False(t, body[0].MergedAt.IsZero())
 }
 

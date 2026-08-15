@@ -59,24 +59,37 @@ func TestCommitMessage(t *testing.T) {
 			wantBody:    "b\nApproved by: alice",
 		},
 		{
-			name: "_osag suffix and app/ prefix are stripped",
+			// Two spellings of one person reach the fold as the same bare login
+			// (the adapter reduced them), so the dedupe collapses them to one
+			// approver. Which spellings a forge uses is tested at the adapter.
+			name: "a login approving more than once is one approver",
 			details: forge.MergeDetails{
 				Title:   "fix: x",
 				Body:    "b",
-				Reviews: []forge.Review{approved("alice_osag"), approved("app/robo-reviewer")},
-			},
-			wantSubject: "fix: x",
-			wantBody:    "b\nApproved by: alice, robo-reviewer",
-		},
-		{
-			name: "logins dedupe after stripping (alice and alice_osag are one)",
-			details: forge.MergeDetails{
-				Title:   "fix: x",
-				Body:    "b",
-				Reviews: []forge.Review{approved("alice"), approved("alice_osag"), approved("alice")},
+				Reviews: []forge.Review{approved("alice"), approved("alice"), approved("alice")},
 			},
 			wantSubject: "fix: x",
 			wantBody:    "b\nApproved by: alice",
+		},
+		{
+			name: "an empty login is nobody and never reaches the trailer",
+			details: forge.MergeDetails{
+				Title:   "fix: x",
+				Body:    "b",
+				Reviews: []forge.Review{approved(""), approved("alice")},
+			},
+			wantSubject: "fix: x",
+			wantBody:    "b\nApproved by: alice",
+		},
+		{
+			name: "an approval with no identifiable approver leaves the body untouched",
+			details: forge.MergeDetails{
+				Title:   "fix: x",
+				Body:    "b",
+				Reviews: []forge.Review{approved("")},
+			},
+			wantSubject: "fix: x",
+			wantBody:    "b",
 		},
 		{
 			name: "empty body is the trailer alone (no leading newline)",
@@ -115,17 +128,22 @@ func TestCommitMessage(t *testing.T) {
 	}
 }
 
-// TestApprovedBy pins the ledger-facing half of the fold: the deduped,
-// normalized approver logins on their own, in first-seen order — the same list
-// the trailer joins, persisted as the merge record's approved_by[].
+// TestApprovedBy pins the ledger-facing half of the fold: the deduped approver
+// logins on their own, in first-seen order — the same list the trailer joins,
+// persisted as the merge record's approved_by[]. The logins arrive already
+// reduced to bare identities; reducing them is the adapter's job
+// (TestNormalizeLogin).
 func TestApprovedBy(t *testing.T) {
 	reviews := []forge.Review{
-		{Author: "bob_osag", State: forge.ReviewStateApproved},
-		{Author: "app/robo", State: forge.ReviewStateApproved},
 		{Author: "bob", State: forge.ReviewStateApproved},
+		{Author: "robo", State: forge.ReviewStateApproved},
+		{Author: "bob", State: forge.ReviewStateApproved},
+		{Author: "", State: forge.ReviewStateApproved},
 		{Author: "carol", State: forge.ReviewStateCommented},
+		{Author: "dave", State: forge.ReviewStateChangesRequested},
 	}
-	require.Equal(t, []string{"bob", "robo"}, forge.ApprovedBy(reviews))
+	require.Equal(t, []string{"bob", "robo"}, forge.ApprovedBy(reviews),
+		"approving reviews only, deduped, first-seen order, no empty login")
 
 	require.Empty(t, forge.ApprovedBy(nil), "no reviews yields no approvers")
 }

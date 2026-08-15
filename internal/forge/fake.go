@@ -141,6 +141,34 @@ func (f *Fake) ApprovedCalls() []int {
 	return out
 }
 
+// requireCoherentChecks panics if a canned PR's rollup contradicts its
+// FailingChecks count. A real adapter produces the two together and cannot
+// disagree with itself; a hand-built PR sets two fields and can, which is
+// exactly the bug that hid when FailingChecks stopped being a fold and became
+// adapter-supplied (ADR 0030 §6) — a red PR silently claiming nothing failing,
+// rendering "0 checks failing" on the dropped-red station.
+//
+// The rule is DIRECTIONAL on purpose. Entry count and failing count are not
+// the same number on every forge: GitHub counts non-passing rollup entries,
+// GitLab counts failed jobs behind ONE pipeline entry. Requiring equality here
+// would bake GitHub's cardinality into the shared Fake and reject a correct
+// GitLab fixture. What every forge owes is the implication a failure makes: if
+// something failed, the count is not zero.
+//
+// It panics rather than returning an error because the Fake has no *testing.T
+// and this is never a runtime condition — it is a malformed fixture, and a
+// malformed fixture must stop the test rather than quietly weaken it.
+func requireCoherentChecks(prs []PR) {
+	for _, pr := range prs {
+		if hasFailingCheck(pr.Checks) && pr.FailingChecks == 0 {
+			panic(fmt.Errorf(
+				"forge.Fake: PR #%d has a failing check but FailingChecks is 0 — "+
+					"a canned PR must carry the count its adapter would supply (ADR 0030 §6)",
+				pr.Number))
+		}
+	}
+}
+
 // ListCandidates returns the canned candidate set (or ListErr).
 func (f *Fake) ListCandidates(_ context.Context) ([]PR, error) {
 	f.mu.Lock()
@@ -148,6 +176,7 @@ func (f *Fake) ListCandidates(_ context.Context) ([]PR, error) {
 	if f.ListErr != nil {
 		return nil, f.ListErr
 	}
+	requireCoherentChecks(f.Candidates)
 	out := make([]PR, len(f.Candidates))
 	copy(out, f.Candidates)
 	return out, nil
@@ -162,6 +191,7 @@ func (f *Fake) ListAuthored(_ context.Context) ([]PR, error) {
 	if f.AuthoredErr != nil {
 		return nil, f.AuthoredErr
 	}
+	requireCoherentChecks(f.Authored)
 	out := make([]PR, len(f.Authored))
 	copy(out, f.Authored)
 	return out, nil

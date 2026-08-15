@@ -30,8 +30,7 @@ const (
 // ClassifyOutboundStage never reads it, and a conflicted Ready PR stays in
 // Ready carrying its mergeability.
 //
-// Only MergeableMergeable clears a merge, so the zero value — a PR no adapter
-// populated — blocks exactly as MergeableUnknown does.
+// Only MergeableMergeable clears a merge; every other value blocks.
 type Mergeability string
 
 const (
@@ -39,7 +38,12 @@ const (
 	// something unrecognised, or — for the inbound pull, which does not request
 	// mergeability at all — was never asked. It blocks a merge without moving a
 	// stage; the next cycle retries naturally.
-	MergeableUnknown Mergeability = "unknown"
+	//
+	// It is deliberately the ZERO VALUE, so a PR built by hand (forge.Fake's
+	// canned candidates, the engine's synthetic manual-approve PR) is
+	// indistinguishable from one an adapter reported unknown for. A separate
+	// zero would give the Fake a branch production never produces.
+	MergeableUnknown Mergeability = ""
 	// MergeableMergeable is a PR the forge will accept a merge on — the merge
 	// step's final precondition (ADR 0016).
 	MergeableMergeable Mergeability = "mergeable"

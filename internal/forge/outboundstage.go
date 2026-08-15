@@ -105,9 +105,17 @@ func ClassifyOutboundStage(pr PR, unresolvedThreads int) OutboundStage {
 // non-pass, as opposed to a still-pending entry. It is the red-vs-running
 // discriminator: AllGreen collapses fail and pending (both block approval), but
 // an outbound author must distinguish "go fix CI" from "wait".
+//
+// Only an explicit pass or pending is a non-failure. Every other value — the
+// zero Check, or a CheckState this fold does not know — counts as failing, so
+// an adapter bug lands the PR in Red where someone looks at it rather than in
+// Running where it waits forever (CheckState, fail closed).
 func hasFailingCheck(checks []Check) bool {
 	for _, c := range checks {
-		if c.State == CheckFail {
+		switch c.State {
+		case CheckPass, CheckPending:
+			continue
+		default:
 			return true
 		}
 	}
