@@ -92,7 +92,7 @@ so the board always shows the true frontier of work.
 - **TDD is required — and evidenced.** Each implementer invokes `/tdd` and works
   red→green→refactor in **vertical slices** (one test → minimal code → repeat),
   testing **behavior at the highest existing seam** (e.g. the cycle over
-  `github.Fake`, the `/pipeline` handler), never internals. The agent's report
+  `forge.Fake`, the `/pipeline` handler), never internals. The agent's report
   must show, per behavior, the test observed red before its implementation;
   reports without that evidence are rejected.
 - **The orchestrator does all GitHub I/O.** Implementers produce commits on

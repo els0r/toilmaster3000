@@ -124,7 +124,7 @@ hold your team's tokens and history and never belong in a commit.
   goroutine: `runCycle(); sleep; repeat` (sleep *after*, so a slow cycle can't
   overlap itself). All approvals — auto and manual — flow through one
   mutex-guarded path, making the manual-approve-vs-cycle race safe.
-- **GitHub access** — shells out to `gh` behind a `GitHubClient` interface; a
+- **GitHub access** — shells out to `gh` behind the `forge.Client` interface; a
   fake implementation backs the tests so the engine is exercised without the
   network. One list call per cycle pulls everything (titles, authors, diff
   counts, draft flag, `statusCheckRollup`) — no per-PR N+1. PR lifecycle state
