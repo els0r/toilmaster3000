@@ -743,3 +743,81 @@ Screens:
 		})
 	}
 }
+
+// TestLoadDecodesRequires proves a hook's optional Requires block parses off
+// hooks.yaml — Forge and Tools both optional, hand-edited like the rest of the
+// file (ADR 0031). Both hook kinds carry it, since Spec is shared.
+func TestLoadDecodesRequires(t *testing.T) {
+	path := writeHooks(t, `
+Screens:
+  - Name: gitlab-only screen
+    Harness: claude
+    Prompt: vet it
+    Requires:
+      Forge: gitlab
+      Tools:
+        - jq
+    Enabled: true
+Notifiers:
+  - Name: slack notifier
+    Harness: claude
+    Prompt: notify
+    Point: queue_entered
+    Requires:
+      Tools:
+        - slack-cli
+    Enabled: false
+`)
+
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+
+	require.Equal(t, hook.Forge("gitlab"), cfg.Screens[0].Requires.Forge)
+	require.Equal(t, []string{"jq"}, cfg.Screens[0].Requires.Tools)
+
+	require.Equal(t, hook.Forge(""), cfg.Notifiers[0].Requires.Forge, "Forge is optional")
+	require.Equal(t, []string{"slack-cli"}, cfg.Notifiers[0].Requires.Tools)
+}
+
+// TestLoadAbsentRequiresIsZeroValue proves a hook with no Requires block loads
+// exactly as it did before the field existed — absent Requires changes no
+// existing behaviour (ADR 0031).
+func TestLoadAbsentRequiresIsZeroValue(t *testing.T) {
+	path := writeHooks(t, `
+Screens:
+  - Name: security vet
+    Harness: claude
+    Prompt: vet it
+    Enabled: true
+`)
+
+	cfg, err := hook.Load(path)
+	require.NoError(t, err)
+
+	require.Equal(t, hook.Requires{}, cfg.Screens[0].Requires)
+}
+
+// TestLoadSelfHealPreservesRequires proves the Id self-heal rewrite (which
+// re-marshals the whole file) does not drop a hook's Requires block: a reload
+// after the heal still carries it verbatim.
+func TestLoadSelfHealPreservesRequires(t *testing.T) {
+	path := writeHooks(t, `
+Screens:
+  - Name: gitlab-only screen
+    Harness: claude
+    Prompt: vet it
+    Requires:
+      Forge: gitlab
+      Tools:
+        - jq
+    Enabled: true
+`)
+
+	_, err := hook.Load(path)
+	require.NoError(t, err)
+
+	reloaded, err := hook.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, hook.Forge("gitlab"), reloaded.Screens[0].Requires.Forge)
+	require.Equal(t, []string{"jq"}, reloaded.Screens[0].Requires.Tools)
+}
