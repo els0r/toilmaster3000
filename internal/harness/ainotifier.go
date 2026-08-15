@@ -17,6 +17,7 @@ type AINotifier struct {
 	spec    hook.Spec
 	repo    string
 	workDir string
+	tools   []string
 	agent   Agent
 	sink    Transcriber
 }
@@ -33,12 +34,18 @@ type AINotifier struct {
 // enforced twice, once by the absent config field and once by the absent code
 // path.
 //
+// tools is the Act leg's tool authority — spec.Requires.Grant against the
+// active forge (ADR 0031 decision 4), computed once at construction (the repo
+// precedent: a pure function of config the caller already resolved, not
+// re-derived per fire). It rides every Request this species issues. AIScreen
+// again has no such parameter: a Screen run is always toolless.
+//
 // sink is required, not optional (ADR 0028): an AI species accounts for itself,
 // so there is no way to construct one with nowhere to put its account. The
 // obligation binds the SPECIES, never the kind — hook.Notifier is still one
 // method, so a non-AI Notifier owes no transcript.
-func NewAINotifier(spec hook.Spec, repo, workDir string, agent Agent, sink Transcriber) *AINotifier {
-	return &AINotifier{spec: spec, repo: repo, workDir: workDir, agent: agent, sink: sink}
+func NewAINotifier(spec hook.Spec, repo, workDir string, tools []string, agent Agent, sink Transcriber) *AINotifier {
+	return &AINotifier{spec: spec, repo: repo, workDir: workDir, tools: tools, agent: agent, sink: sink}
 }
 
 // Notify runs one side-effecting agent pass for the PR. An error — unreadable
@@ -59,6 +66,7 @@ func (n *AINotifier) Notify(ctx context.Context, pr hook.PRContext) error {
 		Author:       pr.Author,
 		URL:          pr.URL,
 		HeadSHA:      pr.HeadSHA,
+		Tools:        n.tools,
 	})
 	// The transcript is the agent's account of what it did — recorded for the
 	// operator, never parsed, never acted on (ADR 0023: no verdict extraction

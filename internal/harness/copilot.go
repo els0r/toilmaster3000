@@ -30,7 +30,7 @@ type Copilot struct {
 	// seam rather than only inside an exec call no test may make.
 	fetchDiff func(ctx context.Context, repo string, number int) (string, error)
 	invoke    func(ctx context.Context, model, prompt, workDir string) ([]byte, error)
-	act       func(ctx context.Context, model, prompt, workDir string) ([]byte, error)
+	act       func(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error)
 }
 
 // NewCopilot returns the production copilot adapter, shelling out to the real
@@ -66,7 +66,7 @@ func (c *Copilot) Screen(ctx context.Context, req Request) (string, error) {
 // silent-mode response text is returned as the transcript for the species to
 // record; nothing is extracted from it.
 func (c *Copilot) Act(ctx context.Context, req Request) (string, error) {
-	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir)
+	out, err := c.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir, req.Tools)
 	if err != nil {
 		return salvage(copilotText(out)), err
 	}
@@ -98,15 +98,34 @@ func copilotInvoke(ctx context.Context, model, prompt, workDir string) ([]byte, 
 }
 
 // copilotActInvoke is copilotInvoke's side-effecting sibling (the Agent
-// seam's production leg): the same headless run plus the gh shell authority —
-// --allow-tool "shell(gh:*)" — the exact analog of the claude leg's
-// Bash(gh:*). The built-in GitHub MCP stays disabled (runCopilot's base
-// flags): one action channel, matching the composed prompt's gh instructions
-// and posting as the same runtime identity as every other leg. The authority
-// is the WHOLE gh CLI by design: the prompt ceiling is the control
-// (ADR 0023).
-func copilotActInvoke(ctx context.Context, model, prompt, workDir string) ([]byte, error) {
-	return runCopilot(ctx, model, prompt, workDir, "--allow-tool", "shell(gh:*)")
+// seam's production leg): the same headless run plus the shell authority
+// tools grants — one --allow-tool "shell(<tool>:*)" pair per granted tool,
+// the exact analog of the claude leg's Bash(<tool>:*) (ADR 0031 decision 4).
+// The built-in GitHub MCP stays disabled (runCopilot's base flags): one
+// action channel, matching the composed prompt's gh instructions and posting
+// as the same runtime identity as every other leg. The authority is each
+// tool's WHOLE CLI by design: the prompt ceiling is the control (ADR 0023);
+// WHICH tools are available is the part that is actually enforced
+// (ADR 0031 decision 5).
+func copilotActInvoke(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error) {
+	return runCopilot(ctx, model, prompt, workDir, copilotAllowToolArgs(tools)...)
+}
+
+// copilotAllowToolArgs turns a hook's granted tools into the --allow-tool
+// flag pairs copilot's CLI expects: the flag name is singular, so it repeats
+// once per tool (claude's --allowedTools takes multiple patterns after one
+// occurrence; copilot does not). Absent tools produces nothing — the caller
+// supplies ["gh"] via Requires.Grant when a hook declares nothing, so this is
+// what makes "today's flags bit-for-bit" true without hard-coding "gh" here.
+func copilotAllowToolArgs(tools []string) []string {
+	if len(tools) == 0 {
+		return nil
+	}
+	args := make([]string, 0, len(tools)*2)
+	for _, tool := range tools {
+		args = append(args, "--allow-tool", fmt.Sprintf("shell(%s:*)", tool))
+	}
+	return args
 }
 
 // copilotCmd builds one headless copilot CLI invocation without running it.

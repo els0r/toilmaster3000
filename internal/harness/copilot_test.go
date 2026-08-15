@@ -102,7 +102,7 @@ func TestCopilotScreenKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
 }
 
 func TestCopilotActKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
-	c := scriptedCopilotAgent(func(context.Context, string, string, string) ([]byte, error) {
+	c := scriptedCopilotAgent(func(context.Context, string, string, string, []string) ([]byte, error) {
 		return []byte("Posted a review comment on #42."),
 			errors.New("copilot -p: exit status 1")
 	})
@@ -136,14 +136,14 @@ func TestCopilotScreenSilentOutputIsAFailedAttempt(t *testing.T) {
 
 // scriptedCopilotAgent returns a Copilot adapter whose side-effect seam is
 // scripted — the real copilot CLI never runs in tests.
-func scriptedCopilotAgent(act func(ctx context.Context, model, prompt, workDir string) ([]byte, error)) *Copilot {
+func scriptedCopilotAgent(act func(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error)) *Copilot {
 	return &Copilot{act: act}
 }
 
 func TestCopilotActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 	req := composeReq()
 	var gotModel, gotPrompt string
-	c := scriptedCopilotAgent(func(_ context.Context, model, prompt, _ string) ([]byte, error) {
+	c := scriptedCopilotAgent(func(_ context.Context, model, prompt, _ string, _ []string) ([]byte, error) {
 		gotModel, gotPrompt = model, prompt
 		return []byte("Posted a review comment on #42.\n"), nil
 	})
@@ -157,6 +157,57 @@ func TestCopilotActComposesInvokesAndReturnsTheTranscript(t *testing.T) {
 		"the invoked prompt is exactly the notify composition — the ceiling rides every run")
 }
 
+// TestCopilotActForwardsGrantedToolsToTheProcessSeam is claude's assertion
+// mirrored on copilot: the Request's Tools (the hook's Requires.Grant,
+// ADR 0031) reaches the process seam verbatim.
+func TestCopilotActForwardsGrantedToolsToTheProcessSeam(t *testing.T) {
+	req := composeReq()
+	req.Tools = []string{"gh", "jq"}
+
+	var gotTools []string
+	c := scriptedCopilotAgent(func(_ context.Context, _, _, _ string, tools []string) ([]byte, error) {
+		gotTools = tools
+		return []byte("Posted a review comment on #42.\n"), nil
+	})
+
+	_, err := c.Act(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"gh", "jq"}, gotTools)
+}
+
+// TestCopilotAllowToolArgs is the command-construction seam for the act
+// leg's tool authority: absent Tools produces today's flag pair bit-for-bit,
+// and declared Tools repeats --allow-tool once per granted tool — the flag
+// name is singular, unlike claude's --allowedTools.
+func TestCopilotAllowToolArgs(t *testing.T) {
+	tests := []struct {
+		name  string
+		tools []string
+		want  []string
+	}{
+		{
+			name:  "absent Tools grants exactly gh — today's single pair, bit-for-bit",
+			tools: []string{"gh"},
+			want:  []string{"--allow-tool", "shell(gh:*)"},
+		},
+		{
+			name:  "declared Tools repeats the flag, one pair per granted tool",
+			tools: []string{"gh", "jq"},
+			want:  []string{"--allow-tool", "shell(gh:*)", "--allow-tool", "shell(jq:*)"},
+		},
+		{
+			name:  "no tools at all grants no authority",
+			tools: nil,
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, copilotAllowToolArgs(tt.tools))
+		})
+	}
+}
+
 // One field serves both adapters, which is the whole reason WorkDir is the
 // process's cwd and not copilot's -C: the Request's anchor reaches the process
 // seam verbatim here exactly as it does on claude, and internal/harness grows
@@ -168,7 +219,7 @@ func TestCopilotCarriesWorkDirToTheProcessSeam(t *testing.T) {
 	req.WorkDir = "/srv/skills-worktree"
 
 	var actWorkDir string
-	agent := &Copilot{act: func(_ context.Context, model, prompt, workDir string) ([]byte, error) {
+	agent := &Copilot{act: func(_ context.Context, model, prompt, workDir string, _ []string) ([]byte, error) {
 		actWorkDir = workDir
 		return []byte("Posted a review comment on #42.\n"), nil
 	}}
@@ -215,7 +266,7 @@ func TestCopilotCmdAnchorsTheRunAndNeverWidensTheGrant(t *testing.T) {
 
 func TestCopilotActFailuresSurfaceAsErrors(t *testing.T) {
 	// A crashed CLI surfaces its error.
-	c := scriptedCopilotAgent(func(context.Context, string, string, string) ([]byte, error) {
+	c := scriptedCopilotAgent(func(context.Context, string, string, string, []string) ([]byte, error) {
 		return nil, errors.New("copilot -p: signal: killed")
 	})
 	_, err := c.Act(context.Background(), composeReq())
@@ -223,7 +274,7 @@ func TestCopilotActFailuresSurfaceAsErrors(t *testing.T) {
 
 	// Blank silent-mode output is an error, not a transcript: the run said
 	// nothing, so there is nothing to log as the agent's account of itself.
-	c = scriptedCopilotAgent(func(context.Context, string, string, string) ([]byte, error) {
+	c = scriptedCopilotAgent(func(context.Context, string, string, string, []string) ([]byte, error) {
 		return []byte("  \n"), nil
 	})
 	_, err = c.Act(context.Background(), composeReq())

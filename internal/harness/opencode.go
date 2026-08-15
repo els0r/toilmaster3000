@@ -32,9 +32,34 @@ type openCodePermission struct {
 	Bash  *openCodeBashPermission `json:"bash,omitempty"`
 }
 
+// openCodeBashPermission is the notifier's bash permission list: the broad
+// deny always comes first (the type's own doc above), then one
+// "<tool> *": "allow" entry per granted tool — ADR 0031 decision 4's
+// additive grant (the active forge's CLI plus declared Requires.Tools),
+// delivered here as the actual tool authority rather than merely boot-
+// checked. A dedicated MarshalJSON keeps the order explicit: a plain
+// map[string]any would let Go's (or goccy's) key-sorting decide it, and nothing
+// here should depend on tool names sorting after "*".
 type openCodeBashPermission struct {
-	All string `json:"*"`
-	GH  string `json:"gh *"`
+	tools []string
+}
+
+// MarshalJSON writes {"*":"deny","<tool> *":"allow",...} in tools order.
+// Absent tools (nil/empty) still yields the deny-only object as valid JSON.
+func (p openCodeBashPermission) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"*":"deny"`)
+	for _, tool := range p.tools {
+		key, err := json.Marshal(tool + " *")
+		if err != nil {
+			return nil, fmt.Errorf("marshal bash permission key %q: %w", tool, err)
+		}
+		buf.WriteByte(',')
+		buf.Write(key)
+		buf.WriteString(`:"allow"`)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 // OpenCode is the opencode harness adapter. It reuses the operator's normal
@@ -49,7 +74,7 @@ type OpenCode struct {
 	// diff, while an Act run holds the gh action channel to publish its review.
 	fetchDiff func(ctx context.Context, repo string, number int) (string, error)
 	invoke    func(ctx context.Context, model, prompt, workDir string) ([]byte, error)
-	act       func(ctx context.Context, model, prompt, workDir string) ([]byte, error)
+	act       func(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error)
 }
 
 // NewOpenCode returns the production OpenCode adapter, shelling out to the
@@ -86,7 +111,7 @@ func (o *OpenCode) Screen(ctx context.Context, req Request) (string, error) {
 // The response text comes back as the transcript for the species to record;
 // nothing is extracted from it.
 func (o *OpenCode) Act(ctx context.Context, req Request) (string, error) {
-	out, err := o.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir)
+	out, err := o.act(ctx, req.Model, ComposeNotifyPrompt(req), req.WorkDir, req.Tools)
 	if err != nil {
 		return salvage(openCodeText(out)), err
 	}
@@ -110,23 +135,28 @@ func openCodeText(out []byte) (string, error) {
 // openCodeInvoke is the Screen production leg. The tm3k-screen agent denies
 // every OpenCode tool, so it can obtain PR content only from the diff carried
 // in its prompt. Trusted inherited instructions still shape the model run.
+// tools is always nil here: a Screen run never carries one (Request.Tools is
+// never populated for the Screen leg, the same exclusion AIScreen enforces
+// on WorkDir).
 func openCodeInvoke(ctx context.Context, model, prompt, workDir string) ([]byte, error) {
 	agent, err := newOpenCodeAgentName(openCodeScreenAgent)
 	if err != nil {
 		return nil, err
 	}
-	return runOpenCode(ctx, model, prompt, workDir, agent)
+	return runOpenCode(ctx, model, prompt, workDir, agent, nil)
 }
 
 // openCodeActInvoke is openCodeInvoke's side-effecting sibling. The
-// tm3k-notifier agent permits the gh CLI and nothing else that can act; this
-// matches the existing adapters' whole-gh authority boundary.
-func openCodeActInvoke(ctx context.Context, model, prompt, workDir string) ([]byte, error) {
+// tm3k-notifier agent permits tools' granted binaries and nothing else that
+// can act — the active forge's CLI plus whatever Requires.Tools declares
+// (ADR 0031 decision 4), delivered to the actual bash permission rather than
+// merely boot-checked.
+func openCodeActInvoke(ctx context.Context, model, prompt, workDir string, tools []string) ([]byte, error) {
 	agent, err := newOpenCodeAgentName(openCodeNotifierAgent)
 	if err != nil {
 		return nil, err
 	}
-	return runOpenCode(ctx, model, prompt, workDir, agent)
+	return runOpenCode(ctx, model, prompt, workDir, agent, tools)
 }
 
 // newOpenCodeAgentName returns a run-private agent name. OpenCode deep-merges
@@ -153,8 +183,8 @@ func newOpenCodeAgentName(kind string) (string, error) {
 // settings. WorkDir is the process cwd and direct-tool workspace, not a general
 // sandbox: trusted global configuration and instructions can still influence
 // the run.
-func openCodeCmd(ctx context.Context, model, prompt, workDir, agent string) (*exec.Cmd, error) {
-	config, err := openCodeConfig(os.Getenv("OPENCODE_CONFIG_CONTENT"), agent)
+func openCodeCmd(ctx context.Context, model, prompt, workDir, agent string, tools []string) (*exec.Cmd, error) {
+	config, err := openCodeConfig(os.Getenv("OPENCODE_CONFIG_CONTENT"), agent, tools)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +228,7 @@ func openCodePWD(workDir string) (string, error) {
 // config. OpenCode merges agent definitions deeply across layers, so a unique
 // name avoids retaining an operator-defined field from an identically named
 // agent while preserving provider and authentication configuration.
-func openCodeConfig(inherited, agent string) (string, error) {
+func openCodeConfig(inherited, agent string, tools []string) (string, error) {
 	config := map[string]any{}
 	if inherited != "" {
 		if err := json.Unmarshal([]byte(inherited), &config); err != nil {
@@ -213,7 +243,7 @@ func openCodeConfig(inherited, agent string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	agents[agent] = openCodeAgent(agent)
+	agents[agent] = openCodeAgent(agent, tools)
 	config["agent"] = agents
 	config["autoupdate"] = false
 	config["compaction"] = map[string]any{"auto": false}
@@ -246,9 +276,12 @@ func openCodeAgents(config map[string]any) (map[string]any, error) {
 
 // openCodeAgent returns the full replacement definition for one tm3k-reserved
 // agent. The wildcard denies custom/MCP tools too. Notifier bash permission is
-// deliberately the full gh CLI: OpenCode's shell-text matcher cannot enforce a
-// safe subset of gh review verbs (ADR 0029).
-func openCodeAgent(name string) map[string]any {
+// deliberately the tools' full CLIs: OpenCode's shell-text matcher cannot
+// enforce a safe subset of any one tool's verbs (ADR 0029), and WHICH tools
+// are available at all is the part ADR 0031 decision 5 actually enforces.
+// tools is unused on the Screen branch (openCodeInvoke always passes nil):
+// a Screen carries no Bash permission regardless.
+func openCodeAgent(name string, tools []string) map[string]any {
 	permission := openCodePermission{All: "deny"}
 	if strings.HasPrefix(name, openCodeNotifierAgent+"-") || name == openCodeNotifierAgent {
 		permission = openCodePermission{
@@ -258,7 +291,7 @@ func openCodeAgent(name string) map[string]any {
 			List:  "allow",
 			Read:  "allow",
 			Skill: "allow",
-			Bash:  &openCodeBashPermission{All: "deny", GH: "allow"},
+			Bash:  &openCodeBashPermission{tools: tools},
 		}
 	}
 	return map[string]any{
@@ -289,8 +322,8 @@ func setEnv(env []string, key, value string) []string {
 // rule: text-mode stdout IS the answer, so a run that reviewed the diff and
 // then exited non-zero loses everything it said if this returns nil. The error
 // still stands; the caller decides what survives.
-func runOpenCode(ctx context.Context, model, prompt, workDir, agent string) ([]byte, error) {
-	cmd, err := openCodeCmd(ctx, model, prompt, workDir, agent)
+func runOpenCode(ctx context.Context, model, prompt, workDir, agent string, tools []string) ([]byte, error) {
+	cmd, err := openCodeCmd(ctx, model, prompt, workDir, agent, tools)
 	if err != nil {
 		return nil, err
 	}

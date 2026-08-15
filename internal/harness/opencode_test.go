@@ -119,7 +119,7 @@ func TestOpenCodeScreenKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
 }
 
 func TestOpenCodeActKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
-	o := &OpenCode{act: func(context.Context, string, string, string) ([]byte, error) {
+	o := &OpenCode{act: func(context.Context, string, string, string, []string) ([]byte, error) {
 		return []byte("Posted a review comment on #42."), errors.New("opencode run: exit status 1")
 	}}
 
@@ -133,7 +133,7 @@ func TestOpenCodeActKeepsTheTextOfARunThatFailedAfterSpeaking(t *testing.T) {
 func TestOpenCodeActComposesInvokesAndReturnsTranscript(t *testing.T) {
 	req := composeReq()
 	var gotModel, gotPrompt string
-	o := &OpenCode{act: func(_ context.Context, model, prompt, _ string) ([]byte, error) {
+	o := &OpenCode{act: func(_ context.Context, model, prompt, _ string, _ []string) ([]byte, error) {
 		gotModel, gotPrompt = model, prompt
 		return []byte("Posted a review comment on #42.\n"), nil
 	}}
@@ -146,14 +146,32 @@ func TestOpenCodeActComposesInvokesAndReturnsTranscript(t *testing.T) {
 	require.Equal(t, ComposeNotifyPrompt(req), gotPrompt)
 }
 
+// TestOpenCodeActForwardsGrantedToolsToTheProcessSeam is claude/copilot's
+// assertion mirrored on opencode: the Request's Tools (the hook's
+// Requires.Grant, ADR 0031) reaches the process seam verbatim.
+func TestOpenCodeActForwardsGrantedToolsToTheProcessSeam(t *testing.T) {
+	req := composeReq()
+	req.Tools = []string{"gh", "jq"}
+
+	var gotTools []string
+	o := &OpenCode{act: func(_ context.Context, _, _, _ string, tools []string) ([]byte, error) {
+		gotTools = tools
+		return []byte("Posted a review comment on #42.\n"), nil
+	}}
+
+	_, err := o.Act(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"gh", "jq"}, gotTools)
+}
+
 func TestOpenCodeActFailuresSurfaceAsErrors(t *testing.T) {
-	o := &OpenCode{act: func(context.Context, string, string, string) ([]byte, error) {
+	o := &OpenCode{act: func(context.Context, string, string, string, []string) ([]byte, error) {
 		return nil, errors.New("opencode run: signal: killed")
 	}}
 	_, err := o.Act(context.Background(), composeReq())
 	require.ErrorContains(t, err, "opencode run")
 
-	o = &OpenCode{act: func(context.Context, string, string, string) ([]byte, error) {
+	o = &OpenCode{act: func(context.Context, string, string, string, []string) ([]byte, error) {
 		return []byte("  \n"), nil
 	}}
 	_, err = o.Act(context.Background(), composeReq())
@@ -165,7 +183,7 @@ func TestOpenCodeCarriesWorkDirToProcessSeam(t *testing.T) {
 	req.WorkDir = "/srv/skills-worktree"
 
 	var actWorkDir string
-	agent := &OpenCode{act: func(_ context.Context, _, _, workDir string) ([]byte, error) {
+	agent := &OpenCode{act: func(_ context.Context, _, _, workDir string, _ []string) ([]byte, error) {
 		actWorkDir = workDir
 		return []byte("Posted a review comment on #42."), nil
 	}}
@@ -189,7 +207,7 @@ func TestOpenCodeCarriesWorkDirToProcessSeam(t *testing.T) {
 func TestOpenCodeCmdUsesStdinAndRunLocalProfile(t *testing.T) {
 	t.Setenv("PWD", "/stale-parent-directory")
 	t.Setenv("OPENCODE_CONFIG_CONTENT", `{"provider":{"test":{"options":{"baseURL":"http://example.test"}}},"agent":{"other":{"mode":"primary"}}}`)
-	cmd, err := openCodeCmd(context.Background(), "test/model", "prompt text", "/srv/skills-worktree", openCodeNotifierAgent)
+	cmd, err := openCodeCmd(context.Background(), "test/model", "prompt text", "/srv/skills-worktree", openCodeNotifierAgent, []string{"gh"})
 
 	require.NoError(t, err)
 	require.Equal(t, "/srv/skills-worktree", cmd.Dir)
@@ -210,7 +228,7 @@ func TestOpenCodeCmdUsesStdinAndRunLocalProfile(t *testing.T) {
 	require.Equal(t, "/srv/skills-worktree", env["PWD"], "OpenCode prefers PWD over cmd.Dir")
 	require.NotEmpty(t, env["OPENCODE_CONFIG_CONTENT"])
 
-	defaultModelCmd, err := openCodeCmd(context.Background(), "", "prompt text", "", openCodeScreenAgent)
+	defaultModelCmd, err := openCodeCmd(context.Background(), "", "prompt text", "", openCodeScreenAgent, nil)
 	require.NoError(t, err)
 	require.NotContains(t, defaultModelCmd.Args, "--model", "an empty hook Model uses the operator default")
 	require.Equal(t, mustGetwd(t), envMap(defaultModelCmd.Env)["PWD"], "an unanchored run uses tm3k's actual cwd")
@@ -223,7 +241,7 @@ func TestOpenCodeConfigPreservesInheritedSettingsAndReplacesReservedAgent(t *tes
 		"agent":{"other":{"mode":"primary"},"tm3k-screen":{"mode":"subagent","steps":9}},
 		"mcp":{"trusted":{"enabled":true}}
 	}`
-	configured, err := openCodeConfig(inherited, agent)
+	configured, err := openCodeConfig(inherited, agent, nil)
 	require.NoError(t, err)
 
 	var config map[string]any
@@ -242,8 +260,13 @@ func TestOpenCodeConfigPreservesInheritedSettingsAndReplacesReservedAgent(t *tes
 	require.Equal(t, map[string]any{"*": "deny"}, screen["permission"])
 }
 
+// TestOpenCodeConfigNotifierAllowsOnlyGhActionChannel pins today's shape
+// bit-for-bit: ["gh"] is what Requires.Grant(GitHub) returns for a hook
+// declaring no Requires.Tools (ADR 0031), so this is the "absent Tools"
+// case — the caller (openCodeActInvoke, fed by Request.Tools) is what makes
+// that formula, not this function hard-coding "gh".
 func TestOpenCodeConfigNotifierAllowsOnlyGhActionChannel(t *testing.T) {
-	configured, err := openCodeConfig("", openCodeNotifierAgent)
+	configured, err := openCodeConfig("", openCodeNotifierAgent, []string{"gh"})
 	require.NoError(t, err)
 
 	var config map[string]any
@@ -261,6 +284,23 @@ func TestOpenCodeConfigNotifierAllowsOnlyGhActionChannel(t *testing.T) {
 		"the broad deny must precede every notifier exception")
 }
 
+// TestOpenCodeConfigNotifierGrantsDeclaredTools proves a hook's declared
+// Requires.Tools reaches the actual bash permission, additive to gh
+// (ADR 0031 decision 4) — the delivery this PR wires up, not merely the
+// boot-time check. The deny-first ordering invariant must survive with more
+// than one granted tool, in declaration order.
+func TestOpenCodeConfigNotifierGrantsDeclaredTools(t *testing.T) {
+	configured, err := openCodeConfig("", openCodeNotifierAgent, []string{"gh", "jq"})
+	require.NoError(t, err)
+
+	var config map[string]any
+	require.NoError(t, json.Unmarshal([]byte(configured), &config))
+	permission := config["agent"].(map[string]any)[openCodeNotifierAgent].(map[string]any)["permission"].(map[string]any)
+	require.Equal(t, map[string]any{"*": "deny", "gh *": "allow", "jq *": "allow"}, permission["bash"])
+	require.Contains(t, configured, `"bash":{"*":"deny","gh *":"allow","jq *":"allow"}`,
+		"the broad deny still precedes every granted tool, in declaration order")
+}
+
 func TestNewOpenCodeAgentNameIsRunPrivate(t *testing.T) {
 	screen, err := newOpenCodeAgentName(openCodeScreenAgent)
 	require.NoError(t, err)
@@ -273,13 +313,13 @@ func TestNewOpenCodeAgentNameIsRunPrivate(t *testing.T) {
 }
 
 func TestOpenCodeConfigRejectsInvalidInheritedConfig(t *testing.T) {
-	_, err := openCodeConfig("{", openCodeScreenAgent)
+	_, err := openCodeConfig("{", openCodeScreenAgent, nil)
 	require.ErrorContains(t, err, "decode inherited OPENCODE_CONFIG_CONTENT")
 
-	_, err = openCodeConfig(`{"agent":"build"}`, openCodeScreenAgent)
+	_, err = openCodeConfig(`{"agent":"build"}`, openCodeScreenAgent, nil)
 	require.ErrorContains(t, err, "agent must be an object")
 
-	_, err = openCodeConfig("null", openCodeScreenAgent)
+	_, err = openCodeConfig("null", openCodeScreenAgent, nil)
 	require.ErrorContains(t, err, "must be an object")
 }
 
