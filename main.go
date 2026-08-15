@@ -362,7 +362,7 @@ func notifierInstances(hooks hook.Config, repo string, transcripts harness.Trans
 		if err != nil {
 			return nil, err
 		}
-		tools := nc.Spec.Requires.Grant(activeForge)
+		tools := nc.Requires.Grant(activeForge)
 		instances = append(instances, hook.NotifierInstance{
 			Spec:     nc.Spec,
 			Point:    nc.Point,
