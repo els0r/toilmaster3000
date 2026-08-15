@@ -37,8 +37,11 @@ func TestRequiresGrant(t *testing.T) {
 			want:  []string{"gh", "jq"},
 		},
 		{
+			// Requires.Forge names GitHub, but the ACTIVE forge passed to Grant is
+			// GitLab — proving the grant follows the active instance, never the
+			// hook's own Forge declaration.
 			name:  "the grant follows the active forge, not the Requires.Forge value",
-			r:     hook.Requires{},
+			r:     hook.Requires{Forge: hook.GitHub},
 			forge: hook.GitLab,
 			want:  []string{"glab"},
 		},
@@ -48,7 +51,7 @@ func TestRequiresGrant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := tt.r.Grant(tt.forge)
-			require.Equal(t, tt.want, got)
+			require.ElementsMatch(t, tt.want, got, "the grant is a set, not an order guarantee")
 		})
 	}
 }
@@ -128,4 +131,39 @@ func TestSpecClassifyMissingDeclaredToolIsBroken(t *testing.T) {
 
 	require.Equal(t, hook.Broken, elig)
 	require.Contains(t, reason, "jq")
+}
+
+// TestSpecClassifyExplicitForgeWinsOverToolsInference proves the other-forge-
+// CLI-in-Tools inference is a FALLBACK, not a veto (ADR 0031 decision 4): when
+// Forge is spelled out and matches the active instance, naming the other
+// forge's CLI in Tools is a legitimate mirror hook, eligible, with that CLI in
+// its grant — the inference applies only when Forge is absent.
+func TestSpecClassifyExplicitForgeWinsOverToolsInference(t *testing.T) {
+	s := hook.Spec{
+		Name:     "mirror notifier",
+		Harness:  "claude",
+		Requires: hook.Requires{Forge: hook.GitHub, Tools: []string{"glab"}},
+	}
+
+	elig, reason := s.Classify(hook.GitHub, alwaysFound)
+
+	require.Equal(t, hook.Eligible, elig, "explicit Forge match must not be vetoed by the Tools inference")
+	require.Empty(t, reason)
+	require.ElementsMatch(t, []string{"gh", "glab"}, s.Requires.Grant(hook.GitHub))
+}
+
+// TestSpecClassifyUnmappedActiveForgeIsBroken proves Classify never calls
+// lookPath("") when the active forge itself has no known CLI: it is a clear
+// Broken classification instead (ADR 0031's mechanism guarding its own
+// forgeCLI lookup).
+func TestSpecClassifyUnmappedActiveForgeIsBroken(t *testing.T) {
+	s := hook.Spec{Name: "security vet", Harness: "claude"}
+
+	elig, reason := s.Classify(hook.Forge("bitbucket"), func(name string) (string, error) {
+		require.NotEmpty(t, name, "lookPath must never be called with an empty binary name")
+		return "/usr/local/bin/" + name, nil
+	})
+
+	require.Equal(t, hook.Broken, elig)
+	require.Contains(t, reason, "bitbucket")
 }

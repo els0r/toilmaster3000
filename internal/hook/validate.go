@@ -56,6 +56,17 @@ var (
 	// ErrMissingName rejects a hook without a Name — every later surface
 	// (queue reasons, logs, these very errors) needs the human handle.
 	ErrMissingName = errors.New("missing hook name")
+	// ErrUnknownForge rejects a Requires.Forge value outside the known-forge
+	// set (ADR 0031): a typo'd or unsupported forge ("Github", "guthub",
+	// "bitbucket") is a mis-scoping, indistinguishable from a legitimate
+	// other-forge skip unless it is caught here. A KNOWN other-forge value
+	// ("gitlab" on a github instance) is NOT an error — it is valid and merely
+	// ineligible, the whole point of the mixed-portfolio design.
+	ErrUnknownForge = errors.New("unknown forge")
+	// ErrBadTool rejects a Requires.Tools entry that is empty or
+	// whitespace-only: a blank binary name can never resolve on PATH, so it is
+	// a config mistake, not a real precondition.
+	ErrBadTool = errors.New("invalid tool")
 )
 
 // knownHarnesses is the harness allowlist ErrUnknownHarness checks against
@@ -66,17 +77,27 @@ var knownHarnesses = map[string]bool{"claude": true, "copilot": true, "opencode"
 // failure. The pre/post discipline itself needs no checking on the Screen side
 // — a ScreenConfig has no Point field to get wrong; only the Notifier's named
 // post-point can be misconfigured.
-func (c Config) validate() error {
+//
+// active is the instance's active forge (ADR 0030/0031): for each hook it
+// decides ineligible — computed here via Requires.ineligible, the same pure
+// fact Classify judges later at boot — which the machine-local existence
+// checks (PromptFile, WorkDir) below skip. Every OTHER check (Harness
+// allowlist, Prompt|PromptFile, Point, Paths glob syntax, Requires itself)
+// still runs regardless: only filesystem facts that depend on WHICH machine
+// is booting are forge-gated, never the YAML's own shape.
+func (c Config) validate(active Forge) error {
 	names := map[string]bool{}
 	for i, s := range c.Screens {
 		l := label("screen", i, s.Name)
-		if err := s.validate(l, names); err != nil {
+		_, ineligible := s.Requires.ineligible(active)
+		if err := s.validate(l, names, ineligible); err != nil {
 			return err
 		}
 	}
 	for i, n := range c.Notifiers {
 		l := label("notifier", i, n.Name)
-		if err := n.validate(l, names); err != nil {
+		_, ineligible := n.Requires.ineligible(active)
+		if err := n.validate(l, names, ineligible); err != nil {
 			return err
 		}
 		if !postPoints[n.Point] {
@@ -88,7 +109,7 @@ func (c Config) validate() error {
 				return fmt.Errorf("%s: %w: %q", l, ErrBadPattern, p)
 			}
 		}
-		if err := validateWorkDir(l, n.WorkDir, n.Enabled); err != nil {
+		if err := validateWorkDir(l, n.WorkDir, n.Enabled, ineligible); err != nil {
 			return err
 		}
 	}
@@ -101,11 +122,14 @@ func (c Config) validate() error {
 // pass — so the directory the operator wrote is the directory the agent reads
 // from (ADR 0027).
 //
-// Well-formedness is checked always; existence only for a hook that can run,
-// the checkHarnessBinaries line — a disabled Notifier may name the skills
-// checkout you have not made yet, and the check lands on the boot after you
-// flip Enabled.
-func validateWorkDir(label, workDir string, enabled bool) error {
+// Well-formedness is checked always; existence only for a hook that can run
+// on THIS instance — a disabled Notifier may name the skills checkout you
+// have not made yet (the check lands on the boot after you flip Enabled), and
+// an ineligible Notifier (scoped to the other forge) may name a directory
+// that exists only on the OTHER instance's machine (ADR 0031): under uniform
+// hard-fail neither instance could ever boot a shared hooks.yaml, exactly the
+// failure the mechanism exists to remove.
+func validateWorkDir(label, workDir string, enabled, ineligible bool) error {
 	if workDir == "" {
 		return nil
 	}
@@ -113,7 +137,7 @@ func validateWorkDir(label, workDir string, enabled bool) error {
 		return fmt.Errorf("%s: %w: %q — WorkDir must be an absolute path (no $VAR or ~ expansion is performed)",
 			label, ErrBadWorkDir, workDir)
 	}
-	if !enabled {
+	if !enabled || ineligible {
 		return nil
 	}
 	info, err := os.Stat(workDir)
@@ -127,8 +151,11 @@ func validateWorkDir(label, workDir string, enabled bool) error {
 }
 
 // validate checks the declarative fields shared by both kinds, recording the
-// hook's Name in names to catch duplicates across the whole file.
-func (s Spec) validate(label string, names map[string]bool) error {
+// hook's Name in names to catch duplicates across the whole file. ineligible
+// narrows only the PromptFile existence stat below (the validateWorkDir
+// rationale applies identically here) — every other check runs regardless of
+// eligibility, including Requires' own shape.
+func (s Spec) validate(label string, names map[string]bool, ineligible bool) error {
 	if s.Name == "" {
 		return fmt.Errorf("%s: %w", label, ErrMissingName)
 	}
@@ -148,12 +175,48 @@ func (s Spec) validate(label string, names map[string]bool) error {
 	if s.Prompt != "" && s.PromptFile != "" {
 		return fmt.Errorf("%s: %w", label, ErrAmbiguousPrompt)
 	}
-	if s.PromptFile != "" && s.Enabled {
+	if s.PromptFile != "" && s.Enabled && !ineligible {
 		if _, err := os.Stat(s.PromptFile); err != nil {
 			return fmt.Errorf("%s: %w: %q: %v", label, ErrBadPromptFile, s.PromptFile, err)
 		}
 	}
+	if err := s.Requires.validate(label); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validate checks Requires' own shape — a typo here is a mis-scoping, not a
+// legitimate skip, so it must surface at boot exactly like Harness/Point/
+// Paths (ADR 0031 consequence 3). A KNOWN other-forge value is NOT rejected:
+// "gitlab" on a github instance is valid and merely ineligible, the whole
+// point of the mixed-portfolio design — only an unrecognised value is an
+// error.
+func (r Requires) validate(label string) error {
+	if r.Forge != "" {
+		if _, ok := forgeCLI[r.Forge]; !ok {
+			return fmt.Errorf("%s: %w: %q (known: %s)",
+				label, ErrUnknownForge, r.Forge, strings.Join(forgeNames(), ", "))
+		}
+	}
+	for _, tool := range r.Tools {
+		if strings.TrimSpace(tool) == "" {
+			return fmt.Errorf("%s: %w: Tools entry is blank", label, ErrBadTool)
+		}
+	}
+	return nil
+}
+
+// forgeNames renders knownForges as strings, sorted, for error messages
+// enumerating the valid values (the sortedNames precedent, which cannot
+// apply directly here since Forge is not a map[Forge]bool).
+func forgeNames() []string {
+	forges := knownForges()
+	names := make([]string, len(forges))
+	for i, f := range forges {
+		names[i] = string(f)
+	}
+	return names
 }
 
 // label names a hook in a preflight error: by Name when set, by list position
