@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/els0r/toilmaster3000/internal/forge"
+	"github.com/stretchr/testify/require"
 )
 
 // TestCollapsePRState folds the NORMALISED (lifecycle, mergedAt) pair into the
@@ -30,9 +31,7 @@ func TestCollapsePRState(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := forge.CollapsePRState(tc.state, tc.mergedAt); got != tc.want {
-				t.Fatalf("CollapsePRState(%q, %q) = %q, want %q", tc.state, tc.mergedAt, got, tc.want)
-			}
+			require.Equal(t, tc.want, forge.CollapsePRState(tc.state, tc.mergedAt))
 		})
 	}
 }

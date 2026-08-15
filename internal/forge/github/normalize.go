@@ -94,6 +94,13 @@ func normalizeCheckState(c ghCheck) forge.CheckState {
 // An empty rollup yields no entries and a count of zero: nothing ran, so
 // nothing is failing. Emptiness is the all-green gate's concern.
 func normalizeChecks(raw []ghCheck) (checks []forge.Check, failing int) {
+	if len(raw) > 0 {
+		// Pre-sized, but only when there is something to size for: an empty
+		// rollup must yield a NIL slice, not an empty one. "No rollup" and "a
+		// rollup that came back empty" are the same thing to every caller, and
+		// the recorded-response tests pin nil.
+		checks = make([]forge.Check, 0, len(raw))
+	}
 	for _, c := range raw {
 		state := normalizeCheckState(c)
 		if state != forge.CheckPass {
@@ -103,3 +110,14 @@ func normalizeChecks(raw []ghCheck) (checks []forge.Check, failing int) {
 	}
 	return checks, failing
 }
+
+// GitHub spells an approval and a request for changes the same way wherever it
+// reports one — the PR-level reviewDecision rollup and an individual review's
+// state — so the two tokens are declared once here. The MAPPINGS stay separate
+// (normalizeReviewDecision, normalizeReviewState): their raw domains differ
+// (only the rollup has REVIEW_REQUIRED; only a review has COMMENTED and
+// DISMISSED) and they produce different neutral types.
+const (
+	rawApproved         = "APPROVED"
+	rawChangesRequested = "CHANGES_REQUESTED"
+)

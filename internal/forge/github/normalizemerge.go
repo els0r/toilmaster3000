@@ -20,21 +20,16 @@ type ghViewItem struct {
 	} `json:"reviews"`
 }
 
-// gh review states. Everything else GitHub emits (COMMENTED, DISMISSED,
-// PENDING, and whatever comes next) carries no verdict and takes the default.
-const (
-	reviewStateApproved         = "APPROVED"
-	reviewStateChangesRequested = "CHANGES_REQUESTED"
-)
-
 // normalizeReviewState maps gh's per-review state to the neutral one. Only an
 // explicit APPROVED becomes approved: a state the adapter does not recognise
-// can never reach the commit trailer.
+// can never reach the commit trailer. Everything else GitHub emits (COMMENTED,
+// DISMISSED, PENDING, and whatever comes next) carries no verdict and takes
+// the default.
 func normalizeReviewState(raw string) forge.ReviewState {
 	switch raw {
-	case reviewStateApproved:
+	case rawApproved:
 		return forge.ReviewStateApproved
-	case reviewStateChangesRequested:
+	case rawChangesRequested:
 		return forge.ReviewStateChangesRequested
 	default:
 		return forge.ReviewStateCommented
@@ -92,13 +87,11 @@ type ghFileDiff struct {
 func normalizeFileDiffs(raw []ghFileDiff) []forge.FileDiff {
 	files := make([]forge.FileDiff, 0, len(raw))
 	for _, f := range raw {
-		files = append(files, forge.FileDiff{
-			Filename:  f.Filename,
-			Status:    f.Status,
-			Additions: f.Additions,
-			Deletions: f.Deletions,
-			Patch:     f.Patch,
-		})
+		// A struct conversion, not a field-by-field copy: the two types differ
+		// only in ghFileDiff's json tags, so the compiler — not a reviewer —
+		// enforces that they stay in step. Adding a field to one and not the
+		// other stops compiling here.
+		files = append(files, forge.FileDiff(f))
 	}
 	return files
 }

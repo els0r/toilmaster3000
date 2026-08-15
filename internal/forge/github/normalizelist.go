@@ -39,21 +39,21 @@ type ghListItem struct {
 	} `json:"files"`
 }
 
-// gh reviewDecision values.
-const (
-	reviewDecisionApproved         = "APPROVED"
-	reviewDecisionChangesRequested = "CHANGES_REQUESTED"
-)
-
 // normalizeReviewDecision maps gh's reviewDecision to the neutral rollup.
-// REVIEW_REQUIRED, the empty string the inbound pull leaves behind, and
-// anything GitHub adds later all collapse to "undecided" — the same branch
-// they always shared, now named. Nothing degrades to approved.
+// REVIEW_REQUIRED, the empty string, and anything GitHub adds later all
+// collapse to "undecided" — the same branch they always shared, now named.
+// Nothing degrades to approved.
+//
+// The empty string here means GitHub reported NO decision, not a field nobody
+// asked for: reviewDecision rides listJSONFields, so BOTH per-cycle pulls
+// request it. That matters — ADR 0013's soft dedup reads this field on the
+// INBOUND pull to leave an already-approved PR alone, and it would silently
+// stop working if a pull ever dropped the field.
 func normalizeReviewDecision(raw string) forge.ReviewDecision {
 	switch raw {
-	case reviewDecisionApproved:
+	case rawApproved:
 		return forge.ReviewApproved
-	case reviewDecisionChangesRequested:
+	case rawChangesRequested:
 		return forge.ReviewChangesRequested
 	default:
 		return forge.ReviewNone
