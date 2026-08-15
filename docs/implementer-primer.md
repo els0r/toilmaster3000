@@ -15,9 +15,12 @@ ADR(s) your brief names.
   funnel partition (every incoming PR → exactly one bucket; counts sum to
   Incoming). Engine-caused changes mutate snapshots in place (ADR 0018).
   Level-triggered consults, no transition memory (armed/disarm idiom).
-- `internal/github` — the ONLY package that shells `gh` for the cycle's
-  batched pulls; one batched list call, fields ride it. `github.Fake` is the
-  engine-test seam.
+- `internal/forge` — the neutral vocabulary: domain types, the pure folds, the
+  `Client` interface, and `forge.Fake`, the engine-test seam.
+- `internal/forge/github` — the ONLY package that shells `gh` for the cycle's
+  batched pulls; one batched list call, fields ride it. Raw decode types stay
+  package-private; it normalises gh's vocabulary into the neutral one before
+  anything leaves (ADR 0030).
 - `internal/hook` — hook config (`.config/hooks.yaml`, PascalCase, Id
   self-heal), kind interfaces (Screen/Notifier), verdict store, fired-ledger,
   runners. Pure folds live here; they get the heavy test tables.
@@ -37,7 +40,7 @@ ADR(s) your brief names.
 
 ## Seams — test here, never internals
 
-- **Engine behavior**: the cycle over `github.Fake`, with hook species faked
+- **Engine behavior**: the cycle over `forge.Fake`, with hook species faked
   at the kind interfaces. Assert outcomes: bucket placement, partition sums,
   queue contents, feed entries.
 - **Pure functions** (parser, matcher, folds, validators, extraction): table
