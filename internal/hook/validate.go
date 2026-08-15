@@ -67,6 +67,16 @@ var (
 	// whitespace-only: a blank binary name can never resolve on PATH, so it is
 	// a config mistake, not a real precondition.
 	ErrBadTool = errors.New("invalid tool")
+	// ErrUnknownField rejects any hooks.yaml key that does not decode into a
+	// known field of its struct — a miscased key (Requires spelled requires),
+	// a typo, or a field that exists on the OTHER hook kind (Paths/WorkDir on
+	// a Screen) — superseding the "unrepresentable, silently ignored" stance
+	// ADR 0026/0027 originally took for the latter case (ADR 0032). This is a
+	// decode-time failure, not a validate() sentinel: it surfaces through the
+	// parse path (the "malformed yaml"/"unparseable timeout" family), wrapped
+	// so it still participates in the same ErrorIs family as every other
+	// preflight failure class.
+	ErrUnknownField = errors.New("unknown field")
 )
 
 // knownHarnesses is the harness allowlist ErrUnknownHarness checks against

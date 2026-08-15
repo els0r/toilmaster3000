@@ -463,8 +463,11 @@ Notifiers:
 // carry it. A scoped Screen would have to resolve to proceed where it does not
 // apply — handing hooks.yaml a way to silently un-gate whole file classes (a
 // security screen scoped to **/*.go would auto-approve a malicious Makefile-only
-// PR with zero screening). The hazard stays UNREPRESENTABLE rather than
-// validated against, the same technique as ScreenConfig carrying no Point.
+// PR with zero screening). The type-level hazard stays UNREPRESENTABLE, the
+// same technique as ScreenConfig carrying no Point — but since Paths cannot
+// decode into ScreenConfig, a Screen writing it anyway is now a strict-decode
+// unknown field (ADR 0032, superseding the old silent-acquire-nothing
+// pinning): the mis-scoping refuses the boot BY NAME instead of vanishing.
 func TestScopeIsNotifierOnly(t *testing.T) {
 	_, onNotifier := reflect.TypeOf(hook.NotifierConfig{}).FieldByName("Paths")
 	require.True(t, onNotifier, "scope is declared on the Notifier kind")
@@ -475,8 +478,9 @@ func TestScopeIsNotifierOnly(t *testing.T) {
 	_, onSpec := reflect.TypeOf(hook.Spec{}).FieldByName("Paths")
 	require.False(t, onSpec, "the shared Spec must not grow scope: both kinds would inherit it")
 
-	// And a hooks.yaml Screen that writes Paths anyway acquires nothing: the
-	// field is not there to decode into, so the Screen gates every PR as always.
+	// A hooks.yaml Screen that writes Paths anyway now refuses the boot: the
+	// field is not there to decode into, so strict decoding catches it as an
+	// unknown key rather than silently dropping it.
 	path := writeHooks(t, `
 Screens:
   - Id: aaaa1111
@@ -487,10 +491,9 @@ Screens:
       - "*.go"
     Enabled: true
 `)
-	cfg, err := hook.Load(path, hook.GitHub)
-	require.NoError(t, err)
-	require.Len(t, cfg.Screens, 1)
-	require.True(t, cfg.Screens[0].Enabled, "the Screen loads; it simply has no scope to acquire")
+	_, err := hook.Load(path, hook.GitHub)
+	require.ErrorIs(t, err, hook.ErrUnknownField)
+	require.ErrorContains(t, err, "Paths")
 }
 
 // TestWorkDirIsNotifierOnly pins decision 2 of ADR 0027 structurally: WorkDir
@@ -499,8 +502,9 @@ Screens:
 // one and its verdict depends on whatever branch or half-finished rebase the
 // operator last left there, so two runs over the same PR head can disagree for
 // reasons no ledger records. A gate whose input is not reproducible is not a
-// gate. As with Paths and with ScreenConfig's absent Point, the hazard stays
-// UNREPRESENTABLE rather than validated against.
+// gate. As with Paths, the type-level hazard stays UNREPRESENTABLE, but
+// writing it on a Screen anyway is now a strict-decode unknown field
+// (ADR 0032, superseding the old silent-acquire-nothing pinning).
 func TestWorkDirIsNotifierOnly(t *testing.T) {
 	_, onNotifier := reflect.TypeOf(hook.NotifierConfig{}).FieldByName("WorkDir")
 	require.True(t, onNotifier, "the harness anchor is declared on the Notifier kind")
@@ -511,10 +515,9 @@ func TestWorkDirIsNotifierOnly(t *testing.T) {
 	_, onSpec := reflect.TypeOf(hook.Spec{}).FieldByName("WorkDir")
 	require.False(t, onSpec, "the shared Spec must not grow an anchor: both kinds would inherit it")
 
-	// And a hooks.yaml Screen that writes WorkDir anyway acquires nothing: the
-	// field is not there to decode into, so the Screen runs unanchored as
-	// always. The value written is one the Notifier preflight would refuse
-	// outright — it passes here precisely because nothing reads it.
+	// A hooks.yaml Screen that writes WorkDir anyway now refuses the boot: the
+	// field is not there to decode into, so strict decoding catches it as an
+	// unknown key rather than silently dropping it.
 	path := writeHooks(t, `
 Screens:
   - Id: aaaa1111
@@ -524,10 +527,9 @@ Screens:
     WorkDir: skills
     Enabled: true
 `)
-	cfg, err := hook.Load(path, hook.GitHub)
-	require.NoError(t, err)
-	require.Len(t, cfg.Screens, 1)
-	require.True(t, cfg.Screens[0].Enabled, "the Screen loads; it simply has no anchor to acquire")
+	_, err := hook.Load(path, hook.GitHub)
+	require.ErrorIs(t, err, hook.ErrUnknownField)
+	require.ErrorContains(t, err, "WorkDir")
 }
 
 // TestLoadRejectsBadConfig is the preflight table (the boot gate of ADR 0023):
@@ -718,6 +720,43 @@ Screens:
 `,
 			wantMsg: []string{"Timeout", "positive"},
 		},
+		{
+			name: "unknown field on a screen",
+			doc: `
+Screens:
+  - Name: security vet
+    Harness: claude
+    Prompt: vet it
+    Foo: bar
+`,
+			wantErr: hook.ErrUnknownField,
+			wantMsg: []string{"Foo"},
+		},
+		{
+			name: "miscased key is unknown, not case-insensitively matched",
+			doc: `
+Screens:
+  - Name: security vet
+    Harness: claude
+    Prompt: vet it
+    requires:
+      Forge: github
+`,
+			wantErr: hook.ErrUnknownField,
+			wantMsg: []string{"requires"},
+		},
+		{
+			name: "unknown top-level key",
+			doc: `
+Blah: true
+Screens:
+  - Name: security vet
+    Harness: claude
+    Prompt: vet it
+`,
+			wantErr: hook.ErrUnknownField,
+			wantMsg: []string{"Blah"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -821,6 +860,45 @@ Screens:
 	require.NoError(t, err)
 	require.Equal(t, hook.Forge("gitlab"), reloaded.Screens[0].Requires.Forge)
 	require.Equal(t, []string{"jq"}, reloaded.Screens[0].Requires.Tools)
+}
+
+// TestLoadSelfHealRoundTripsUnderStrictDecoding proves strict decoding
+// (ADR 0032) does not collide with the self-heal write path: the persisted
+// file (Id healed in, every field yaml.Marshal renders from the SAME struct
+// tags KnownFields checks against) still decodes cleanly on reload — the
+// marshal/unmarshal tag symmetry that makes this automatic, not something
+// that needed hand-tuning per field.
+func TestLoadSelfHealRoundTripsUnderStrictDecoding(t *testing.T) {
+	path := writeHooks(t, `
+Screens:
+  - Name: security vet
+    Harness: claude
+    Model: opus
+    Prompt: vet it
+    Timeout: 90s
+    Enabled: true
+    Requires:
+      Forge: github
+      Tools:
+        - jq
+Notifiers:
+  - Name: go review assist
+    Harness: claude
+    PromptFile: prompts/go-review.md
+    Point: queue_entered
+    Paths:
+      - "*.go"
+    Enabled: false
+`)
+
+	healed, err := hook.Load(path, hook.GitHub)
+	require.NoError(t, err, "the first load heals Ids and persists")
+	require.NotEmpty(t, healed.Screens[0].ID)
+	require.NotEmpty(t, healed.Notifiers[0].ID)
+
+	reloaded, err := hook.Load(path, hook.GitHub)
+	require.NoError(t, err, "the persisted, healed file must still strictly decode")
+	require.Equal(t, healed, reloaded, "the round trip is lossless")
 }
 
 // TestLoadRejectsUnknownForge proves a typo'd or unknown Requires.Forge value

@@ -3,12 +3,15 @@
 package hook
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -161,7 +164,7 @@ func Load(path string, active Forge) (Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := unmarshalStrict(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse hooks.yaml: %w", err)
 	}
 
@@ -209,6 +212,45 @@ func (c Config) persist(path string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// unmarshalStrict decodes hooks.yaml with KnownFields enforced (ADR 0032): an
+// unknown key — a miscased "requires:", any typo'd field, or a field that
+// belongs to the OTHER hook kind (Paths/WorkDir written on a Screen) —
+// refuses the boot with ErrUnknownField instead of silently binding nothing.
+// This supersedes ADR 0026/0027's original "unrepresentable, silently
+// ignored" stance for the cross-kind case: the field still cannot decode
+// into the wrong kind's struct (that structural design is unchanged), but
+// writing it anyway is now a caught mistake, not a vanished one.
+//
+// Only genuine unknown-field failures are tagged with ErrUnknownField: yaml.v3
+// reports them as a *yaml.TypeError whose Errors entries read "field X not
+// found in type Y", distinct from a value-shape failure (malformed YAML, a
+// custom UnmarshalYAML rejecting its input, e.g. Duration) — those keep
+// surfacing as plain parse errors, exactly as before this function existed.
+//
+// An empty (but present) file decodes to the zero Config, matching
+// yaml.Unmarshal's own behaviour — Decoder.Decode alone would report io.EOF
+// for empty input, which is not a parse failure here.
+func unmarshalStrict(data []byte, cfg *Config) error {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	err := dec.Decode(cfg)
+	if err == nil || errors.Is(err, io.EOF) {
+		return nil
+	}
+	var typeErr *yaml.TypeError
+	if errors.As(err, &typeErr) {
+		for _, sub := range typeErr.Errors {
+			if strings.Contains(sub, "not found in type") {
+				return fmt.Errorf("%w: %s", ErrUnknownField, sub)
+			}
+		}
+	}
+	return err
 }
 
 // newID returns a stable random hex identifier for a hook, independent of its
