@@ -110,58 +110,64 @@ func TestCheckGhAuthPasses(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// checkHarnessBinaries refuses startup when an enabled hook names a harness
-// whose CLI is not installed (ADR 0024): a missing binary must fail boot with
-// the harness's name, not burn failed attempts one screened PR at a time.
-func TestCheckHarnessBinariesMissingBinaryRefusesStartup(t *testing.T) {
+// classifyHooks refuses the boot when an ENABLED Screen in scope names a
+// harness whose CLI is not installed (ADR 0024/0031): a missing binary must
+// fail boot naming the screen, not burn failed attempts one screened PR at a
+// time. This is the harness-binary preflight (formerly checkHarnessBinaries)
+// served by the eligibility mechanism, not duplicated beside it.
+func TestClassifyHooksMissingScreenHarnessRefusesBoot(t *testing.T) {
 	cfg := hook.Config{Screens: []hook.ScreenConfig{
 		{Spec: hook.Spec{Name: "security vet", Harness: "copilot", Enabled: true}},
 	}}
 
-	err := checkHarnessBinaries(cfg, func(string) (string, error) {
-		return "", exec.ErrNotFound
+	_, err := classifyHooks(cfg, hook.GitHub, func(name string) (string, error) {
+		if name == "copilot" {
+			return "", exec.ErrNotFound
+		}
+		return "/usr/local/bin/" + name, nil
 	})
 
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "security vet")
 	require.Contains(t, err.Error(), "copilot")
 }
 
-// Only harnesses named by ENABLED hooks are looked up — a disabled hook's
-// missing CLI must not block boot, and each distinct harness is checked once.
-func TestCheckHarnessBinariesChecksOnlyEnabledHooks(t *testing.T) {
+// Only ENABLED hooks are classified — a disabled hook's missing CLI must not
+// block boot, and it passes through unclassified (the validateWorkDir
+// existence-check precedent: a disabled hook never runs, so its unmet
+// precondition costs nothing yet).
+func TestClassifyHooksSkipsDisabledHooks(t *testing.T) {
 	var looked []string
 	cfg := hook.Config{
 		Screens: []hook.ScreenConfig{
 			{Spec: hook.Spec{Name: "vet", Harness: "claude", Enabled: true}},
-			{Spec: hook.Spec{Name: "vet again", Harness: "claude", Enabled: true}},
 		},
 		Notifiers: []hook.NotifierConfig{
-			{Spec: hook.Spec{Name: "assist", Harness: "copilot", Enabled: false}},
+			{Spec: hook.Spec{Name: "assist", Harness: "copilot", Enabled: false}, Point: hook.QueueEntered},
 		},
 	}
 
-	err := checkHarnessBinaries(cfg, func(name string) (string, error) {
+	out, err := classifyHooks(cfg, hook.GitHub, func(name string) (string, error) {
 		looked = append(looked, name)
 		return "/usr/local/bin/" + name, nil
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"claude"}, looked)
+	require.Equal(t, []string{"gh", "claude"}, looked)
+	require.Len(t, out.Notifiers, 1, "the disabled notifier passes through unclassified")
 }
 
-func TestCheckHarnessBinariesChecksOpenCode(t *testing.T) {
+func TestClassifyHooksChecksOpenCode(t *testing.T) {
 	cfg := hook.Config{Notifiers: []hook.NotifierConfig{{
-		Spec: hook.Spec{Name: "review assist", Harness: "opencode", Enabled: true},
+		Spec: hook.Spec{Name: "review assist", Harness: "opencode", Enabled: true}, Point: hook.QueueEntered,
 	}}}
 
-	var looked []string
-	err := checkHarnessBinaries(cfg, func(name string) (string, error) {
-		looked = append(looked, name)
+	out, err := classifyHooks(cfg, hook.GitHub, func(name string) (string, error) {
 		return "/usr/local/bin/" + name, nil
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"opencode"}, looked)
+	require.Len(t, out.Notifiers, 1)
 }
 
 func TestHarnessForOpenCode(t *testing.T) {
@@ -172,12 +178,89 @@ func TestHarnessForOpenCode(t *testing.T) {
 }
 
 // No hooks, no lookups: the no-hooks boot stays bit-for-bit as before.
-func TestCheckHarnessBinariesNoHooksNoLookups(t *testing.T) {
-	err := checkHarnessBinaries(hook.Config{}, func(string) (string, error) {
+func TestClassifyHooksNoHooksNoLookups(t *testing.T) {
+	_, err := classifyHooks(hook.Config{}, hook.GitHub, func(string) (string, error) {
 		t.Fatal("no lookup expected")
 		return "", nil
 	})
 	require.NoError(t, err)
+}
+
+// A hook declaring another Forge is Ineligible — skipped and logged, for
+// BOTH kinds, and never refuses the boot (ADR 0031 decision 2).
+func TestClassifyHooksIneligibleForgeSkipsBothKindsNoRefusal(t *testing.T) {
+	cfg := hook.Config{
+		Screens: []hook.ScreenConfig{
+			{Spec: hook.Spec{Name: "gitlab screen", Harness: "claude", Enabled: true, Requires: hook.Requires{Forge: hook.GitLab}}},
+		},
+		Notifiers: []hook.NotifierConfig{
+			{Spec: hook.Spec{Name: "gitlab notifier", Harness: "claude", Enabled: true, Requires: hook.Requires{Forge: hook.GitLab}}, Point: hook.QueueEntered},
+		},
+	}
+
+	out, err := classifyHooks(cfg, hook.GitHub, func(string) (string, error) {
+		t.Fatal("an ineligible hook must not be binary-checked")
+		return "", nil
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, out.Screens, "ineligible screen is skipped, not refused")
+	require.Empty(t, out.Notifiers, "ineligible notifier is skipped, not refused")
+}
+
+// A broken Notifier (in scope, missing a declared Tools binary) declines
+// with a warning: it is excluded from the returned config, but the boot
+// itself is unaffected (ADR 0031 decision 3).
+func TestClassifyHooksBrokenNotifierDeclinesWithoutRefusingBoot(t *testing.T) {
+	cfg := hook.Config{Notifiers: []hook.NotifierConfig{
+		{Spec: hook.Spec{Name: "jq notifier", Harness: "claude", Enabled: true, Requires: hook.Requires{Tools: []string{"jq"}}}, Point: hook.QueueEntered},
+	}}
+
+	out, err := classifyHooks(cfg, hook.GitHub, func(name string) (string, error) {
+		if name == "jq" {
+			return "", exec.ErrNotFound
+		}
+		return "/usr/local/bin/" + name, nil
+	})
+
+	require.NoError(t, err, "a broken Notifier must never refuse the boot")
+	require.Empty(t, out.Notifiers, "the broken notifier declines: excluded from the built config")
+}
+
+// A broken Screen (in scope, missing a declared Tools binary) refuses the
+// boot, naming the screen and the unmet precondition (ADR 0031 decision 3):
+// soft-disabling a Screen would silently remove a gate, not degrade it.
+func TestClassifyHooksBrokenScreenRefusesBootNamingScreenAndPrecondition(t *testing.T) {
+	cfg := hook.Config{Screens: []hook.ScreenConfig{
+		{Spec: hook.Spec{Name: "jq screen", Harness: "claude", Enabled: true, Requires: hook.Requires{Tools: []string{"jq"}}}},
+	}}
+
+	_, err := classifyHooks(cfg, hook.GitHub, func(name string) (string, error) {
+		if name == "jq" {
+			return "", exec.ErrNotFound
+		}
+		return "/usr/local/bin/" + name, nil
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "jq screen")
+	require.Contains(t, err.Error(), "jq")
+}
+
+// A hook naming the other forge's CLI in Tools is ineligible on its own,
+// without Forge being spelled out (ADR 0031 decision 4).
+func TestClassifyHooksOtherForgeCLIInToolsIsIneligible(t *testing.T) {
+	cfg := hook.Config{Screens: []hook.ScreenConfig{
+		{Spec: hook.Spec{Name: "glab screen", Harness: "claude", Enabled: true, Requires: hook.Requires{Tools: []string{"glab"}}}},
+	}}
+
+	out, err := classifyHooks(cfg, hook.GitHub, func(string) (string, error) {
+		t.Fatal("an ineligible hook must not be binary-checked")
+		return "", nil
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, out.Screens)
 }
 
 // buildScreener wires the AI Screen species from validated hook config: zero

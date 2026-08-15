@@ -16,12 +16,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"time"
 
@@ -53,6 +51,12 @@ const (
 	settingsPath    = ".config/settings.yaml"
 	hooksPath       = ".config/hooks.yaml"
 )
+
+// activeForge is the code-hosting platform this instance drives (ADR 0030).
+// Hard-coded to GitHub because forge selection (--forge/TM3K_FORGE) has not
+// shipped yet — every hook's Requires.Forge is judged against this constant
+// until it does.
+const activeForge = hook.GitHub
 
 // config is the resolved startup configuration: the candidate set (repo +
 // search) and the engine poll interval. It is populated from flags and the
@@ -169,6 +173,17 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("build armed store: %w", err)
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Preflight: fail fast with a clear message before serving or approving.
+	// gh auth runs first, ahead of the hook preflight below, so a dead gh
+	// surfaces with its own specific message rather than a generic missing-
+	// tool one from hook classification.
+	if err := checkGhAuth(ctx, execGhAuthStatus); err != nil {
+		return fmt.Errorf("preflight: gh auth: %w", err)
+	}
+
 	// Boot-load and preflight-validate the hook config (ADR 0021/0023): bad
 	// config refuses startup naming the offending hook; an absent file means
 	// no hooks; hooks missing an Id get one self-healed into the file.
@@ -180,6 +195,17 @@ func run(ctx context.Context, cfg config) error {
 	}
 	if len(hooks.Screens)+len(hooks.Notifiers) > 0 {
 		slog.Info("hooks loaded", "screens", len(hooks.Screens), "notifiers", len(hooks.Notifiers))
+	}
+
+	// Classify every enabled hook's eligibility against this instance's
+	// declared preconditions (ADR 0031), folding in the harness-binary
+	// preflight (ADR 0024): ineligible hooks (both kinds) and broken
+	// Notifiers are logged and excluded; a broken Screen refuses the boot
+	// naming itself and the unmet precondition. activeForge is hard-coded
+	// until forge selection ships (ADR 0030).
+	hooks, err = classifyHooks(hooks, activeForge, exec.LookPath)
+	if err != nil {
+		return fmt.Errorf("preflight: hook eligibility: %w", err)
 	}
 
 	// One sink serves both species (ADR 0028). Constructed unconditionally
@@ -202,16 +228,6 @@ func run(ctx context.Context, cfg config) error {
 	}
 	eng.SetNotifierRunner(notifiers)
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// Preflight: fail fast with a clear message before serving or approving.
-	if err := checkGhAuth(ctx, execGhAuthStatus); err != nil {
-		return fmt.Errorf("preflight: gh auth: %w", err)
-	}
-	if err := checkHarnessBinaries(hooks, exec.LookPath); err != nil {
-		return fmt.Errorf("preflight: harness: %w", err)
-	}
 	selfLogin, err := resolveSelfLogin(ctx, client)
 	if err != nil {
 		return fmt.Errorf("preflight: resolve @me: %w", err)
@@ -346,32 +362,53 @@ func notifierInstances(hooks hook.Config, repo string, transcripts harness.Trans
 	return instances, nil
 }
 
-// checkHarnessBinaries verifies the harness CLI behind every enabled hook is
-// installed — the harness sibling of checkGhAuth (ADR 0024): a missing binary
+// classifyHooks runs the ADR 0031 boot classification over every ENABLED
+// hook, folding in the harness-binary preflight (formerly checkHarnessBinaries,
+// ADR 0024) rather than keeping it beside this mechanism — a missing harness
+// CLI is exactly the same fact as a missing Requires.Tools binary, and both
 // must refuse startup, not burn failed attempts one screened PR at a time.
-// The harness name IS the binary name for every MVP adapter. Auth stays
-// runtime-checked: the harness CLIs have no offline auth probe, and a dead
-// login surfaces as failed attempts on the 3-strikes path — a hold, never
-// silence. lookPath is injected so the check is testable without the real
-// CLIs.
-func checkHarnessBinaries(hooks hook.Config, lookPath func(string) (string, error)) error {
-	needed := map[string]bool{}
-	for _, s := range hooks.Screens {
-		if s.Enabled {
-			needed[s.Harness] = true
+// Disabled hooks pass through unclassified (the validateWorkDir
+// existence-check precedent: a disabled hook never runs, so its unmet
+// precondition costs nothing yet).
+//
+// Ineligible hooks — declaring they do not apply to active — are logged and
+// excluded from the returned config, for BOTH kinds: they were never a gate
+// on this instance. A Broken Notifier declines: logged as a warning and
+// excluded, boot unaffected. A Broken Screen refuses the boot naming itself
+// and the unmet precondition: soft-disabling a Screen would silently remove
+// a gate, not degrade it (ADR 0031 decisions 2/3). lookPath is injected so
+// the check is testable without the real CLIs.
+func classifyHooks(hooks hook.Config, active hook.Forge, lookPath func(string) (string, error)) (hook.Config, error) {
+	out := hook.Config{}
+	for _, sc := range hooks.Screens {
+		if !sc.Enabled {
+			out.Screens = append(out.Screens, sc)
+			continue
+		}
+		switch elig, reason := sc.Spec.Classify(active, lookPath); elig {
+		case hook.Ineligible:
+			slog.Info("hook ineligible, skipping", "kind", "screen", "name", sc.Name, "reason", reason)
+		case hook.Broken:
+			return hook.Config{}, fmt.Errorf("screen %q: unmet precondition: %s", sc.Name, reason)
+		default:
+			out.Screens = append(out.Screens, sc)
 		}
 	}
-	for _, n := range hooks.Notifiers {
-		if n.Enabled {
-			needed[n.Harness] = true
+	for _, nc := range hooks.Notifiers {
+		if !nc.Enabled {
+			out.Notifiers = append(out.Notifiers, nc)
+			continue
+		}
+		switch elig, reason := nc.Spec.Classify(active, lookPath); elig {
+		case hook.Ineligible:
+			slog.Info("hook ineligible, skipping", "kind", "notifier", "name", nc.Name, "reason", reason)
+		case hook.Broken:
+			slog.Warn("hook broken, declining", "kind", "notifier", "name", nc.Name, "reason", reason)
+		default:
+			out.Notifiers = append(out.Notifiers, nc)
 		}
 	}
-	for _, name := range slices.Sorted(maps.Keys(needed)) {
-		if _, err := lookPath(name); err != nil {
-			return fmt.Errorf("%q: an enabled hook names it but the CLI is not installed: %w", name, err)
-		}
-	}
-	return nil
+	return out, nil
 }
 
 // checkGhAuth verifies the gh CLI is installed and authenticated. It is the
