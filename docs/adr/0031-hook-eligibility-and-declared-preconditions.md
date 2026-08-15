@@ -39,8 +39,11 @@ never-fire-on-no-signal inverted.
      on a GitLab instance, or `Tools` naming the other forge's CLI). It was
      never a gate *on this instance*. Skipped, logged at boot, **both kinds**.
      This is what makes the mixed portfolio work.
-   - **Broken** — the hook is in scope for this instance and cannot run (binary
-     missing, token unset).
+   - **Broken** — the hook is in scope for this instance and cannot run. Classify
+     checks a PATH fact only — the harness binary or a declared `Tools` binary
+     missing — never a credential; tm3k has no offline probe for a token or
+     login state, so that class of precondition is not boot-checkable by this
+     mechanism.
 
 3. **A broken Notifier declines; a broken Screen refuses the boot.** The
    asymmetry is not a wart — it is ADR 0021's irreconcilable failure contracts
@@ -84,3 +87,10 @@ never-fire-on-no-signal inverted.
 - **A silently-skipped hook is a real failure mode.** An operator who
   mis-scopes a hook sees it skipped, not refused. Accepted for Notifiers by
   ADR 0021's contract; not accepted for Screens, which is why they refuse.
+- **Credential and environment preconditions surface at run time, not boot,**
+  and fall to ADR 0021's existing per-kind failure contracts: an unset token
+  or a dead login is invisible to Classify's PATH-only check, so a Notifier
+  hitting it fails its `Act` call and declines harmlessly like any other
+  Notifier failure; a Screen hitting it fails its `Screen` call and holds via
+  the existing 3-strikes machinery (ADR 0022) rather than being caught at
+  boot.
