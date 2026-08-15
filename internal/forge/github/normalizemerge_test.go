@@ -15,9 +15,11 @@ import (
 // GitHub adds later all collapse to "no verdict" — none of them can reach the
 // commit trailer.
 //
-// Login normalisation (the "app/" prefix, the "_osag" suffix, the dedupe) is
-// deliberately NOT done here: it is gh-land commit-message parity, which is
-// the shared fold's judgement, not GitHub's vocabulary.
+// LOGINS are normalised here too. GitHub's "app/" bot prefix and the org's
+// "_osag" EMU suffix are GitHub spellings of an identity, so mapping them to
+// the bare login is decode, not judge (ADR 0030 §3) — the shared fold has no
+// business knowing either token. What stays in the fold is the judgement:
+// which reviews count, and that two spellings of one person are one approver.
 func TestNormalizeMergeDetails(t *testing.T) {
 	item := decodeFixture[ghViewItem](t, "pr_view.json")
 	require.Len(t, item.Reviews, 6, "the fixture is the recorded response, not a subset")
@@ -26,14 +28,39 @@ func TestNormalizeMergeDetails(t *testing.T) {
 		Title: "feat(api): add merges endpoint",
 		Body:  "Adds the endpoint.\n\nCloses #12.",
 		Reviews: []forge.Review{
-			{Author: "alice_osag", State: forge.ReviewStateApproved},
+			{Author: "alice", State: forge.ReviewStateApproved},
 			{Author: "carol", State: forge.ReviewStateChangesRequested},
 			{Author: "dave", State: forge.ReviewStateCommented},
-			{Author: "app/robo-reviewer", State: forge.ReviewStateApproved},
+			{Author: "robo-reviewer", State: forge.ReviewStateApproved},
 			{Author: "erin", State: forge.ReviewStateCommented},
 			{Author: "frank", State: forge.ReviewStateCommented},
 		},
 	}, normalizeMergeDetails(item))
+}
+
+// TestNormalizeLogin pins the GitHub login spellings on their own — the table
+// the shared fold used to carry. gh-land parity means these exact two
+// manglings and no others (ADR 0016).
+func TestNormalizeLogin(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "a plain login is untouched", raw: "alice", want: "alice"},
+		{name: "the org's EMU suffix is stripped", raw: "alice_osag", want: "alice"},
+		{name: "the bot prefix is stripped", raw: "app/robo-reviewer", want: "robo-reviewer"},
+		{name: "both at once", raw: "app/robo_osag", want: "robo"},
+		{name: "an empty login stays empty", raw: "", want: ""},
+		{name: "a bare prefix strips to nothing", raw: "app/", want: ""},
+		{name: "the suffix is only stripped at the end", raw: "_osag_alice", want: "_osag_alice"},
+		{name: "the prefix is only stripped at the start", raw: "team/app/bot", want: "team/app/bot"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, normalizeLogin(tt.raw))
+		})
+	}
 }
 
 // TestNormalizeMergeDetailsFeedsCommitMessage closes the loop between the

@@ -62,7 +62,7 @@ func TestArmedReadyPRMerges(t *testing.T) {
 		Title: "feat(x)!: live title",
 		Body:  "Live body.",
 		Reviews: []forge.Review{
-			{Author: "alice_osag", State: forge.ReviewStateApproved},
+			{Author: "alice", State: forge.ReviewStateApproved},
 			{Author: "bob", State: forge.ReviewStateCommented},
 		},
 	})
@@ -113,15 +113,25 @@ func TestMergeLedgerSurvivesRestart(t *testing.T) {
 // (GitHub still computing; retried naturally next cycle) both block the merge
 // without moving the PR.
 func TestNotMergeableBlocksMergeButKeepsStage(t *testing.T) {
-	for _, mergeable := range []forge.Mergeability{forge.MergeableConflicting, forge.MergeableUnknown} {
-		t.Run(string(mergeable), func(t *testing.T) {
-			eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, mergeable))
+	// Named rather than keyed off the value itself: MergeableUnknown is the
+	// zero value (deliberately — see forge.Mergeability), so its string is
+	// empty and would leave the subtest anonymous.
+	cases := []struct {
+		name      string
+		mergeable forge.Mergeability
+	}{
+		{"conflicting", forge.MergeableConflicting},
+		{"unknown", forge.MergeableUnknown},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			eng, fake := mergeEngine(t, tempMerges(t), readyPR(21, tc.mergeable))
 
 			eng.RunCycleOnce(context.Background())
 			require.NoError(t, eng.Arm(21))
 			eng.RunCycleOnce(context.Background())
 
-			require.Empty(t, fake.MergeCalls(), "a %s PR never merges", mergeable)
+			require.Empty(t, fake.MergeCalls(), "a %s PR never merges", tc.name)
 			require.Empty(t, eng.Merges(), "nothing lands in the ledger")
 			ob := eng.Outbound()
 			require.Len(t, ob[forge.OutboundStageReady], 1, "the PR stays in Ready — mergeable is a precondition, not a stage boundary")

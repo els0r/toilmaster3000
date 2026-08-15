@@ -61,9 +61,15 @@ func CommitMessage(d MergeDetails) (subject, body string) {
 
 // ApprovedBy folds the reviews into the approver login list the trailer joins
 // and the merge ledger persists as approved_by[]: only approving reviews
-// count; each login is normalized (the org's "app/" bot prefix and "_osag" EMU
-// suffix stripped, gh-land parity); duplicates collapse AFTER normalization (so
-// "alice" and "alice_osag" are one approver), first-seen order preserved.
+// count, an empty login is nobody, duplicates collapse, and first-seen order
+// is preserved.
+//
+// The logins arrive already reduced to bare identities — an adapter maps its
+// forge's own spellings (GitHub's "app/" bot prefix, the org's "_osag" EMU
+// suffix) before they reach here, which is why the dedupe below is a plain
+// comparison and still makes "alice" and "alice_osag" one approver. Knowing
+// those spellings is decode and belongs to the adapter; deciding that two
+// spellings are one person is judge and belongs here (ADR 0030 §3).
 func ApprovedBy(reviews []Review) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -71,12 +77,11 @@ func ApprovedBy(reviews []Review) []string {
 		if r.State != ReviewStateApproved {
 			continue
 		}
-		login := strings.TrimSuffix(strings.TrimPrefix(r.Author, "app/"), "_osag")
-		if login == "" || seen[login] {
+		if r.Author == "" || seen[r.Author] {
 			continue
 		}
-		seen[login] = true
-		out = append(out, login)
+		seen[r.Author] = true
+		out = append(out, r.Author)
 	}
 	return out
 }

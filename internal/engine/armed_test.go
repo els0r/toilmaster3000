@@ -72,7 +72,7 @@ func TestArmedPRDisarmedOnChangesRequested(t *testing.T) {
 func TestArmStickyAcrossPushes(t *testing.T) {
 	armedPath := filepath.Join(t.TempDir(), "armed.json")
 	pr := forge.PR{Number: 8, Title: "fix(ci): red for now", Author: "me", URL: "u8",
-		Checks: []forge.Check{{State: forge.CheckFail}}}
+		Checks: []forge.Check{{State: forge.CheckFail}}, FailingChecks: 1}
 	eng, fake := armedEngine(t, armedPath, pr)
 
 	eng.RunCycleOnce(context.Background())

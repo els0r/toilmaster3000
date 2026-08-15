@@ -373,7 +373,7 @@ func TestFunnelPartitionSumsToIncomingWithScreening(t *testing.T) {
 		{Number: 3, Title: "docs: gate me", Author: "c", URL: "u3", Checks: green(), HeadSHA: "h3"},                                          // review rule -> NeedsHumanReview
 		{Number: 4, Title: "feat: no rule", Author: "d", URL: "u4", Checks: green(), HeadSHA: "h4"},                                          // no match -> Staging
 		{Number: 5, Title: "chore: draft", Author: "e", URL: "u5", IsDraft: true, Checks: green(), HeadSHA: "h5"},                            // draft -> DroppedDraft
-		{Number: 6, Title: "chore: red", Author: "f", URL: "u6", Checks: redChecks, HeadSHA: "h6"},                                           // red -> DroppedRed
+		{Number: 6, Title: "chore: red", Author: "f", URL: "u6", Checks: redChecks, FailingChecks: 1, HeadSHA: "h6"},                         // red -> DroppedRed
 		{Number: 7, Title: "chore: pass", Author: "g", URL: "u7", Checks: green(), HeadSHA: "h7"},                                            // proceed -> approved (standing on cycle 2)
 		{Number: 8, Title: "chore: elsewhere", Author: "h", URL: "u8", Checks: green(), ReviewDecision: forge.ReviewApproved, HeadSHA: "h8"}, // approved elsewhere
 	}
@@ -549,7 +549,7 @@ func TestScreensRunOnlyOnWouldApproveSubset(t *testing.T) {
 		{Number: 2, Title: "chore!: breaking", Author: "b", URL: "u2", Checks: green(), HeadSHA: "h2"},
 		{Number: 3, Title: "feat: staged", Author: "c", URL: "u3", Checks: green(), HeadSHA: "h3"},
 		{Number: 4, Title: "chore: draft", Author: "d", URL: "u4", IsDraft: true, Checks: green(), HeadSHA: "h4"},
-		{Number: 5, Title: "chore: red", Author: "e", URL: "u5", Checks: redChecks, HeadSHA: "h5"},
+		{Number: 5, Title: "chore: red", Author: "e", URL: "u5", Checks: redChecks, FailingChecks: 1, HeadSHA: "h5"},
 	}
 	fake := forge.NewFake(candidates...)
 	eng, err := engine.New(fake, filepath.Join(dir, "approvals.jsonl"), tempMerges(t), rules, testArms(t),

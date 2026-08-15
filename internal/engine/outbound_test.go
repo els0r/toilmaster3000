@@ -36,8 +36,8 @@ func outboundEngine(t *testing.T, authored ...forge.PR) (*engine.Engine, *forge.
 func TestOutboundSnapshotPartition(t *testing.T) {
 	authored := []forge.PR{
 		{Number: 1, Title: "feat(a): wip", Author: "me", URL: "u1", IsDraft: true, Checks: green()},
-		{Number: 2, Title: "fix(b): broken", Author: "me", URL: "u2", Checks: []forge.Check{{State: forge.CheckFail}}},
-		{Number: 3, Title: "fix(c): building", Author: "me", URL: "u3", Checks: []forge.Check{{State: forge.CheckPending}}},
+		{Number: 2, Title: "fix(b): broken", Author: "me", URL: "u2", Checks: []forge.Check{{State: forge.CheckFail}}, FailingChecks: 1},
+		{Number: 3, Title: "fix(c): building", Author: "me", URL: "u3", Checks: []forge.Check{{State: forge.CheckPending}}, FailingChecks: 1},
 		{Number: 4, Title: "feat(d): objected", Author: "me", URL: "u4", Checks: green(), ReviewDecision: forge.ReviewChangesRequested},
 		{Number: 5, Title: "feat(e): pending review", Author: "me", URL: "u5", Checks: green(), ReviewDecision: forge.ReviewNone},
 		{Number: 6, Title: "feat(f): approved", Author: "me", URL: "u6", Checks: green(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableConflicting},

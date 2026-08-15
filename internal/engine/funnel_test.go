@@ -122,7 +122,7 @@ func TestFunnelPartitionSumsToIncoming(t *testing.T) {
 		{Number: 2, Title: "docs: gate me", Author: "b", URL: "u2", Checks: green()},                                          // review match -> NeedsHumanReview
 		{Number: 3, Title: "feat: no rule", Author: "c", URL: "u3", Checks: green()},                                          // no match -> Staging
 		{Number: 4, Title: "chore: draft", Author: "d", URL: "u4", IsDraft: true, Checks: green()},                            // draft -> DroppedDraft
-		{Number: 5, Title: "chore: red", Author: "e", URL: "u5", Checks: redChecks},                                           // red -> DroppedRed
+		{Number: 5, Title: "chore: red", Author: "e", URL: "u5", Checks: redChecks, FailingChecks: 1},                         // red -> DroppedRed
 		{Number: 6, Title: "chore: elsewhere", Author: "f", URL: "u6", Checks: green(), ReviewDecision: forge.ReviewApproved}, // approved elsewhere
 	}
 	fake := forge.NewFake(candidates...)

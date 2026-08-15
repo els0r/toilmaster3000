@@ -24,8 +24,8 @@ func outboundServer(t *testing.T) string {
 	fake := forge.NewFake()
 	fake.Authored = []forge.PR{
 		{Number: 11, Title: "feat(ui): wip panel", Author: "me", URL: "u11", IsDraft: true, Checks: greenChecks()},
-		{Number: 12, Title: "fix(api): broken", Author: "me", URL: "u12", Checks: []forge.Check{{State: forge.CheckFail}}},
-		{Number: 13, Title: "fix(ci): building", Author: "me", URL: "u13", Checks: []forge.Check{{State: forge.CheckPending}}},
+		{Number: 12, Title: "fix(api): broken", Author: "me", URL: "u12", Checks: []forge.Check{{State: forge.CheckFail}}, FailingChecks: 1},
+		{Number: 13, Title: "fix(ci): building", Author: "me", URL: "u13", Checks: []forge.Check{{State: forge.CheckPending}}, FailingChecks: 1},
 		{Number: 14, Title: "feat(db): objected", Author: "me", URL: "u14", Checks: greenChecks(), ReviewDecision: forge.ReviewChangesRequested},
 		{Number: 15, Title: "feat(web): pending", Author: "me", URL: "u15", Checks: greenChecks(), ReviewDecision: forge.ReviewNone, Additions: 40, Deletions: 2, ChangedFiles: 3},
 		{Number: 16, Title: "feat(cli)!: approved", Author: "me", URL: "u16", Checks: greenChecks(), ReviewDecision: forge.ReviewApproved, Mergeable: forge.MergeableConflicting},
@@ -115,7 +115,7 @@ func TestOutboundSnapshotMapping(t *testing.T) {
 func armedAuthored() []forge.PR {
 	return []forge.PR{
 		{Number: 21, Title: "feat(a): red", Author: "me", URL: "u21",
-			Checks: []forge.Check{{State: forge.CheckFail}}},
+			Checks: []forge.Check{{State: forge.CheckFail}}, FailingChecks: 1},
 		{Number: 22, Title: "feat(b): objected", Author: "me", URL: "u22", Checks: greenChecks(), ReviewDecision: forge.ReviewChangesRequested},
 		{Number: 23, Title: "feat(c): pending", Author: "me", URL: "u23", Checks: greenChecks(), ReviewDecision: forge.ReviewNone},
 	}
