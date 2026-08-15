@@ -385,7 +385,7 @@ func classifyHooks(hooks hook.Config, active hook.Forge, lookPath func(string) (
 			out.Screens = append(out.Screens, sc)
 			continue
 		}
-		switch elig, reason := sc.Spec.Classify(active, lookPath); elig {
+		switch elig, reason := sc.Classify(active, lookPath); elig {
 		case hook.Ineligible:
 			slog.Info("hook ineligible, skipping", "kind", "screen", "name", sc.Name, "reason", reason)
 		case hook.Broken:
@@ -399,7 +399,7 @@ func classifyHooks(hooks hook.Config, active hook.Forge, lookPath func(string) (
 			out.Notifiers = append(out.Notifiers, nc)
 			continue
 		}
-		switch elig, reason := nc.Spec.Classify(active, lookPath); elig {
+		switch elig, reason := nc.Classify(active, lookPath); elig {
 		case hook.Ineligible:
 			slog.Info("hook ineligible, skipping", "kind", "notifier", "name", nc.Name, "reason", reason)
 		case hook.Broken:
