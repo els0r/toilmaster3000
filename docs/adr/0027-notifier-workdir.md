@@ -48,7 +48,11 @@ manner of ADR 0024:
    whose input is not reproducible is not a gate. The hazard stays
    *unrepresentable* — no field on `ScreenConfig`, and `AIScreen` never
    populates `Request.WorkDir` — the same technique as `Paths` (ADR 0026) and
-   `ScreenConfig` carrying no `Point` (ADR 0023).
+   `ScreenConfig` carrying no `Point` (ADR 0023). (**Amended by ADR 0032**:
+   "unrepresentable" no longer means "silently ignored" — a Screen that
+   writes `WorkDir` anyway now refuses the boot naming the field, via strict
+   `hooks.yaml` decoding. The structural decision here is unchanged; only the
+   silent-drop consequence is superseded.)
 3. **`WorkDir` is a read grant, and the named directory is its ceiling.**
    The anchor cannot be separated from read access: discovery and reads resolve
    from the same root. tm3k therefore **never** passes `--add-dir` or
