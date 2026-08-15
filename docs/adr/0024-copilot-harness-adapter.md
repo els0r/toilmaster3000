@@ -58,6 +58,12 @@ self-updates mid-run.
    the harness sibling of the gh gate, fixing the same latent gap for claude.
    Auth stays runtime-checked: the harness CLIs have no offline auth probe,
    and a dead login surfaces as failed attempts → hold, never silence.
+   (**Amended by ADR 0031**: this dedicated preflight is folded into the
+   general hook-eligibility mechanism, and the missing-CLI-refuses-startup
+   consequence now applies to *Screens only* — a Notifier whose harness CLI
+   is missing is Broken and declines with a warning instead, matching the
+   asymmetry ADR 0031 draws for every declared precondition, not only the
+   harness binary.)
 
 ## Considered Options
 
