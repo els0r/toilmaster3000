@@ -38,7 +38,11 @@ lacks.
    file classes, and a security screen scoped to `**/*.go` would auto-approve a
    malicious `Makefile`-only PR with zero screening. The hazard stays
    *unrepresentable* rather than validated against — the same technique as
-   `ScreenConfig` carrying no `Point` field (ADR 0023).
+   `ScreenConfig` carrying no `Point` field (ADR 0023). (**Amended by
+   ADR 0032**: "unrepresentable" no longer means "silently ignored" — a
+   Screen that writes `Paths` anyway now refuses the boot naming the field,
+   via strict `hooks.yaml` decoding. The structural decision here is
+   unchanged; only the silent-drop consequence is superseded.)
 3. **Full-path doublestar globs, gitignore-normalised.** Patterns match the
    file's full path via `github.com/bmatcuk/doublestar/v4`; a pattern containing
    no `/` is prefixed with `**/` at load. `**` matches zero or more segments, so
