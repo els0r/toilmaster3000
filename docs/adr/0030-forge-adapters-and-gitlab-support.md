@@ -67,12 +67,28 @@ three things resist a naive port:
    already accounts for `allow_failure`, manual jobs and child pipelines).
    Because cardinality is now a forge fact, `FailingChecks` stops being a fold
    over the entries and becomes adapter-supplied — GitHub computes it exactly
-   as before, GitLab from a failed-job count in the same query. The two
+   as before, GitLab from `Pipeline.failedJobsCount` in the same query. The two
    ambiguous rows are pinned: `skipped` emits **zero** entries (a wholly
    skipped pipeline is no signal, and zero entries is bit-for-bit how an empty
    GitHub rollup already behaves), and `manual` is **pending** (blocked on a
    required click, retried each cycle, exactly like a never-finishing check).
    `canceled` is a fail, mirroring GitHub's `CANCELLED`.
+
+   `PipelineStatusEnum` carries **thirteen** values, not the handful named
+   above, and the adapter must map all of them or it cannot compile a total
+   function. The remainder: `CREATED`, `PREPARING`, `WAITING_FOR_RESOURCE`,
+   `WAITING_FOR_CALLBACK`, `PENDING`, `RUNNING` and `SCHEDULED` are **pending**;
+   `CANCELING` is a **fail** alongside `CANCELED`, since the cancellation is
+   already decided and only the teardown is outstanding. An unrecognised value
+   is pending, never pass — the eligibility gate must never fire on no signal
+   (ADR 0005).
+
+   **`failedJobsCount` is not a reliable failing count.** A pipeline that never
+   materialised any job — refused at creation, e.g. an unverified account
+   denied shared runners — reports `status: FAILED` with `failedJobsCount: 0`
+   and `totalJobs: 0`. The count is a display detail, so it stays as-is; but
+   the adapter must never derive the *verdict* from it. The verdict is the
+   status, and the one entry the adapter emits comes from the status alone.
 
 7. **Merge-blocked carries a reason.** `Mergeable` widens from a tri-state to
    `{mergeable, blocked(reason), unknown}` and the Ready row's conflict marker
@@ -87,9 +103,20 @@ three things resist a naive port:
    half-working instance. Probed once at boot, and the message must name
    **which of the two versions is stale**, because they are different machines'
    problems: `reviewState` is a *server-side* GraphQL field, so a brand-new
-   `glab` against an old self-hosted GitLab still cannot fetch it. The project's
-   squash option (ADR 0016 always squashes) refuses the boot on the same
-   footing.
+   `glab` against an old self-hosted GitLab still cannot fetch it.
+
+   **The squash precondition is not a project field.** `Project.squashOption`
+   does not exist; the project exposes only `squashReadOnly` and
+   `squashCommitTemplate`, and the squash *policy* lives on
+   `BranchRule.squashOption`, which returns a display string (`"Allow"`) rather
+   than the `SquashOptionSetting` enum, and is `null` on a branch rule that
+   does not override it. Branch rules are a paid-tier feature, so this
+   precondition cannot be a tier-independent boot probe as written. What ADR
+   0016 actually needs is that the merge call can *request* a squash — a
+   per-MR fact (`MergeRequest.squash` / `squashOnMerge`, and the squash
+   argument on the merge mutation), not a project capability. The boot probe
+   should assert the mutation accepts it, and `squashReadOnly: true` is the
+   one project-level condition that genuinely refuses the boot.
 
    Graceful degradation was designed and then deleted. Narrow-gating merge
    while inbound kept running meant a `merge.available` wire field, an Outbound
@@ -155,3 +182,65 @@ types and transport, invisible to everything else.
   carried as a boolean, so leaving the prefix on the title would encode it
   twice and break conventional-commit parsing for every draft. Stripping a
   presentation artifact is decode, not judge.
+
+## Verified against a live instance (issue #75)
+
+The GitLab field names above were written from the schema as understood during
+design. Issue #75 checked every one against `gitlab.com` **19.3.0-pre**
+(enterprise) with `glab` **1.114.0**, and recorded the responses under
+`internal/forge/gitlab/testdata/` — see that directory's `README.md` for what
+in a fixture is evidence and what is substituted.
+
+**Confirmed as designed.**
+
+- The §4 batched pull works: pipeline status, `diffStatsSummary`, per-file
+  `diffStats { path }`, approval state, reviewer `reviewState`, discussion
+  counts and merge status all arrive for a whole page of merge requests in
+  **one call**. The N+1 ADR 0007 exists to prevent is genuinely avoided.
+- `MergeRequestReviewState` exists and carries `REQUESTED_CHANGES` — plus
+  `UNREVIEWED`, `REVIEWED`, `APPROVED`, `UNAPPROVED`, `REVIEW_STARTED`.
+- `DetailedMergeStatus` carries `NEED_REBASE`, which §7 is built on. It also
+  carries `REQUESTED_CHANGES`, so a requested-changes review is a merge blocker
+  on the forge's own terms, not only in tm3k's judgement.
+- §5's three seam obligations are natively satisfiable. `Project.mergeRequests`
+  takes `authorUsername`, `reviewerUsername`, `reviewState`/`reviewStates`,
+  `approvedBy`, `updatedAfter`, `state`, `draft`, `labels` and `iids`, plus a
+  `not:` negation input (`MergeRequestsResolverNegatedParams`) that supplies
+  exclude-self directly.
+- `mergeRequestAccept` takes `squash: Boolean`, so ADR 0016's always-squash is
+  expressible per merge.
+
+**Corrected in place.** Decision 6 (the thirteen-value pipeline enum, and
+`failedJobsCount` being unreliable as a verdict) and decision 8 (the squash
+precondition is not a project field).
+
+**Two further corrections.**
+
+- **`approved` is not "somebody approved".** It means *the approval
+  requirement is satisfied*, and on a project requiring zero approvals it is
+  `true` for every merge request — including closed and merged ones — while
+  `approvedBy` is empty and `approvalsRequired` is `0`. All 41 merge requests
+  in the capture read `approved: true` with nobody having approved anything.
+  ADR 0013's soft dedup must therefore key off **`approvedBy.nodes` being
+  non-empty**, never `approved`; reading `approved` would suppress every
+  approval tm3k would ever make on a zero-approval project — the invariant
+  inverted into total inaction.
+- **Approval is not available over GraphQL, so §4's "`glab api graphql`
+  throughout" does not hold.** GitLab exposes `mergeRequestAccept`,
+  `mergeRequestRequestChanges` and `mergeRequestDestroyRequestedChanges` as
+  mutations, but there is **no approve mutation** — approving is REST-only
+  (`POST /projects/:id/merge_requests/:iid/approve`). The GitLab adapter is
+  GraphQL for every *read* and must drop to `glab api --method POST` for the
+  approve *write*. This does not weaken §9's ceiling argument, which already
+  assumed `glab api` reaches the approve endpoint under any verb allowlist.
+
+**Not established.** The `glab` and GitLab version *floors* cannot be derived
+from a single current instance; one capture proves 19.3.0-pre and glab 1.114.0
+suffice, and nothing about what fails below. Decision 8's preflight still needs
+a floor, and picking one is a separate question from this capture.
+
+**Not yet captured.** `MANUAL`, `SKIPPED`, `CANCELED` and `SUCCESS` pipelines,
+a genuinely approved merge request, a reviewer at `REQUESTED_CHANGES`, and
+`NEED_REBASE`. The capture project's pipelines all fail before any job is
+created — gitlab.com withholds shared runners from unverified accounts — so
+those pipeline states are unreachable there. Tracked on #72.
