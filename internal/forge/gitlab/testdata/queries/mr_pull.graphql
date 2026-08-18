@@ -1,0 +1,57 @@
+# The batched pull the GitLab adapter runs each cycle (ADR 0030 §4): one call
+# carrying pipeline status, diff-stat summary, per-file diff-stat paths,
+# approval state, reviewer review-state, discussion counts and merge status.
+# Every field name here is confirmed against gitlab.com 19.3.0-pre (issue #75).
+query MRPull($p: ID!, $iids: [String!]) {
+  project(fullPath: $p) {
+    fullPath
+    squashReadOnly
+    mergeRequestsFfOnlyEnabled
+    mergeRequests(iids: $iids, sort: UPDATED_DESC) {
+      nodes {
+        iid
+        title
+        draft
+        state
+        webUrl
+        createdAt
+        updatedAt
+        sourceBranch
+        targetBranch
+        author { username name }
+        labels { nodes { title } }
+        approved
+        approvalsRequired
+        approvalsLeft
+        approvedBy { nodes { username } }
+        reviewers {
+          nodes {
+            username
+            mergeRequestInteraction { reviewState approved reviewed }
+          }
+        }
+        userDiscussionsCount
+        userNotesCount
+        resolvableDiscussionsCount
+        resolvedDiscussionsCount
+        conflicts
+        mergeable
+        mergeStatusEnum
+        detailedMergeStatus
+        shouldBeRebased
+        rebaseInProgress
+        squash
+        squashOnMerge
+        diffStatsSummary { additions deletions changes fileCount }
+        diffStats { path additions deletions }
+        headPipeline {
+          iid
+          status
+          failedJobsCount
+          totalJobs
+          detailedStatus { text label group icon }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "data": {
+    "project": {
+      "fullPath": "example-group/example-project",
+      "squashReadOnly": false,
+      "squashCommitTemplate": null,
+      "mergeRequestsFfOnlyEnabled": false,
+      "onlyAllowMergeIfPipelineSucceeds": false,
+      "onlyAllowMergeIfAllDiscussionsAreResolved": false,
+      "allowMergeOnSkippedPipeline": false,
+      "mergeRequestsEnabled": true,
+      "removeSourceBranchAfterMerge": true,
+      "visibility": "private",
+      "branchRules": {
+        "nodes": [
+          {
+            "name": "All branches",
+            "squashOption": {
+              "option": "Allow",
+              "helpText": "Checkbox is visible and unselected by default."
+            }
+          },
+          {
+            "name": "main",
+            "squashOption": null
+          }
+        ]
+      }
+    }
+  }
+}

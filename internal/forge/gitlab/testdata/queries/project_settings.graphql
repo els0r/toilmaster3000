@@ -1,0 +1,23 @@
+# ADR 0030 §8 precondition probe. NOTE: `Project.squashOption` does not exist
+# on GitLab 19.3 — squash policy is `BranchRule.squashOption` (Premium), and
+# the project only exposes `squashReadOnly` / `squashCommitTemplate`.
+query ProjectSettings($p: ID!) {
+  project(fullPath: $p) {
+    fullPath
+    squashReadOnly
+    squashCommitTemplate
+    mergeRequestsFfOnlyEnabled
+    onlyAllowMergeIfPipelineSucceeds
+    onlyAllowMergeIfAllDiscussionsAreResolved
+    allowMergeOnSkippedPipeline
+    mergeRequestsEnabled
+    removeSourceBranchAfterMerge
+    visibility
+    branchRules {
+      nodes {
+        name
+        squashOption { option helpText }
+      }
+    }
+  }
+}

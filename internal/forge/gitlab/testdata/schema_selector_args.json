@@ -1,0 +1,463 @@
+{
+  "Project.mergeRequests": [
+    {
+      "name": "search",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "in",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "ENUM",
+            "name": "IssuableSearchableField",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "approvedBy",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "releaseTag",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "iids",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "mergedBy",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "myReactionEmoji",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "or",
+      "type": {
+        "kind": "INPUT_OBJECT",
+        "name": "UnionedMergeRequestFilterInput",
+        "ofType": null
+      }
+    },
+    {
+      "name": "sourceBranches",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "targetBranches",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "state",
+      "type": {
+        "kind": "ENUM",
+        "name": "MergeRequestState",
+        "ofType": null
+      }
+    },
+    {
+      "name": "draft",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Boolean",
+        "ofType": null
+      }
+    },
+    {
+      "name": "blobPath",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "closedAfter",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "closedBefore",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "createdAfter",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "createdBefore",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "deployedAfter",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "deployedBefore",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "deploymentId",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "environmentName",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "updatedAfter",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "updatedBefore",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "ignoredReviewerUsername",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "labelName",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "String",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "name": "labels",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "mergedAfter",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "mergedBefore",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Time",
+        "ofType": null
+      }
+    },
+    {
+      "name": "milestoneTitle",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "milestoneWildcardId",
+      "type": {
+        "kind": "ENUM",
+        "name": "MilestoneWildcardId",
+        "ofType": null
+      }
+    },
+    {
+      "name": "reviewState",
+      "type": {
+        "kind": "ENUM",
+        "name": "MergeRequestReviewState",
+        "ofType": null
+      }
+    },
+    {
+      "name": "reviewStates",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "ENUM",
+            "name": "MergeRequestReviewState",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "sort",
+      "type": {
+        "kind": "ENUM",
+        "name": "MergeRequestSort",
+        "ofType": null
+      }
+    },
+    {
+      "name": "subscribed",
+      "type": {
+        "kind": "ENUM",
+        "name": "SubscriptionStatus",
+        "ofType": null
+      }
+    },
+    {
+      "name": "not",
+      "type": {
+        "kind": "INPUT_OBJECT",
+        "name": "MergeRequestsResolverNegatedParams",
+        "ofType": null
+      }
+    },
+    {
+      "name": "approver",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "assigneeUsername",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "assigneeUsernames",
+      "type": {
+        "kind": "LIST",
+        "name": null,
+        "ofType": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        }
+      }
+    },
+    {
+      "name": "assigneeWildcardId",
+      "type": {
+        "kind": "ENUM",
+        "name": "AssigneeWildcardId",
+        "ofType": null
+      }
+    },
+    {
+      "name": "authorUsername",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "reviewerUsername",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "reviewerWildcardId",
+      "type": {
+        "kind": "ENUM",
+        "name": "ReviewerWildcardId",
+        "ofType": null
+      }
+    },
+    {
+      "name": "after",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "before",
+      "type": {
+        "kind": "SCALAR",
+        "name": "String",
+        "ofType": null
+      }
+    },
+    {
+      "name": "first",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Int",
+        "ofType": null
+      }
+    },
+    {
+      "name": "last",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Int",
+        "ofType": null
+      }
+    }
+  ],
+  "MergeRequestsResolverNegatedParams": [
+    "approvedBy",
+    "assigneeUsernames",
+    "authorUsername",
+    "labelName",
+    "labels",
+    "milestoneTitle",
+    "myReactionEmoji",
+    "onlyReviewer",
+    "releaseTag",
+    "reviewStates",
+    "reviewerUsername",
+    "sourceBranches",
+    "targetBranches"
+  ]
+}

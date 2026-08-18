@@ -1,0 +1,4256 @@
+{
+  "data": {
+    "project": {
+      "fullPath": "example-group/example-project",
+      "squashReadOnly": false,
+      "mergeRequestsFfOnlyEnabled": false,
+      "mergeRequests": {
+        "nodes": [
+          {
+            "iid": "41",
+            "title": "feat(scope): subject 41",
+            "draft": false,
+            "state": "opened",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/41",
+            "createdAt": "2026-08-18T16:57:03Z",
+            "updatedAt": "2026-08-18T16:57:05Z",
+            "sourceBranch": "feat/branch-41",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 1,
+            "userNotesCount": 1,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": true,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "MERGEABLE",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 623,
+              "deletions": 51,
+              "changes": 674,
+              "fileCount": 18
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 29,
+                "deletions": 10
+              },
+              {
+                "path": "dir1/dir2/file2.md",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/file3.md",
+                "additions": 38,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file4.go",
+                "additions": 5,
+                "deletions": 18
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.go",
+                "additions": 23,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.go",
+                "additions": 4,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file7.go",
+                "additions": 21,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file8.go",
+                "additions": 65,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file9.go",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file10.go",
+                "additions": 19,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file11.go",
+                "additions": 46,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file12.go",
+                "additions": 6,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file13.go",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file14.go",
+                "additions": 16,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file15.go",
+                "additions": 8,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file16.go",
+                "additions": 147,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file17.go",
+                "additions": 169,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file18.md",
+                "additions": 22,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "59",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "39",
+            "title": "feat(scope): subject 39",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/39",
+            "createdAt": "2026-08-18T16:21:41Z",
+            "updatedAt": "2026-08-18T16:27:36Z",
+            "sourceBranch": "feat/branch-39",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 1,
+            "userNotesCount": 1,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 916,
+              "deletions": 219,
+              "changes": 1135,
+              "fileCount": 34
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 12,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file2.go",
+                "additions": 3,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file3.go",
+                "additions": 107,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file4.go",
+                "additions": 73,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.go",
+                "additions": 10,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file6.go",
+                "additions": 21,
+                "deletions": 21
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file7.go",
+                "additions": 56,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file8.go",
+                "additions": 10,
+                "deletions": 12
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file9.go",
+                "additions": 39,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file10.go",
+                "additions": 14,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file11.go",
+                "additions": 23,
+                "deletions": 23
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file12.go",
+                "additions": 18,
+                "deletions": 16
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file13.go",
+                "additions": 99,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file14.go",
+                "additions": 0,
+                "deletions": 27
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file15.go",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file16.go",
+                "additions": 58,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file17.go",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file18.go",
+                "additions": 49,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file19.go",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file20.go",
+                "additions": 50,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file21.go",
+                "additions": 23,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/file22.go",
+                "additions": 6,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/file23.go",
+                "additions": 14,
+                "deletions": 6
+              },
+              {
+                "path": "dir1/dir2/dir3/file24.go",
+                "additions": 13,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file25.go",
+                "additions": 17,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file26.go",
+                "additions": 16,
+                "deletions": 10
+              },
+              {
+                "path": "dir1/dir2/dir3/file27.go",
+                "additions": 25,
+                "deletions": 19
+              },
+              {
+                "path": "dir1/dir2/dir3/file28.go",
+                "additions": 13,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/file29.go",
+                "additions": 29,
+                "deletions": 23
+              },
+              {
+                "path": "dir1/dir2/dir3/file30.go",
+                "additions": 16,
+                "deletions": 9
+              },
+              {
+                "path": "dir1/dir2/dir3/file31.go",
+                "additions": 13,
+                "deletions": 10
+              },
+              {
+                "path": "dir1/dir2/dir3/file32.go",
+                "additions": 62,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file33.md",
+                "additions": 20,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file34.md",
+                "additions": 1,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "56",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "40",
+            "title": "chore(scope): subject 40",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/40",
+            "createdAt": "2026-08-18T16:22:53Z",
+            "updatedAt": "2026-08-18T16:23:24Z",
+            "sourceBranch": "chore/branch-40",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": true,
+            "squashOnMerge": true,
+            "diffStatsSummary": {
+              "additions": 0,
+              "deletions": 4110,
+              "changes": 4110,
+              "fileCount": 31
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/dir3/file1.gitkeep",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file2.md",
+                "additions": 0,
+                "deletions": 33
+              },
+              {
+                "path": "dir1/dir2/dir3/file3.md",
+                "additions": 0,
+                "deletions": 125
+              },
+              {
+                "path": "dir1/dir2/dir3/file4.md",
+                "additions": 0,
+                "deletions": 120
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.md",
+                "additions": 0,
+                "deletions": 125
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.md",
+                "additions": 0,
+                "deletions": 125
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.md",
+                "additions": 0,
+                "deletions": 134
+              },
+              {
+                "path": "dir1/dir2/dir3/file8.md",
+                "additions": 0,
+                "deletions": 123
+              },
+              {
+                "path": "dir1/dir2/dir3/file9.md",
+                "additions": 0,
+                "deletions": 132
+              },
+              {
+                "path": "dir1/dir2/dir3/file10.md",
+                "additions": 0,
+                "deletions": 125
+              },
+              {
+                "path": "dir1/dir2/dir3/file11.md",
+                "additions": 0,
+                "deletions": 124
+              },
+              {
+                "path": "dir1/dir2/dir3/file12.md",
+                "additions": 0,
+                "deletions": 129
+              },
+              {
+                "path": "dir1/dir2/dir3/file13.md",
+                "additions": 0,
+                "deletions": 128
+              },
+              {
+                "path": "dir1/dir2/dir3/file14.md",
+                "additions": 0,
+                "deletions": 135
+              },
+              {
+                "path": "dir1/dir2/dir3/file15.md",
+                "additions": 0,
+                "deletions": 128
+              },
+              {
+                "path": "dir1/dir2/dir3/file16.md",
+                "additions": 0,
+                "deletions": 128
+              },
+              {
+                "path": "dir1/dir2/dir3/file17.md",
+                "additions": 0,
+                "deletions": 137
+              },
+              {
+                "path": "dir1/dir2/dir3/file18.md",
+                "additions": 0,
+                "deletions": 129
+              },
+              {
+                "path": "dir1/dir2/dir3/file19.md",
+                "additions": 0,
+                "deletions": 132
+              },
+              {
+                "path": "dir1/dir2/dir3/file20.md",
+                "additions": 0,
+                "deletions": 135
+              },
+              {
+                "path": "dir1/dir2/file21.md",
+                "additions": 0,
+                "deletions": 558
+              },
+              {
+                "path": "dir1/dir2/file22.md",
+                "additions": 0,
+                "deletions": 248
+              },
+              {
+                "path": "dir1/dir2/file23.md",
+                "additions": 0,
+                "deletions": 189
+              },
+              {
+                "path": "dir1/dir2/dir3/file24.md",
+                "additions": 0,
+                "deletions": 95
+              },
+              {
+                "path": "dir1/dir2/dir3/file25.md",
+                "additions": 0,
+                "deletions": 95
+              },
+              {
+                "path": "dir1/dir2/dir3/file26.md",
+                "additions": 0,
+                "deletions": 95
+              },
+              {
+                "path": "dir1/dir2/dir3/file27.md",
+                "additions": 0,
+                "deletions": 100
+              },
+              {
+                "path": "dir1/dir2/dir3/file28.md",
+                "additions": 0,
+                "deletions": 94
+              },
+              {
+                "path": "dir1/dir2/dir3/file29.md",
+                "additions": 0,
+                "deletions": 99
+              },
+              {
+                "path": "dir1/dir2/dir3/file30.md",
+                "additions": 0,
+                "deletions": 95
+              },
+              {
+                "path": "dir1/dir2/dir3/file31.md",
+                "additions": 0,
+                "deletions": 95
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "38",
+            "title": "docs(scope): subject 38",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/38",
+            "createdAt": "2026-08-18T15:56:51Z",
+            "updatedAt": "2026-08-18T16:12:15Z",
+            "sourceBranch": "docs/branch-38",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": true,
+            "squashOnMerge": true,
+            "diffStatsSummary": {
+              "additions": 100,
+              "deletions": 44,
+              "changes": 144,
+              "fileCount": 6
+            },
+            "diffStats": [
+              {
+                "path": "file1.md",
+                "additions": 5,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/file2.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file3.md",
+                "additions": 133,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file4.md",
+                "additions": 0,
+                "deletions": 117
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.md",
+                "additions": 7,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.md",
+                "additions": 7,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.md",
+                "additions": 7,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "37",
+            "title": "docs: subject 37",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/37",
+            "createdAt": "2026-08-18T15:42:00Z",
+            "updatedAt": "2026-08-18T16:06:11Z",
+            "sourceBranch": "docs/branch-37",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 4,
+            "userNotesCount": 4,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 539,
+              "deletions": 181,
+              "changes": 720,
+              "fileCount": 32
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/dir3/file1.md",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file2.md",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "file3.md",
+                "additions": 13,
+                "deletions": 10
+              },
+              {
+                "path": "file4.md",
+                "additions": 4,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/file5.md",
+                "additions": 3,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/file6.md",
+                "additions": 17,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file7.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file8.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file9.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file10.md",
+                "additions": 17,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file11.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file12.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file13.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file14.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file15.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file16.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file17.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file18.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file19.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file20.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file21.md",
+                "additions": 17,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file22.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file23.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file24.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file25.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file26.md",
+                "additions": 18,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file27.md",
+                "additions": 113,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file28.md",
+                "additions": 17,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file29.md",
+                "additions": 0,
+                "deletions": 157
+              },
+              {
+                "path": "dir1/file30.md",
+                "additions": 7,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/file31.md",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file32.sql",
+                "additions": 4,
+                "deletions": 3
+              }
+            ],
+            "headPipeline": {
+              "iid": "51",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "36",
+            "title": "docs(scope): subject 36",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/36",
+            "createdAt": "2026-08-18T15:40:36Z",
+            "updatedAt": "2026-08-18T15:50:09Z",
+            "sourceBranch": "docs/branch-36",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 70,
+              "deletions": 0,
+              "changes": 70,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1.md",
+                "additions": 70,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "37",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "35",
+            "title": "refactor(scope): subject 35",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/35",
+            "createdAt": "2026-08-18T13:37:46Z",
+            "updatedAt": "2026-08-18T13:39:27Z",
+            "sourceBranch": "refactor/branch-35",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 51,
+              "deletions": 429,
+              "changes": 480,
+              "fileCount": 22
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 10,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file2.yaml",
+                "additions": 0,
+                "deletions": 18
+              },
+              {
+                "path": "dir1/dir2/file3.md",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/file4.md",
+                "additions": 2,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.yaml",
+                "additions": 0,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.yaml",
+                "additions": 0,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.yaml",
+                "additions": 0,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file8.yaml",
+                "additions": 0,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file9.yaml",
+                "additions": 0,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file10.yaml",
+                "additions": 0,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file11.yaml",
+                "additions": 0,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/file12.go",
+                "additions": 18,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/file13.go",
+                "additions": 3,
+                "deletions": 17
+              },
+              {
+                "path": "dir1/dir2/dir3/file14.go",
+                "additions": 0,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file15.go",
+                "additions": 5,
+                "deletions": 10
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file16.go",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file17.go",
+                "additions": 5,
+                "deletions": 6
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file18.go",
+                "additions": 3,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file19.go",
+                "additions": 2,
+                "deletions": 16
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file20.go",
+                "additions": 0,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file21.go",
+                "additions": 0,
+                "deletions": 145
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file22.go",
+                "additions": 0,
+                "deletions": 169
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "23",
+            "title": "fix(scope): subject 23",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/23",
+            "createdAt": "2026-08-18T09:03:53Z",
+            "updatedAt": "2026-08-18T13:38:47Z",
+            "sourceBranch": "ci/branch-23",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 44,
+              "deletions": 134,
+              "changes": 178,
+              "fileCount": 3
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1.md",
+                "additions": 3,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/file2.py",
+                "additions": 41,
+                "deletions": 122
+              },
+              {
+                "path": "dir1/dir2/file3.md",
+                "additions": 0,
+                "deletions": 9
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "33",
+            "title": "fix(scope): subject 33",
+            "draft": false,
+            "state": "closed",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/33",
+            "createdAt": "2026-08-18T13:15:41Z",
+            "updatedAt": "2026-08-18T13:33:10Z",
+            "sourceBranch": "fix/branch-33",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": true,
+            "mergeable": false,
+            "mergeStatusEnum": "CANNOT_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 202,
+              "deletions": 11,
+              "changes": 213,
+              "fileCount": 9
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 14,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file2.go",
+                "additions": 7,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/file3.go",
+                "additions": 37,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file4.go",
+                "additions": 5,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.go",
+                "additions": 10,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.go",
+                "additions": 50,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file7.go",
+                "additions": 5,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file8.go",
+                "additions": 5,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file9.go",
+                "additions": 69,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "34",
+            "title": "fix(scope): subject 34",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/34",
+            "createdAt": "2026-08-18T13:28:08Z",
+            "updatedAt": "2026-08-18T13:30:10Z",
+            "sourceBranch": "fix/branch-34",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 206,
+              "deletions": 11,
+              "changes": 217,
+              "fileCount": 4
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 14,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file2.go",
+                "additions": 9,
+                "deletions": 6
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file3.go",
+                "additions": 52,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file4.go",
+                "additions": 131,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "30",
+            "title": "feat(scope): subject 30",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/30",
+            "createdAt": "2026-08-18T12:10:45Z",
+            "updatedAt": "2026-08-18T13:08:52Z",
+            "sourceBranch": "feat/branch-30",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 782,
+              "deletions": 345,
+              "changes": 1127,
+              "fileCount": 29
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.example",
+                "additions": 8,
+                "deletions": 6
+              },
+              {
+                "path": "dir1/file2.md",
+                "additions": 30,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file3.md",
+                "additions": 6,
+                "deletions": 6
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file4.yaml",
+                "additions": 17,
+                "deletions": 23
+              },
+              {
+                "path": "dir1/file5.yaml",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file6.md",
+                "additions": 35,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.yaml",
+                "additions": 12,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file8.yaml",
+                "additions": 12,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file9.yaml",
+                "additions": 12,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file10.yaml",
+                "additions": 12,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file11.yaml",
+                "additions": 12,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file12.yaml",
+                "additions": 12,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file13.yaml",
+                "additions": 12,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file14.go",
+                "additions": 4,
+                "deletions": 6
+              },
+              {
+                "path": "dir1/dir2/dir3/file15.go",
+                "additions": 6,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file16.go",
+                "additions": 5,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file17.go",
+                "additions": 78,
+                "deletions": 43
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file18.go",
+                "additions": 187,
+                "deletions": 32
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file19.go",
+                "additions": 6,
+                "deletions": 9
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file20.go",
+                "additions": 62,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file21.go",
+                "additions": 3,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file22.go",
+                "additions": 2,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file23.go",
+                "additions": 19,
+                "deletions": 20
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file24.go",
+                "additions": 40,
+                "deletions": 11
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file25.go",
+                "additions": 42,
+                "deletions": 19
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file26.go",
+                "additions": 87,
+                "deletions": 53
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file27.go",
+                "additions": 32,
+                "deletions": 36
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file28.go",
+                "additions": 10,
+                "deletions": 7
+              },
+              {
+                "path": "dir1/file29.md",
+                "additions": 18,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "16",
+            "title": "docs(scope): subject 16",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/16",
+            "createdAt": "2026-08-18T07:54:20Z",
+            "updatedAt": "2026-08-18T12:48:29Z",
+            "sourceBranch": "docs/branch-16",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-16",
+              "name": "User 16"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "user-86",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNAPPROVED",
+                    "approved": false,
+                    "reviewed": false
+                  }
+                }
+              ]
+            },
+            "userDiscussionsCount": 2,
+            "userNotesCount": 2,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 4110,
+              "deletions": 0,
+              "changes": 4110,
+              "fileCount": 31
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.gitkeep",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file2.md",
+                "additions": 33,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file3.md",
+                "additions": 125,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file4.md",
+                "additions": 120,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file5.md",
+                "additions": 125,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file6.md",
+                "additions": 125,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file7.md",
+                "additions": 134,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file8.md",
+                "additions": 123,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file9.md",
+                "additions": 132,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file10.md",
+                "additions": 125,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file11.md",
+                "additions": 124,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file12.md",
+                "additions": 129,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file13.md",
+                "additions": 128,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file14.md",
+                "additions": 135,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file15.md",
+                "additions": 128,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file16.md",
+                "additions": 128,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file17.md",
+                "additions": 137,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file18.md",
+                "additions": 129,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file19.md",
+                "additions": 132,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file20.md",
+                "additions": 135,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file21.md",
+                "additions": 558,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file22.md",
+                "additions": 248,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file23.md",
+                "additions": 189,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file24.md",
+                "additions": 95,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file25.md",
+                "additions": 95,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file26.md",
+                "additions": 95,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file27.md",
+                "additions": 100,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file28.md",
+                "additions": 94,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file29.md",
+                "additions": 99,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file30.md",
+                "additions": 95,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file31.md",
+                "additions": 95,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "32",
+            "title": "docs: subject 32",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/32",
+            "createdAt": "2026-08-18T12:33:51Z",
+            "updatedAt": "2026-08-18T12:35:41Z",
+            "sourceBranch": "docs/branch-32",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 40,
+              "deletions": 2,
+              "changes": 42,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/dir3/file1.md",
+                "additions": 40,
+                "deletions": 2
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "31",
+            "title": "docs: subject 31",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/31",
+            "createdAt": "2026-08-18T12:20:48Z",
+            "updatedAt": "2026-08-18T12:26:00Z",
+            "sourceBranch": "docs/branch-31",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 38,
+              "deletions": 0,
+              "changes": 38,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "file1.md",
+                "additions": 38,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "32",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "28",
+            "title": "chore(scope): subject 28",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/28",
+            "createdAt": "2026-08-18T11:59:13Z",
+            "updatedAt": "2026-08-18T12:08:50Z",
+            "sourceBranch": "chore/branch-28",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": [
+                {
+                  "username": "user-34"
+                }
+              ]
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 1,
+            "userNotesCount": 1,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 94,
+              "deletions": 0,
+              "changes": 94,
+              "fileCount": 4
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.example",
+                "additions": 65,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file2.md",
+                "additions": 11,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file3.md",
+                "additions": 12,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file4.md",
+                "additions": 6,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "29",
+            "title": "docs: subject 29",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/29",
+            "createdAt": "2026-08-18T12:02:42Z",
+            "updatedAt": "2026-08-18T12:04:54Z",
+            "sourceBranch": "docs/branch-29",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 12,
+              "deletions": 7,
+              "changes": 19,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "file1.md",
+                "additions": 12,
+                "deletions": 7
+              }
+            ],
+            "headPipeline": {
+              "iid": "27",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "27",
+            "title": "docs: subject 27",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/27",
+            "createdAt": "2026-08-18T11:44:34Z",
+            "updatedAt": "2026-08-18T11:45:23Z",
+            "sourceBranch": "claude/branch-27",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 122,
+              "deletions": 0,
+              "changes": 122,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "file1.md",
+                "additions": 122,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "24",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "26",
+            "title": "chore: subject 26",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/26",
+            "createdAt": "2026-08-18T11:26:43Z",
+            "updatedAt": "2026-08-18T11:31:17Z",
+            "sourceBranch": "chore/branch-26",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 2,
+              "deletions": 0,
+              "changes": 2,
+              "fileCount": 2
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "file2.md",
+                "additions": 1,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "25",
+            "title": "feat(scope): subject 25",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/25",
+            "createdAt": "2026-08-18T09:47:12Z",
+            "updatedAt": "2026-08-18T09:52:22Z",
+            "sourceBranch": "feat/branch-25",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 78,
+              "deletions": 7,
+              "changes": 85,
+              "fileCount": 4
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/dir3/dir4/file1.md",
+                "additions": 40,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/dir5/file2.yaml",
+                "additions": 5,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file3.yaml",
+                "additions": 27,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/file4.md",
+                "additions": 6,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "21",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "24",
+            "title": "feat(scope): subject 24",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/24",
+            "createdAt": "2026-08-18T09:04:01Z",
+            "updatedAt": "2026-08-18T09:13:06Z",
+            "sourceBranch": "feat/branch-24",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 1,
+            "userNotesCount": 1,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 147,
+              "deletions": 20,
+              "changes": 167,
+              "fileCount": 6
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 4,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file2.md",
+                "additions": 85,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/dir5/file3.yaml",
+                "additions": 8,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file4.yaml",
+                "additions": 31,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file5.md",
+                "additions": 13,
+                "deletions": 13
+              },
+              {
+                "path": "dir1/file6.md",
+                "additions": 6,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "18",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "20",
+            "title": "refactor(scope): subject 20",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/20",
+            "createdAt": "2026-08-18T08:23:00Z",
+            "updatedAt": "2026-08-18T08:51:25Z",
+            "sourceBranch": "refactor/branch-20",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 360,
+              "deletions": 28,
+              "changes": 388,
+              "fileCount": 8
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1.md",
+                "additions": 61,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file2.go",
+                "additions": 92,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file3.go",
+                "additions": 23,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file4.go",
+                "additions": 106,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.go",
+                "additions": 47,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.go",
+                "additions": 5,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.go",
+                "additions": 20,
+                "deletions": 11
+              },
+              {
+                "path": "dir1/file8.md",
+                "additions": 6,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "14",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "22",
+            "title": "docs(scope): subject 22",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/22",
+            "createdAt": "2026-08-18T08:40:38Z",
+            "updatedAt": "2026-08-18T08:40:53Z",
+            "sourceBranch": "docs/branch-22",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": true,
+            "squashOnMerge": true,
+            "diffStatsSummary": {
+              "additions": 47,
+              "deletions": 18,
+              "changes": 65,
+              "fileCount": 2
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1.md",
+                "additions": 32,
+                "deletions": 17
+              },
+              {
+                "path": "dir1/dir2/file2.py",
+                "additions": 15,
+                "deletions": 1
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "21",
+            "title": "feat(scope): subject 21",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/21",
+            "createdAt": "2026-08-18T08:33:52Z",
+            "updatedAt": "2026-08-18T08:40:08Z",
+            "sourceBranch": "feat/branch-21",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 1,
+            "userNotesCount": 1,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": true,
+            "squashOnMerge": true,
+            "diffStatsSummary": {
+              "additions": 211,
+              "deletions": 5,
+              "changes": 216,
+              "fileCount": 6
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.gitignore",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file2.md",
+                "additions": 24,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file3.md",
+                "additions": 109,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/file4.yaml",
+                "additions": 11,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file5.yaml",
+                "additions": 32,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/dir2/file6.example",
+                "additions": 34,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": {
+              "iid": "9",
+              "status": "FAILED",
+              "failedJobsCount": 0,
+              "totalJobs": 0,
+              "detailedStatus": {
+                "text": "Failed",
+                "label": "failed",
+                "group": "failed",
+                "icon": "status_failed"
+              }
+            }
+          },
+          {
+            "iid": "18",
+            "title": "feat(scope): subject 18",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/18",
+            "createdAt": "2026-08-18T08:00:08Z",
+            "updatedAt": "2026-08-18T08:20:39Z",
+            "sourceBranch": "feat/branch-18",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": true,
+            "squashOnMerge": true,
+            "diffStatsSummary": {
+              "additions": 1704,
+              "deletions": 1,
+              "changes": 1705,
+              "fileCount": 9
+            },
+            "diffStats": [
+              {
+                "path": "file1.md",
+                "additions": 2,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/file2.md",
+                "additions": 58,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file3.md",
+                "additions": 162,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file4.png",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file5.png",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file6.png",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file7.png",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file8.css",
+                "additions": 1128,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file9.css",
+                "additions": 354,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "19",
+            "title": "fix(scope): subject 19",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/19",
+            "createdAt": "2026-08-18T08:19:29Z",
+            "updatedAt": "2026-08-18T08:19:50Z",
+            "sourceBranch": "fix/branch-19",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": true,
+            "squashOnMerge": true,
+            "diffStatsSummary": {
+              "additions": 212,
+              "deletions": 48,
+              "changes": 260,
+              "fileCount": 6
+            },
+            "diffStats": [
+              {
+                "path": "file1.yml",
+                "additions": 7,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/file2.py",
+                "additions": 17,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/file3.py",
+                "additions": 106,
+                "deletions": 32
+              },
+              {
+                "path": "dir1/dir2/file4.py",
+                "additions": 38,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file5.md",
+                "additions": 6,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file6.py",
+                "additions": 38,
+                "deletions": 8
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "17",
+            "title": "fix(scope): subject 17",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/17",
+            "createdAt": "2026-08-18T07:59:13Z",
+            "updatedAt": "2026-08-18T08:00:38Z",
+            "sourceBranch": "fix/branch-17",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 20,
+              "deletions": 0,
+              "changes": 20,
+              "fileCount": 2
+            },
+            "diffStats": [
+              {
+                "path": "file1.yml",
+                "additions": 17,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file2.md",
+                "additions": 3,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "15",
+            "title": "feat(scope): subject 15",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/15",
+            "createdAt": "2026-08-18T07:44:28Z",
+            "updatedAt": "2026-08-18T07:54:50Z",
+            "sourceBranch": "feat/branch-15",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 1,
+            "userNotesCount": 1,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 1141,
+              "deletions": 0,
+              "changes": 1141,
+              "fileCount": 8
+            },
+            "diffStats": [
+              {
+                "path": "file1.yml",
+                "additions": 67,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file2.md",
+                "additions": 102,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file3.py",
+                "additions": 234,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file4.py",
+                "additions": 243,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file5.py",
+                "additions": 187,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file6.md",
+                "additions": 76,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file7.py",
+                "additions": 220,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file8.md",
+                "additions": 12,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "14",
+            "title": "docs(scope): subject 14",
+            "draft": false,
+            "state": "closed",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/14",
+            "createdAt": "2026-08-18T07:44:07Z",
+            "updatedAt": "2026-08-18T07:49:45Z",
+            "sourceBranch": "branch-14",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-16",
+              "name": "User 16"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "user-86",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false,
+                    "reviewed": false
+                  }
+                }
+              ]
+            },
+            "userDiscussionsCount": 1,
+            "userNotesCount": 1,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": true,
+            "mergeable": false,
+            "mergeStatusEnum": "CANNOT_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 0,
+              "deletions": 0,
+              "changes": 0,
+              "fileCount": 0
+            },
+            "diffStats": [],
+            "headPipeline": null
+          },
+          {
+            "iid": "12",
+            "title": "docs: subject 12",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/12",
+            "createdAt": "2026-08-18T07:18:52Z",
+            "updatedAt": "2026-08-18T07:23:36Z",
+            "sourceBranch": "docs/branch-12",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 41,
+              "deletions": 5,
+              "changes": 46,
+              "fileCount": 2
+            },
+            "diffStats": [
+              {
+                "path": "file1.md",
+                "additions": 35,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/file2.md",
+                "additions": 6,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "13",
+            "title": "chore: subject 13",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/13",
+            "createdAt": "2026-08-18T07:19:02Z",
+            "updatedAt": "2026-08-18T07:22:32Z",
+            "sourceBranch": "chore/branch-13",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 26,
+              "deletions": 37,
+              "changes": 63,
+              "fileCount": 29
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1.md",
+                "additions": 13,
+                "deletions": 21
+              },
+              {
+                "path": "dir1/dir2/dir3/file2.md",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file3.md",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file4.md",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file5.json",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.md",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file7.json",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file8.md",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file9.json",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file10.md",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file11.md",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file12.py",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file13.py",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file14.py",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file15.md",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file16.json",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file17.md",
+                "additions": 1,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file18",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file19",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file20",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file21",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file22",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file23",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file24",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file25",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/file26",
+                "additions": 0,
+                "deletions": 1
+              },
+              {
+                "path": "file27.md",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/file28.md",
+                "additions": 7,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/file29.md",
+                "additions": 1,
+                "deletions": 1
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "5",
+            "title": "refactor(scope): subject 5",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/5",
+            "createdAt": "2026-08-17T15:00:20Z",
+            "updatedAt": "2026-08-18T07:19:58Z",
+            "sourceBranch": "refactor/branch-5",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "user-34",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false,
+                    "reviewed": false
+                  }
+                }
+              ]
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 919,
+              "deletions": 48,
+              "changes": 967,
+              "fileCount": 13
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1.md",
+                "additions": 95,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file2.mod",
+                "additions": 11,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/file3.sum",
+                "additions": 23,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file4.go",
+                "additions": 95,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.go",
+                "additions": 63,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.go",
+                "additions": 28,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.go",
+                "additions": 328,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file8.go",
+                "additions": 188,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file9.go",
+                "additions": 21,
+                "deletions": 30
+              },
+              {
+                "path": "dir1/dir2/dir3/file10.go",
+                "additions": 24,
+                "deletions": 8
+              },
+              {
+                "path": "dir1/dir2/dir3/file11.go",
+                "additions": 13,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/file12.go",
+                "additions": 18,
+                "deletions": 3
+              },
+              {
+                "path": "dir1/file13.md",
+                "additions": 12,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "11",
+            "title": "docs(scope): subject 11",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/11",
+            "createdAt": "2026-08-18T07:10:46Z",
+            "updatedAt": "2026-08-18T07:12:15Z",
+            "sourceBranch": "claude/branch-11",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 12,
+              "deletions": 0,
+              "changes": 12,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 12,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "10",
+            "title": "infra: subject 10",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/10",
+            "createdAt": "2026-08-18T06:54:11Z",
+            "updatedAt": "2026-08-18T06:56:44Z",
+            "sourceBranch": "infra/branch-10",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 10,
+              "deletions": 0,
+              "changes": 10,
+              "fileCount": 3
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.json",
+                "additions": 2,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file2.md",
+                "additions": 4,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file3.yaml",
+                "additions": 4,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "9",
+            "title": "docs: subject 9",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/9",
+            "createdAt": "2026-08-18T06:34:56Z",
+            "updatedAt": "2026-08-18T06:49:46Z",
+            "sourceBranch": "docs/branch-9",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": [
+                {
+                  "username": "user-16"
+                }
+              ]
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 20,
+              "deletions": 4,
+              "changes": 24,
+              "fileCount": 2
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1.md",
+                "additions": 16,
+                "deletions": 2
+              },
+              {
+                "path": "file2.md",
+                "additions": 4,
+                "deletions": 2
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "8",
+            "title": "feat(scope): subject 8",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/8",
+            "createdAt": "2026-08-17T16:05:24Z",
+            "updatedAt": "2026-08-17T16:15:35Z",
+            "sourceBranch": "claude/branch-8",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 9,
+              "deletions": 0,
+              "changes": 9,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.json",
+                "additions": 9,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "7",
+            "title": "feat(scope): subject 7",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/7",
+            "createdAt": "2026-08-17T15:51:37Z",
+            "updatedAt": "2026-08-17T15:57:24Z",
+            "sourceBranch": "feat/branch-7",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 615,
+              "deletions": 0,
+              "changes": 615,
+              "fileCount": 12
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 12,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file2.example",
+                "additions": 7,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file3.gitignore",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file4.gitkeep",
+                "additions": 0,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file5.md",
+                "additions": 48,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file6.md",
+                "additions": 144,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.sql",
+                "additions": 28,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file8.sh",
+                "additions": 22,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file9.sql",
+                "additions": 181,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file10.xml",
+                "additions": 30,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file11.yaml",
+                "additions": 71,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file12.yaml",
+                "additions": 71,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "6",
+            "title": "chore: subject 6",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/6",
+            "createdAt": "2026-08-17T15:15:50Z",
+            "updatedAt": "2026-08-17T15:19:22Z",
+            "sourceBranch": "chore/branch-6",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 2081,
+              "deletions": 3,
+              "changes": 2084,
+              "fileCount": 30
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/file1",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file2",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file3",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file4",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file5",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file6",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file7",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file8",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file9",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "file10.gitignore",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "file11.md",
+                "additions": 5,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file12.md",
+                "additions": 6,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file13.md",
+                "additions": 4,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file14.md",
+                "additions": 68,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file15.md",
+                "additions": 38,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file16.md",
+                "additions": 2,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/file17.md",
+                "additions": 145,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file18.json",
+                "additions": 82,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file19.md",
+                "additions": 196,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file20.json",
+                "additions": 82,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file21.md",
+                "additions": 133,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file22.json",
+                "additions": 82,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file23.md",
+                "additions": 109,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file24.md",
+                "additions": 235,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file25.py",
+                "additions": 251,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file26.py",
+                "additions": 295,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file27.py",
+                "additions": 57,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file28.md",
+                "additions": 198,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file29.json",
+                "additions": 82,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file30.md",
+                "additions": 1,
+                "deletions": 1
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "3",
+            "title": "refactor(scope): subject 3",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/3",
+            "createdAt": "2026-08-17T14:13:57Z",
+            "updatedAt": "2026-08-17T14:28:34Z",
+            "sourceBranch": "refactor/branch-3",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-26",
+              "name": "User 26"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 274,
+              "deletions": 104,
+              "changes": 378,
+              "fileCount": 8
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 5,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file2.mod",
+                "additions": 3,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file3.sum",
+                "additions": 9,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file4.go",
+                "additions": 114,
+                "deletions": 29
+              },
+              {
+                "path": "dir1/dir2/dir3/file5.go",
+                "additions": 51,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file6.go",
+                "additions": 40,
+                "deletions": 33
+              },
+              {
+                "path": "dir1/dir2/dir3/file7.go",
+                "additions": 40,
+                "deletions": 39
+              },
+              {
+                "path": "dir1/dir2/dir3/file8.go",
+                "additions": 12,
+                "deletions": 3
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "4",
+            "title": "docs: subject 4",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/4",
+            "createdAt": "2026-08-17T14:22:25Z",
+            "updatedAt": "2026-08-17T14:24:47Z",
+            "sourceBranch": "docs/branch-4",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 2,
+              "deletions": 1,
+              "changes": 3,
+              "fileCount": 1
+            },
+            "diffStats": [
+              {
+                "path": "file1.md",
+                "additions": 2,
+                "deletions": 1
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "2",
+            "title": "feat(scope): subject 2",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/2",
+            "createdAt": "2026-08-17T13:53:39Z",
+            "updatedAt": "2026-08-17T14:09:19Z",
+            "sourceBranch": "feature/branch-2",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-34",
+              "name": "User 34"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": true,
+            "squashOnMerge": true,
+            "diffStatsSummary": {
+              "additions": 2200,
+              "deletions": 60,
+              "changes": 2260,
+              "fileCount": 34
+            },
+            "diffStats": [
+              {
+                "path": "dir1/file1.md",
+                "additions": 14,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file2.md",
+                "additions": 7,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/dir3/dir4/file3.yaml",
+                "additions": 16,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file4.yaml",
+                "additions": 18,
+                "deletions": 4
+              },
+              {
+                "path": "dir1/dir2/file5.md",
+                "additions": 9,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/dir2/file6.md",
+                "additions": 26,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file7.yaml",
+                "additions": 16,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/file8.yaml",
+                "additions": 26,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file9.mod",
+                "additions": 23,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file10.sum",
+                "additions": 63,
+                "deletions": 1
+              },
+              {
+                "path": "dir1/dir2/dir3/file11.go",
+                "additions": 5,
+                "deletions": 5
+              },
+              {
+                "path": "dir1/dir2/dir3/file12.go",
+                "additions": 50,
+                "deletions": 6
+              },
+              {
+                "path": "dir1/dir2/dir3/file13.go",
+                "additions": 22,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file14.go",
+                "additions": 15,
+                "deletions": 10
+              },
+              {
+                "path": "dir1/dir2/dir3/file15.go",
+                "additions": 118,
+                "deletions": 16
+              },
+              {
+                "path": "dir1/dir2/dir3/file16.go",
+                "additions": 124,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file17.go",
+                "additions": 233,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file18.go",
+                "additions": 38,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file19.go",
+                "additions": 50,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file20.go",
+                "additions": 137,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file21.go",
+                "additions": 13,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file22.go",
+                "additions": 172,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file23.go",
+                "additions": 72,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file24.go",
+                "additions": 19,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file25.go",
+                "additions": 16,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file26.go",
+                "additions": 0,
+                "deletions": 12
+              },
+              {
+                "path": "dir1/dir2/dir3/file27.go",
+                "additions": 155,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file28.go",
+                "additions": 61,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file29.go",
+                "additions": 24,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file30.go",
+                "additions": 129,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file31.go",
+                "additions": 82,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file32.go",
+                "additions": 168,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file33.go",
+                "additions": 170,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file34.go",
+                "additions": 109,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          },
+          {
+            "iid": "1",
+            "title": "docs: subject 1",
+            "draft": false,
+            "state": "merged",
+            "webUrl": "https://gitlab.example.com/example-group/example-project/-/merge_requests/1",
+            "createdAt": "2026-08-17T13:20:18Z",
+            "updatedAt": "2026-08-17T13:25:52Z",
+            "sourceBranch": "docs/branch-1",
+            "targetBranch": "main",
+            "author": {
+              "username": "user-86",
+              "name": "User 86"
+            },
+            "labels": {
+              "nodes": []
+            },
+            "approved": true,
+            "approvalsRequired": 0,
+            "approvalsLeft": 0,
+            "approvedBy": {
+              "nodes": []
+            },
+            "reviewers": {
+              "nodes": []
+            },
+            "userDiscussionsCount": 0,
+            "userNotesCount": 0,
+            "resolvableDiscussionsCount": 0,
+            "resolvedDiscussionsCount": 0,
+            "conflicts": false,
+            "mergeable": false,
+            "mergeStatusEnum": "CAN_BE_MERGED",
+            "detailedMergeStatus": "NOT_OPEN",
+            "shouldBeRebased": false,
+            "rebaseInProgress": false,
+            "squash": false,
+            "squashOnMerge": false,
+            "diffStatsSummary": {
+              "additions": 175,
+              "deletions": 2,
+              "changes": 177,
+              "fileCount": 6
+            },
+            "diffStats": [
+              {
+                "path": "dir1/dir2/dir3/file1.md",
+                "additions": 12,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/dir2/dir3/file2.md",
+                "additions": 13,
+                "deletions": 0
+              },
+              {
+                "path": "file3.gitignore",
+                "additions": 1,
+                "deletions": 0
+              },
+              {
+                "path": "file4.md",
+                "additions": 16,
+                "deletions": 2
+              },
+              {
+                "path": "dir1/file5.md",
+                "additions": 6,
+                "deletions": 0
+              },
+              {
+                "path": "dir1/file6.md",
+                "additions": 127,
+                "deletions": 0
+              }
+            ],
+            "headPipeline": null
+          }
+        ]
+      }
+    }
+  }
+}
