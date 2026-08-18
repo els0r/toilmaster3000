@@ -1,0 +1,15 @@
+query IntrospectType($n: String!) {
+  __type(name: $n) {
+    name
+    kind
+    description
+    enumValues(includeDeprecated: true) { name description isDeprecated deprecationReason }
+    fields(includeDeprecated: true) {
+      name
+      description
+      isDeprecated
+      args { name description type { name kind ofType { name kind ofType { name kind } } } }
+      type { name kind ofType { name kind ofType { name kind ofType { name kind } } } }
+    }
+  }
+}

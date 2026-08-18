@@ -1,0 +1,91 @@
+{
+  "enums": [
+    {
+      "name": "DetailedMergeStatus",
+      "values": [
+        "UNCHECKED",
+        "CHECKING",
+        "MERGEABLE",
+        "COMMITS_STATUS",
+        "CI_MUST_PASS",
+        "CI_STILL_RUNNING",
+        "DISCUSSIONS_NOT_RESOLVED",
+        "DRAFT_STATUS",
+        "NOT_OPEN",
+        "NOT_APPROVED",
+        "BLOCKED_STATUS",
+        "EXTERNAL_STATUS_CHECKS",
+        "PREPARING",
+        "JIRA_ASSOCIATION",
+        "CONFLICT",
+        "NEED_REBASE",
+        "APPROVALS_SYNCING",
+        "LOCKED_PATHS",
+        "LOCKED_LFS_FILES",
+        "MERGE_TIME",
+        "SECURITY_POLICIES_VIOLATIONS",
+        "TITLE_NOT_MATCHING",
+        "REQUESTED_CHANGES",
+        "SECURITY_POLICY_PIPELINE_CHECK"
+      ]
+    },
+    {
+      "name": "MergeRequestReviewState",
+      "values": [
+        "UNREVIEWED",
+        "REVIEWED",
+        "REQUESTED_CHANGES",
+        "APPROVED",
+        "UNAPPROVED",
+        "REVIEW_STARTED"
+      ]
+    },
+    {
+      "name": "MergeRequestState",
+      "values": [
+        "merged",
+        "opened",
+        "closed",
+        "locked",
+        "all"
+      ]
+    },
+    {
+      "name": "MergeStatus",
+      "values": [
+        "UNCHECKED",
+        "CHECKING",
+        "CAN_BE_MERGED",
+        "CANNOT_BE_MERGED",
+        "CANNOT_BE_MERGED_RECHECK"
+      ]
+    },
+    {
+      "name": "PipelineStatusEnum",
+      "values": [
+        "CREATED",
+        "WAITING_FOR_RESOURCE",
+        "PREPARING",
+        "WAITING_FOR_CALLBACK",
+        "PENDING",
+        "RUNNING",
+        "FAILED",
+        "SUCCESS",
+        "CANCELING",
+        "CANCELED",
+        "SKIPPED",
+        "MANUAL",
+        "SCHEDULED"
+      ]
+    },
+    {
+      "name": "SquashOptionSetting",
+      "values": [
+        "NEVER",
+        "ALLOWED",
+        "ENCOURAGED",
+        "ALWAYS"
+      ]
+    }
+  ]
+}

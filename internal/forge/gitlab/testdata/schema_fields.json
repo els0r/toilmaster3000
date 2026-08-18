@@ -1,0 +1,877 @@
+{
+  "MergeRequest": [
+    {
+      "name": "allowCollaboration",
+      "type": "Boolean"
+    },
+    {
+      "name": "allowsMultipleAssignees",
+      "type": "Boolean"
+    },
+    {
+      "name": "allowsMultipleReviewers",
+      "type": "Boolean"
+    },
+    {
+      "name": "approvalState",
+      "type": "MergeRequestApprovalState"
+    },
+    {
+      "name": "approvalsLeft",
+      "type": "Int"
+    },
+    {
+      "name": "approvalsRequired",
+      "type": "Int"
+    },
+    {
+      "name": "approved",
+      "type": "Boolean"
+    },
+    {
+      "name": "approvedBy",
+      "type": "UserCoreConnection"
+    },
+    {
+      "name": "assignees",
+      "type": "MergeRequestAssigneeConnection"
+    },
+    {
+      "name": "author",
+      "type": "MergeRequestAuthor"
+    },
+    {
+      "name": "autoMergeEnabled",
+      "type": "Boolean"
+    },
+    {
+      "name": "autoMergeStrategy",
+      "type": "String"
+    },
+    {
+      "name": "availableAutoMergeStrategies",
+      "type": "String"
+    },
+    {
+      "name": "availableQuickActions",
+      "type": "QuickActionCommand"
+    },
+    {
+      "name": "awardEmoji",
+      "type": "AwardEmojiConnection"
+    },
+    {
+      "name": "blockingMergeRequests",
+      "type": "BlockingMergeRequests"
+    },
+    {
+      "name": "changeRequesters",
+      "type": "UserCoreConnection"
+    },
+    {
+      "name": "closedAt",
+      "type": "Time"
+    },
+    {
+      "name": "codequalityReportsComparer",
+      "type": "CodequalityReportsComparer"
+    },
+    {
+      "name": "commenters",
+      "type": "UserCoreConnection"
+    },
+    {
+      "name": "commitCount",
+      "type": "Int"
+    },
+    {
+      "name": "commits",
+      "type": "CommitConnection"
+    },
+    {
+      "name": "commitsWithoutMergeCommits",
+      "type": "CommitConnection"
+    },
+    {
+      "name": "committers",
+      "type": "UserCoreConnection"
+    },
+    {
+      "name": "conflicts",
+      "type": "Boolean"
+    },
+    {
+      "name": "createdAt",
+      "type": "Time"
+    },
+    {
+      "name": "currentUserTodos",
+      "type": "TodoConnection"
+    },
+    {
+      "name": "defaultMergeCommitMessage",
+      "type": "String"
+    },
+    {
+      "name": "defaultSquashCommitMessage",
+      "type": "String"
+    },
+    {
+      "name": "description",
+      "type": "String"
+    },
+    {
+      "name": "descriptionHtml",
+      "type": "String"
+    },
+    {
+      "name": "detailedMergeStatus",
+      "type": "DetailedMergeStatus"
+    },
+    {
+      "name": "diffHeadSha",
+      "type": "String"
+    },
+    {
+      "name": "diffRefs",
+      "type": "DiffRefs"
+    },
+    {
+      "name": "diffStats",
+      "type": "DiffStats"
+    },
+    {
+      "name": "diffStatsSummary",
+      "type": "DiffStatsSummary"
+    },
+    {
+      "name": "discussionLocked",
+      "type": "Boolean"
+    },
+    {
+      "name": "discussions",
+      "type": "DiscussionConnection"
+    },
+    {
+      "name": "discussionsWithActivity",
+      "type": "DiscussionConnection"
+    },
+    {
+      "name": "divergedFromTargetBranch",
+      "type": "Boolean"
+    },
+    {
+      "name": "downvotes",
+      "type": "Int"
+    },
+    {
+      "name": "draft",
+      "type": "Boolean"
+    },
+    {
+      "name": "duoDependencyBumpBreakingChangesAvailable",
+      "type": "Boolean"
+    },
+    {
+      "name": "duoWorkflowLinks",
+      "type": "DuoWorkflowMergeRequestLinkConnection"
+    },
+    {
+      "name": "duoWorkflows",
+      "type": "DuoWorkflowConnection"
+    },
+    {
+      "name": "findingReportsComparer",
+      "type": "FindingReportsComparer"
+    },
+    {
+      "name": "forceRemoveSourceBranch",
+      "type": "Boolean"
+    },
+    {
+      "name": "hasCi",
+      "type": "Boolean"
+    },
+    {
+      "name": "hasSecurityReports",
+      "type": "Boolean"
+    },
+    {
+      "name": "headPipeline",
+      "type": "Pipeline"
+    },
+    {
+      "name": "hidden",
+      "type": "Boolean"
+    },
+    {
+      "name": "humanTimeEstimate",
+      "type": "String"
+    },
+    {
+      "name": "humanTotalTimeSpent",
+      "type": "String"
+    },
+    {
+      "name": "id",
+      "type": "ID"
+    },
+    {
+      "name": "iid",
+      "type": "String"
+    },
+    {
+      "name": "inProgressMergeCommitSha",
+      "type": "String"
+    },
+    {
+      "name": "labels",
+      "type": "LabelConnection"
+    },
+    {
+      "name": "linkedWorkItems",
+      "type": "MergeRequestLinkedWorkItem"
+    },
+    {
+      "name": "mergeAfter",
+      "type": "Time"
+    },
+    {
+      "name": "mergeCommitSha",
+      "type": "String"
+    },
+    {
+      "name": "mergeError",
+      "type": "String"
+    },
+    {
+      "name": "mergeOngoing",
+      "type": "Boolean"
+    },
+    {
+      "name": "mergeRequestDiffs",
+      "type": "MergeRequestDiffConnection"
+    },
+    {
+      "name": "mergeStatus",
+      "type": "String"
+    },
+    {
+      "name": "mergeStatusEnum",
+      "type": "MergeStatus"
+    },
+    {
+      "name": "mergeTrainCar",
+      "type": "MergeTrainCar"
+    },
+    {
+      "name": "mergeTrainIndex",
+      "type": "Int"
+    },
+    {
+      "name": "mergeTrainsCount",
+      "type": "Int"
+    },
+    {
+      "name": "mergeUser",
+      "type": "UserCore"
+    },
+    {
+      "name": "mergeWhenPipelineSucceeds",
+      "type": "Boolean"
+    },
+    {
+      "name": "mergeabilityChecks",
+      "type": null
+    },
+    {
+      "name": "mergeable",
+      "type": "Boolean"
+    },
+    {
+      "name": "mergeableDiscussionsState",
+      "type": "Boolean"
+    },
+    {
+      "name": "mergedAt",
+      "type": "Time"
+    },
+    {
+      "name": "milestone",
+      "type": "Milestone"
+    },
+    {
+      "name": "name",
+      "type": "String"
+    },
+    {
+      "name": "notes",
+      "type": "NoteConnection"
+    },
+    {
+      "name": "participants",
+      "type": "MergeRequestParticipantConnection"
+    },
+    {
+      "name": "pipelineCreationRequests",
+      "type": null
+    },
+    {
+      "name": "pipelines",
+      "type": "PipelineConnection"
+    },
+    {
+      "name": "policiesOverridingApprovalSettings",
+      "type": "PolicyApprovalSettingsOverride"
+    },
+    {
+      "name": "policyBypassStatuses",
+      "type": "PolicyBypassStatus"
+    },
+    {
+      "name": "policyViolations",
+      "type": "PolicyViolationDetails"
+    },
+    {
+      "name": "preparedAt",
+      "type": "Time"
+    },
+    {
+      "name": "project",
+      "type": "Project"
+    },
+    {
+      "name": "projectId",
+      "type": "Int"
+    },
+    {
+      "name": "rebaseCommitSha",
+      "type": "String"
+    },
+    {
+      "name": "rebaseInProgress",
+      "type": "Boolean"
+    },
+    {
+      "name": "reference",
+      "type": "String"
+    },
+    {
+      "name": "resolvableDiscussionsCount",
+      "type": "Int"
+    },
+    {
+      "name": "resolvedDiscussionsCount",
+      "type": "Int"
+    },
+    {
+      "name": "retargeted",
+      "type": "Boolean"
+    },
+    {
+      "name": "reviewers",
+      "type": "MergeRequestReviewerConnection"
+    },
+    {
+      "name": "securityAutoFix",
+      "type": "Boolean"
+    },
+    {
+      "name": "securityReportsUpToDateOnTargetBranch",
+      "type": "Boolean"
+    },
+    {
+      "name": "shouldBeRebased",
+      "type": "Boolean"
+    },
+    {
+      "name": "shouldRemoveSourceBranch",
+      "type": "Boolean"
+    },
+    {
+      "name": "sourceBranch",
+      "type": "String"
+    },
+    {
+      "name": "sourceBranchExists",
+      "type": "Boolean"
+    },
+    {
+      "name": "sourceBranchProtected",
+      "type": "Boolean"
+    },
+    {
+      "name": "sourceProject",
+      "type": "Project"
+    },
+    {
+      "name": "sourceProjectId",
+      "type": "Int"
+    },
+    {
+      "name": "squash",
+      "type": "Boolean"
+    },
+    {
+      "name": "squashOnMerge",
+      "type": "Boolean"
+    },
+    {
+      "name": "squashReadOnly",
+      "type": "Boolean"
+    },
+    {
+      "name": "stack",
+      "type": "MergeRequest"
+    },
+    {
+      "name": "state",
+      "type": "MergeRequestState"
+    },
+    {
+      "name": "subscribed",
+      "type": "Boolean"
+    },
+    {
+      "name": "suggestedReviewers",
+      "type": "SuggestedReviewersType"
+    },
+    {
+      "name": "supportsLockOnMerge",
+      "type": "Boolean"
+    },
+    {
+      "name": "targetBranch",
+      "type": "String"
+    },
+    {
+      "name": "targetBranchExists",
+      "type": "Boolean"
+    },
+    {
+      "name": "targetBranchPath",
+      "type": "String"
+    },
+    {
+      "name": "targetProject",
+      "type": "Project"
+    },
+    {
+      "name": "targetProjectId",
+      "type": "Int"
+    },
+    {
+      "name": "taskCompletionStatus",
+      "type": "TaskCompletionStatus"
+    },
+    {
+      "name": "timeEstimate",
+      "type": "Int"
+    },
+    {
+      "name": "timelogs",
+      "type": "TimelogConnection"
+    },
+    {
+      "name": "title",
+      "type": "String"
+    },
+    {
+      "name": "titleHtml",
+      "type": "String"
+    },
+    {
+      "name": "totalTimeSpent",
+      "type": "Int"
+    },
+    {
+      "name": "updatedAt",
+      "type": "Time"
+    },
+    {
+      "name": "upvotes",
+      "type": "Int"
+    },
+    {
+      "name": "userDiscussionsCount",
+      "type": "Int"
+    },
+    {
+      "name": "userNotesCount",
+      "type": "Int"
+    },
+    {
+      "name": "userPermissions",
+      "type": "MergeRequestPermissions"
+    },
+    {
+      "name": "webPath",
+      "type": "String"
+    },
+    {
+      "name": "webUrl",
+      "type": "String"
+    },
+    {
+      "name": "workItemRelations",
+      "type": "MergeRequestWorkItemRelationConnection"
+    }
+  ],
+  "Pipeline": [
+    {
+      "name": "active",
+      "type": "Boolean"
+    },
+    {
+      "name": "beforeSha",
+      "type": "String"
+    },
+    {
+      "name": "cancelable",
+      "type": "Boolean"
+    },
+    {
+      "name": "child",
+      "type": "Boolean"
+    },
+    {
+      "name": "codeQualityReportSummary",
+      "type": "CodeQualityReportSummary"
+    },
+    {
+      "name": "codeQualityReports",
+      "type": "CodeQualityDegradationConnection"
+    },
+    {
+      "name": "commit",
+      "type": "Commit"
+    },
+    {
+      "name": "commitPath",
+      "type": "String"
+    },
+    {
+      "name": "committedAt",
+      "type": "Time"
+    },
+    {
+      "name": "complete",
+      "type": "Boolean"
+    },
+    {
+      "name": "computeMinutes",
+      "type": "Float"
+    },
+    {
+      "name": "configSource",
+      "type": "PipelineConfigSourceEnum"
+    },
+    {
+      "name": "coverage",
+      "type": "Float"
+    },
+    {
+      "name": "createdAt",
+      "type": "Time"
+    },
+    {
+      "name": "dastProfile",
+      "type": "DastProfile"
+    },
+    {
+      "name": "detailedStatus",
+      "type": "DetailedStatus"
+    },
+    {
+      "name": "downstream",
+      "type": "PipelineConnection"
+    },
+    {
+      "name": "duoWorkflows",
+      "type": "DuoWorkflowConnection"
+    },
+    {
+      "name": "duration",
+      "type": "Int"
+    },
+    {
+      "name": "enabledPartialSecurityScans",
+      "type": "EnabledSecurityScans"
+    },
+    {
+      "name": "enabledSecurityScans",
+      "type": "EnabledSecurityScans"
+    },
+    {
+      "name": "errorMessages",
+      "type": "PipelineMessageConnection"
+    },
+    {
+      "name": "failedJobsCount",
+      "type": "Int"
+    },
+    {
+      "name": "failureReason",
+      "type": "String"
+    },
+    {
+      "name": "finishedAt",
+      "type": "Time"
+    },
+    {
+      "name": "hasManualActions",
+      "type": "Boolean"
+    },
+    {
+      "name": "hasScheduledActions",
+      "type": "Boolean"
+    },
+    {
+      "name": "id",
+      "type": "ID"
+    },
+    {
+      "name": "iid",
+      "type": "String"
+    },
+    {
+      "name": "job",
+      "type": "CiJob"
+    },
+    {
+      "name": "jobArtifacts",
+      "type": "CiJobArtifact"
+    },
+    {
+      "name": "jobs",
+      "type": "CiJobConnection"
+    },
+    {
+      "name": "latest",
+      "type": "Boolean"
+    },
+    {
+      "name": "manualVariables",
+      "type": "PipelineManualVariableConnection"
+    },
+    {
+      "name": "mergeRequest",
+      "type": "MergeRequest"
+    },
+    {
+      "name": "mergeRequestEventType",
+      "type": "PipelineMergeRequestEventType"
+    },
+    {
+      "name": "name",
+      "type": "String"
+    },
+    {
+      "name": "path",
+      "type": "String"
+    },
+    {
+      "name": "pipelineSchedule",
+      "type": "PipelineSchedule"
+    },
+    {
+      "name": "project",
+      "type": "Project"
+    },
+    {
+      "name": "queuedDuration",
+      "type": "Duration"
+    },
+    {
+      "name": "ref",
+      "type": "String"
+    },
+    {
+      "name": "refPath",
+      "type": "String"
+    },
+    {
+      "name": "refText",
+      "type": "String"
+    },
+    {
+      "name": "retryable",
+      "type": "Boolean"
+    },
+    {
+      "name": "securityReportFinding",
+      "type": "PipelineSecurityReportFinding"
+    },
+    {
+      "name": "securityReportFindings",
+      "type": "PipelineSecurityReportFindingConnection"
+    },
+    {
+      "name": "securityReportSummary",
+      "type": "SecurityReportSummary"
+    },
+    {
+      "name": "sha",
+      "type": "String"
+    },
+    {
+      "name": "source",
+      "type": "String"
+    },
+    {
+      "name": "sourceJob",
+      "type": "CiJob"
+    },
+    {
+      "name": "stages",
+      "type": "CiStageConnection"
+    },
+    {
+      "name": "startedAt",
+      "type": "Time"
+    },
+    {
+      "name": "status",
+      "type": "PipelineStatusEnum"
+    },
+    {
+      "name": "stuck",
+      "type": "Boolean"
+    },
+    {
+      "name": "testReportSummary",
+      "type": "TestReportSummary"
+    },
+    {
+      "name": "testSuite",
+      "type": "TestSuite"
+    },
+    {
+      "name": "totalJobs",
+      "type": "Int"
+    },
+    {
+      "name": "trigger",
+      "type": "Boolean"
+    },
+    {
+      "name": "triggeredByPath",
+      "type": "String"
+    },
+    {
+      "name": "troubleshootJobWithAi",
+      "type": "Boolean"
+    },
+    {
+      "name": "type",
+      "type": "String"
+    },
+    {
+      "name": "updatedAt",
+      "type": "Time"
+    },
+    {
+      "name": "upstream",
+      "type": "Pipeline"
+    },
+    {
+      "name": "user",
+      "type": "UserCore"
+    },
+    {
+      "name": "userPermissions",
+      "type": "PipelinePermissions"
+    },
+    {
+      "name": "usesNeeds",
+      "type": "Boolean"
+    },
+    {
+      "name": "warningMessages",
+      "type": "PipelineMessageConnection"
+    },
+    {
+      "name": "warnings",
+      "type": "Boolean"
+    },
+    {
+      "name": "yamlErrorMessages",
+      "type": "String"
+    },
+    {
+      "name": "yamlErrors",
+      "type": "Boolean"
+    }
+  ],
+  "UserMergeRequestInteraction": [
+    {
+      "name": "applicableApprovalRules",
+      "type": null
+    },
+    {
+      "name": "approved",
+      "type": "Boolean"
+    },
+    {
+      "name": "canMerge",
+      "type": "Boolean"
+    },
+    {
+      "name": "canUpdate",
+      "type": "Boolean"
+    },
+    {
+      "name": "reviewState",
+      "type": "MergeRequestReviewState"
+    },
+    {
+      "name": "reviewed",
+      "type": "Boolean"
+    },
+    {
+      "name": "updatedAt",
+      "type": "Time"
+    }
+  ],
+  "DiffStats": [
+    "additions",
+    "deletions",
+    "path"
+  ],
+  "DiffStatsSummary": [
+    "additions",
+    "changes",
+    "deletions",
+    "fileCount"
+  ],
+  "Project_squash_and_merge": [
+    {
+      "name": "allowMergeOnSkippedPipeline",
+      "type": "Boolean"
+    },
+    {
+      "name": "mergeRequestsFfOnlyEnabled",
+      "type": "Boolean"
+    },
+    {
+      "name": "onlyAllowMergeIfAllDiscussionsAreResolved",
+      "type": "Boolean"
+    },
+    {
+      "name": "onlyAllowMergeIfAllStatusChecksPassed",
+      "type": "Boolean"
+    },
+    {
+      "name": "onlyAllowMergeIfPipelineSucceeds",
+      "type": "Boolean"
+    },
+    {
+      "name": "squashCommitTemplate",
+      "type": "String"
+    },
+    {
+      "name": "squashReadOnly",
+      "type": "Boolean"
+    }
+  ]
+}

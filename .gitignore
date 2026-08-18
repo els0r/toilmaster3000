@@ -25,3 +25,6 @@ frontend/*.tsbuildinfo
 .config/settings.yaml
 .config/hooks.yaml
 .config/security-screen-prompt.md
+
+# Unscrubbed GitLab capture output (issue #75) — scrub.sh promotes to testdata/
+/internal/forge/gitlab/testdata/raw/
