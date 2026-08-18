@@ -234,10 +234,51 @@ precondition is not a project field).
   approve *write*. This does not weaken §9's ceiling argument, which already
   assumed `glab api` reaches the approve endpoint under any verb allowlist.
 
-**Not established.** The `glab` and GitLab version *floors* cannot be derived
-from a single current instance; one capture proves 19.3.0-pre and glab 1.114.0
-suffice, and nothing about what fails below. Decision 8's preflight still needs
-a floor, and picking one is a separate question from this capture.
+### The version floors, and why decision 8's preflight is the wrong mechanism
+
+**GitLab instance floor: 17.3.** The binding constraint is the newest thing
+tm3k requires — the requested-changes review signal, introduced in 16.11 behind
+the `mr_reviewer_requests_changes` flag, enabled by default in 17.2, flag
+removed in 17.3. 17.3 is therefore the first version where the signal is
+reliably present without a feature flag. Everything else predates it
+comfortably; `detailedMergeStatus`, the next-newest, arrived in 15.6 when
+`merge_status` was deprecated in its favour.
+
+**There is no meaningful `glab` floor.** tm3k uses `glab api` as a
+transport — `glab api graphql` for reads, `glab api --method POST` for the
+approve write — and both are long-standing. Decision 8 splits the message
+across two versions because `reviewState` is server-side; that reasoning is
+sound but *asymmetric*, since an old `glab` against a new GitLab breaks
+nothing tm3k does. Only the server version can be stale in a way that matters.
+1.114.0 is recorded as known-good; anything older is untested rather than
+known-bad.
+
+**The precondition that actually bites is a tier, not a version.** Requesting
+changes is Premium/Ultimate. On a Free instance at 19.3 the `reviewState` field
+exists and returns `UNREVIEWED`/`REVIEWED`/`APPROVED`/`UNAPPROVED`, but
+`REQUESTED_CHANGES` can never appear because no reviewer can produce it.
+Decision 8 requires the preflight message to name *"which of the two versions
+is stale"* — on a current Free instance neither is, and no version probe can
+express the real problem.
+
+**Therefore: probe the capability, not the version.** GitLab's GraphQL rejects
+an unknown field with `extensions.code: "undefinedField"` naming the type and
+field exactly — the `Project.squashOption` correction above was found precisely
+this way, from *"Field 'squashOption' doesn't exist on type 'Project' (Did you
+mean `squashReadOnly`?)"*. A preflight that runs the real pull once against the
+configured project and reports the offending field beats a version comparison
+on every axis: it names the actual missing thing rather than a number, it
+catches the tier gap that no version can, it cannot drift, and it needs no
+version table — which matters, because **GitLab does not publish one for these
+fields**. The generated GraphQL reference carries 1992 `Introduced in GitLab`
+annotations and every one of them is 18.x or later; none of the fields tm3k
+depends on is annotated at all.
+
+The tier gap still needs its own answer, since it is invisible to a field
+probe: a Free instance answers the query fine and simply never reports an
+objection. Whether that refuses the boot or is accepted as "on Free, nobody can
+request changes, so there is no objection to merge over" is a decision this
+capture does not make.
 
 **Not yet captured.** `MANUAL`, `SKIPPED`, `CANCELED` and `SUCCESS` pipelines,
 a genuinely approved merge request, a reviewer at `REQUESTED_CHANGES`, and
