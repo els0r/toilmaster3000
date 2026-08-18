@@ -6,13 +6,6 @@ follow the signpost when your task reaches that area.
 
 ## What this is
 
-`toilmaster3000` is a single-workstation PR auto-approver: one Go binary with an
-embedded React SPA, served on `localhost:8666`. Each cycle it pulls a candidate
-set of PRs (a repo + `gh` search query), runs each through user-defined rules,
-and either auto-approves it, routes it to a human-review queue, or drops it. It
-shells out to the `gh` CLI and reuses your auth — no DB, no service account, no
-network surface of its own.
-
 Read `README.md` for the product overview, `CONTEXT.md` for the domain model —
 the glossary, doctrines, and invariants; each entry points at the ADR in
 `docs/adr/` that holds the mechanics and rationale (consult the relevant one
@@ -30,28 +23,22 @@ against the gates before Claude merges it, and the guardrails that stay in force
 Always go through `make` — a bare `go build .` fails on a clean checkout because
 `frontend/dist` is a generated, git-ignored artifact the binary embeds.
 
-- `make build` / `make run` / `make test` — build, serve on :8666, test both sides.
-- `make lint` — `lint-go` (golangci-lint) + `lint-frontend` (`tsc --noEmit` +
-  eslint, warnings included); both halves run even when the first fails, as
-  `make test`'s two do. Part of the definition of done, not a cleanup pass:
-  lint clean before you hand work over. Both configs keep the stock recommended
-  set and disable nothing — see `docs/development.md` § Linting.
+- `make lint` is part of the definition of done, not a cleanup pass: lint clean
+  before you hand work over. Config rationale: `docs/development.md` § Linting.
 - `make check` — the drift guard. Run it before committing any wire-DTO change,
   or the committed `openapi.json` / `schema.d.ts` go stale.
 
-CI (`.github/workflows/ci.yml`) runs six independent per-signal checks on every
-PR — `frontend`, `backend`, `lint-go`, `lint-frontend`, `contract`, `smoke` —
-so a red run names every side that broke, not just the first. It is the
-backstop, not the loop: run the same commands locally first.
+CI runs each signal as its own check, so a red run names every side that broke,
+not just the first. It is the backstop, not the loop: run the same commands
+locally first.
 
 Full command list, the two-terminal dev loop, single-test invocations, and the
 binary's run requirements: **`docs/development.md`**.
 
 ## Architecture
 
-**Layered, with a strict wire boundary.** Flow: `main.go` wires everything →
-`internal/engine` runs the loop → `internal/forge/github` is the only thing that
-touches `gh` → `internal/server` exposes typed HTTP → `frontend` consumes it.
+**Layered, with a strict wire boundary.** `internal/forge/github` is the only
+thing that touches `gh`.
 
 Per-package responsibilities and the wire boundary in detail: read
 **`docs/architecture.md`** before changing a package.
